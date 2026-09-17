@@ -8,7 +8,14 @@
 
 ```bash
 # 1. 起依赖（PostgreSQL 17 + pgvector）
-docker compose up -d
+#    本地开发（macOS，原生安装，推荐）：
+brew install postgresql@17 pgvector
+brew services start postgresql@17
+createuser mnemic -d -P   # 密码示例：mnemic（仅本地）
+createdb mnemic -O mnemic
+psql -d mnemic -c "CREATE EXTENSION IF NOT EXISTS vector;"
+#    等价容器环境（CI / 部署使用）：
+#    docker compose up -d
 
 # 2. 安装与全量校验
 pnpm install
