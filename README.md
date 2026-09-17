@@ -21,11 +21,11 @@ psql -d mnemic -c "CREATE EXTENSION IF NOT EXISTS vector;"
 pnpm install
 pnpm -r run lint && pnpm -r run typecheck && pnpm -r run test && pnpm -r run build
 
-# 3. 启动记忆服务（依赖拆分 2/4 server 落地后开放，当前分支暂不可执行）
-# pnpm dev:server
+# 3. 启动记忆服务
+pnpm dev:server
 
-# 4. 验证（同上，2/4 后开放）
-# curl http://localhost:3000/health   # {"status":"ok"}
+# 4. 验证
+curl http://localhost:3000/health   # {"status":"ok"}
 ```
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
