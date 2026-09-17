@@ -43,6 +43,6 @@ docs/adr           架构决策记录（拆分 4/4 起创建）
 
 ## 工程约定
 
-- 分支：`type>/<issue>-<slug>` 短生命周期分支，squash 合并后即删
+- 分支：`<type>/<issue>-<slug>` 短生命周期分支，squash 合并后即删
 - Commit：Conventional Commits；分支名与提交标题用英文的约定见 Issue #1 工程决策
 - 统一错误模型：RFC 7807 problem+json（`packages/shared`）
