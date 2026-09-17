@@ -68,6 +68,8 @@ const deepseek = createOpenAICompatible({
   apiKey,
 });
 
+const modelId = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+
 async function main() {
   const results: {
     input: string;
@@ -81,7 +83,7 @@ async function main() {
     const t0 = performance.now();
     try {
       const { object } = await generateObject({
-        model: deepseek("deepseek-chat"),
+        model: deepseek(modelId),
         schema: CandidateSchema,
         temperature: 0,
         prompt:
@@ -104,7 +106,7 @@ async function main() {
   const ok = results.filter((r) => r.ok).length;
   const latencies = results.map((r) => r.ms).sort((a, b) => a - b);
   const summary = {
-    model: "deepseek-chat",
+    model: modelId,
     temperature: 0,
     samples: results.length,
     schemaValid: ok,
