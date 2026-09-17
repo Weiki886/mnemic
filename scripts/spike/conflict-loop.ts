@@ -55,7 +55,6 @@ async function main() {
 
   // ① 首次写入：ASSERT PostgreSQL
   const first = fakeExtract("我们数据库用 PostgreSQL")!;
-  const T1 = new Date();
   const [belief] = await sql<{ id: string }[]>`
     INSERT INTO spike_beliefs ${sql({ subject: first.subject, attribute: first.attribute })}
     RETURNING id
