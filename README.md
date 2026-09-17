@@ -21,11 +21,11 @@ psql -d mnemic -c "CREATE EXTENSION IF NOT EXISTS vector;"
 pnpm install
 pnpm -r run lint && pnpm -r run typecheck && pnpm -r run test && pnpm -r run build
 
-# 3. 启动记忆服务
-pnpm dev:server
+# 3. 启动记忆服务（依赖拆分 2/4 server 落地后开放，当前分支暂不可执行）
+# pnpm dev:server
 
-# 4. 验证
-curl http://localhost:3000/health   # {"status":"ok"}
+# 4. 验证（同上，2/4 后开放）
+# curl http://localhost:3000/health   # {"status":"ok"}
 ```
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
@@ -34,11 +34,11 @@ curl http://localhost:3000/health   # {"status":"ok"}
 
 ```text
 apps/server        记忆服务（Fastify 5 + Drizzle + PostgreSQL/pgvector）
-apps/cli           CLI 客户端（占位，实现归 Issue #19）
-apps/web           Web 记忆中心（占位，实现归 Issue #8）
+apps/cli           CLI 客户端（占位，实现归 Issue #19；拆分 2/4 起创建）
+apps/web           Web 记忆中心（占位，实现归 Issue #8；拆分 2/4 起创建）
 packages/shared    类型 + API 客户端 + 统一错误模型
-scripts/spike      可行性验证脚本（报告见 docs/spike-report.md）
-docs/adr           架构决策记录
+scripts/spike      可行性验证脚本（拆分 3/4 起创建）
+docs/adr           架构决策记录（拆分 4/4 起创建）
 ```
 
 ## 工程约定
