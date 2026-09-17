@@ -2,9 +2,13 @@
  * Spike ①：DeepSeek 经 Vercel AI SDK generateObject 按 zod schema 提取的稳定性
  * 运行：DEEPSEEK_API_KEY=xxx pnpm --filter @mnemic/spike run spike:deepseek
  * 采样 ≥20 次，统计 schema 合法率与延迟；结果写入 docs/spike-deepseek-results.json
+ *
+ * 关键发现（2026-09-17 探测）：deepseek-flash 为推理模型，其 OpenAI 兼容端点
+ * 不支持 structuredOutputs，SDK 注入的 schema 会被模型忽略（自造字段名）。
+ * 因此提取路径为：generateText + prompt 内显式文本 schema + zod 校验 + 失败重试。
  */
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateObject } from "ai";
+import { generateText } from "ai";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
 
@@ -70,10 +74,47 @@ const deepseek = createOpenAICompatible({
 
 const modelId = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
 
+// 文本式 schema（推理模型会忽略 API 层注入，必须写进 prompt）
+const SCHEMA_TEXT = `{
+  "type": "fact" | "preference" | "decision" | "progress",
+  "subject": string, "attribute": string, "value": string,
+  "valid_time": "ISO 8601 或模糊时间原文",
+  "time_precision": "DAY" | "WEEK" | "MONTH" | "FUZZY",
+  "time_confidence": 0~1,
+  "assertion_intent": "ASSERT" | "UPDATE" | "CORRECT" | "RETRACT",
+  "source_type": "USER_CORRECTION" | "USER_EXPLICIT" | "PROJECT_FILE" | "TOOL_OBSERVATION" | "DOCUMENT" | "WEB_CONTENT" | "AGENT_INFERENCE",
+  "importance": 0~1, "confidence": 0~1,
+  "entities": string[], "is_profile": boolean
+}`;
+
+function buildPrompt(input: string): string {
+  return (
+    `从下面的用户话语中提取一条记忆候选，输出 json。今天是 2026-09-17。\n` +
+    `输出必须是符合以下 schema 的单个 json 对象（不要输出任何其他内容）：\n${SCHEMA_TEXT}\n` +
+    `断言意图判断：普通陈述=ASSERT，"改用/换成"=UPDATE，"说错了"=CORRECT，"当我没说过"=RETRACT。\n` +
+    `是否画像类（is_profile）：技术栈/进度/未决问题类为 true。\n\n` +
+    `用户话语：${input}`
+  );
+}
+
+/** 剥离可能的 markdown 围栏后解析并校验 */
+function parseCandidate(text: string) {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
+  try {
+    return CandidateSchema.safeParse(JSON.parse(cleaned));
+  } catch {
+    return CandidateSchema.safeParse(null);
+  }
+}
+
 async function main() {
   const results: {
     input: string;
     ok: boolean;
+    retried: boolean;
     ms: number;
     error?: string;
     output?: unknown;
@@ -81,36 +122,42 @@ async function main() {
 
   for (const input of SAMPLES) {
     const t0 = performance.now();
-    try {
-      const { object } = await generateObject({
+    let retried = false;
+    let parsed = null as ReturnType<typeof parseCandidate> | null;
+    let lastError = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      retried = attempt > 0;
+      const { text } = await generateText({
         model: deepseek(modelId),
-        schema: CandidateSchema,
         temperature: 0,
-        prompt:
-          `从下面的用户话语中提取一条记忆候选。今天是 2026-09-17。\n` +
-          `判断 type/subject/attribute/value、时间精度、断言意图（普通陈述=ASSERT，"改用/换成"=UPDATE，` +
-          `"说错了"=CORRECT，"当我没说过"=RETRACT）、来源类型、重要度、置信度、实体、是否画像类（技术栈/进度/未决问题）。\n\n` +
-          `用户话语：${input}`,
+        prompt: buildPrompt(input),
       });
-      results.push({ input, ok: true, ms: +(performance.now() - t0).toFixed(0), output: object });
-    } catch (err) {
-      results.push({
-        input,
-        ok: false,
-        ms: +(performance.now() - t0).toFixed(0),
-        error: err instanceof Error ? err.message.slice(0, 200) : String(err),
-      });
+      parsed = parseCandidate(text);
+      if (parsed.success) break;
+      lastError = parsed.error.issues
+        .slice(0, 3)
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join("; ");
+    }
+    const ms = +(performance.now() - t0).toFixed(0);
+    if (parsed?.success) {
+      results.push({ input, ok: true, retried, ms, output: parsed.data });
+    } else {
+      results.push({ input, ok: false, retried, ms, error: lastError || "parse failed" });
     }
   }
 
   const ok = results.filter((r) => r.ok).length;
+  const retriedOk = results.filter((r) => r.ok && r.retried).length;
   const latencies = results.map((r) => r.ms).sort((a, b) => a - b);
   const summary = {
     model: modelId,
     temperature: 0,
+    path: "generateText + 文本 schema + zod 校验 + 1 次重试",
     samples: results.length,
     schemaValid: ok,
     schemaValidRate: +(ok / results.length).toFixed(3),
+    retriedButValid: retriedOk,
     latencyMs: {
       p50: latencies[Math.floor(latencies.length * 0.5)],
       p95: latencies[Math.floor(latencies.length * 0.95)],
