@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // 生产构建：不带 paths，类型经 exports 解析 shared 的 dist 声明；
+    // pnpm 拓扑序保证 shared 先于 server 构建
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
