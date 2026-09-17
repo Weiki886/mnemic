@@ -1,0 +1,7 @@
+{
+  "name": "@mnemic/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mnemic CLI 客户端（实现归 #19，本期仅占位）"
+}
