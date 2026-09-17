@@ -1,0 +1,131 @@
+/**
+ * Spike ①：DeepSeek 经 Vercel AI SDK generateObject 按 zod schema 提取的稳定性
+ * 运行：DEEPSEEK_API_KEY=xxx pnpm --filter @mnemic/spike run spike:deepseek
+ * 采样 ≥20 次，统计 schema 合法率与延迟；结果写入 docs/spike-deepseek-results.json
+ */
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateObject } from "ai";
+import { writeFile } from "node:fs/promises";
+import { z } from "zod";
+
+const apiKey = process.env.DEEPSEEK_API_KEY;
+if (!apiKey) {
+  console.error("缺少 DEEPSEEK_API_KEY（见 .env.example）");
+  process.exit(2);
+}
+
+// 与 #4 提取 schema 对齐的候选 Observation（spike 简化版）
+const CandidateSchema = z.object({
+  type: z.enum(["fact", "preference", "decision", "progress"]),
+  subject: z.string(),
+  attribute: z.string(),
+  value: z.string(),
+  valid_time: z.string().describe("ISO 8601 或模糊时间原文"),
+  time_precision: z.enum(["DAY", "WEEK", "MONTH", "FUZZY"]),
+  time_confidence: z.number().min(0).max(1),
+  assertion_intent: z.enum(["ASSERT", "UPDATE", "CORRECT", "RETRACT"]),
+  source_type: z.enum([
+    "USER_CORRECTION",
+    "USER_EXPLICIT",
+    "PROJECT_FILE",
+    "TOOL_OBSERVATION",
+    "DOCUMENT",
+    "WEB_CONTENT",
+    "AGENT_INFERENCE",
+  ]),
+  importance: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  entities: z.array(z.string()),
+  is_profile: z.boolean(),
+});
+
+const SAMPLES = [
+  "我们数据库用 PostgreSQL，ORM 选 Drizzle",
+  "前端框架定了，Vue 3 加 Vite",
+  "部署到 VPS，用 Docker Compose 加 Caddy 反代",
+  "我上周说的那个方案作废，缓存层不要 Redis 了",
+  "最近进度：用户模块写完 80%，下周开始订单模块",
+  "记一下，我偏好 pnpm，别用 npm",
+  "刚才说错了，Node 版本是 24 不是 22",
+  "考试周那两周暂停开发，之后恢复",
+  "CLI 用 Ink 做，参考 Codex 的交互",
+  "测试框架 Vitest，集成测试用 Testcontainers",
+  "模型接入走 OpenAI 兼容协议，先做 DeepSeek 和千问",
+  "这个项目是毕设，截止明年五月",
+  "API 错误格式统一 problem+json",
+  "权限模型先做单用户 Bearer token，不做账号体系",
+  "embedding 用通义的，DeepSeek 没有 embedding 模型",
+  "搜索结果要支持拒答，不确定就说不记得",
+  "以后所有提交信息都用英文",
+  "等我确认之后再合并 PR",
+  "记忆中心页面要有版本时间线",
+  "当我没说过要加 Redis 那句话",
+];
+
+const deepseek = createOpenAICompatible({
+  name: "deepseek",
+  baseURL: "https://api.deepseek.com/v1",
+  apiKey,
+});
+
+async function main() {
+  const results: {
+    input: string;
+    ok: boolean;
+    ms: number;
+    error?: string;
+    output?: unknown;
+  }[] = [];
+
+  for (const input of SAMPLES) {
+    const t0 = performance.now();
+    try {
+      const { object } = await generateObject({
+        model: deepseek("deepseek-chat"),
+        schema: CandidateSchema,
+        temperature: 0,
+        prompt:
+          `从下面的用户话语中提取一条记忆候选。今天是 2026-09-17。\n` +
+          `判断 type/subject/attribute/value、时间精度、断言意图（普通陈述=ASSERT，"改用/换成"=UPDATE，` +
+          `"说错了"=CORRECT，"当我没说过"=RETRACT）、来源类型、重要度、置信度、实体、是否画像类（技术栈/进度/未决问题）。\n\n` +
+          `用户话语：${input}`,
+      });
+      results.push({ input, ok: true, ms: +(performance.now() - t0).toFixed(0), output: object });
+    } catch (err) {
+      results.push({
+        input,
+        ok: false,
+        ms: +(performance.now() - t0).toFixed(0),
+        error: err instanceof Error ? err.message.slice(0, 200) : String(err),
+      });
+    }
+  }
+
+  const ok = results.filter((r) => r.ok).length;
+  const latencies = results.map((r) => r.ms).sort((a, b) => a - b);
+  const summary = {
+    model: "deepseek-chat",
+    temperature: 0,
+    samples: results.length,
+    schemaValid: ok,
+    schemaValidRate: +(ok / results.length).toFixed(3),
+    latencyMs: {
+      p50: latencies[Math.floor(latencies.length * 0.5)],
+      p95: latencies[Math.floor(latencies.length * 0.95)],
+      max: latencies[latencies.length - 1],
+    },
+    failures: results.filter((r) => !r.ok).map((r) => ({ input: r.input, error: r.error })),
+    timestamp: new Date().toISOString(),
+  };
+
+  await writeFile(
+    new URL("../../docs/spike-deepseek-results.json", import.meta.url),
+    JSON.stringify({ summary, results }, null, 2),
+  );
+  console.log(JSON.stringify(summary, null, 2));
+  const pass = summary.schemaValidRate >= 0.95;
+  console.log(pass ? "SPIKE-① PASS" : "SPIKE-① FAIL（合法率 <95%，回 #1 讨论方案）");
+  process.exit(pass ? 0 : 1);
+}
+
+await main();
