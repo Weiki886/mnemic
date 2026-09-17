@@ -1,0 +1,7 @@
+{
+  "name": "@mnemic/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mnemic Web 记忆中心（实现归 #8，本期仅占位）"
+}
