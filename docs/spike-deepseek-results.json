@@ -1,0 +1,505 @@
+{
+  "summary": {
+    "model": "deepseek-flash",
+    "temperature": 0,
+    "path": "generateText + 文本 schema + zod 校验 + 1 次重试",
+    "samples": 20,
+    "schemaValid": 20,
+    "schemaValidRate": 1,
+    "retriedButValid": 0,
+    "latencyMs": {
+      "p50": 8067,
+      "p95": 22004,
+      "max": 22004
+    },
+    "failures": [],
+    "timestamp": "2026-09-17T06:19:35.344Z"
+  },
+  "results": [
+    {
+      "input": "我们数据库用 PostgreSQL，ORM 选 Drizzle",
+      "ok": true,
+      "retried": false,
+      "ms": 8067,
+      "output": {
+        "type": "decision",
+        "subject": "我们项目",
+        "attribute": "数据库和 ORM 技术选型",
+        "value": "数据库使用 PostgreSQL，ORM 选择 Drizzle",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.8,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "PostgreSQL",
+          "Drizzle"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "前端框架定了，Vue 3 加 Vite",
+      "ok": true,
+      "retried": false,
+      "ms": 4802,
+      "output": {
+        "type": "decision",
+        "subject": "前端框架",
+        "attribute": "技术选型",
+        "value": "Vue 3 + Vite",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.7,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "Vue 3",
+          "Vite"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "部署到 VPS，用 Docker Compose 加 Caddy 反代",
+      "ok": true,
+      "retried": false,
+      "ms": 10015,
+      "output": {
+        "type": "decision",
+        "subject": "VPS 部署",
+        "attribute": "技术方案",
+        "value": "Docker Compose 加 Caddy 反代",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.6,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.9,
+        "entities": [
+          "VPS",
+          "Docker Compose",
+          "Caddy"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "我上周说的那个方案作废，缓存层不要 Redis 了",
+      "ok": true,
+      "retried": false,
+      "ms": 8612,
+      "output": {
+        "type": "decision",
+        "subject": "缓存层",
+        "attribute": "技术选型",
+        "value": "不使用 Redis（上周方案作废）",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 1,
+        "assertion_intent": "UPDATE",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.9,
+        "confidence": 0.95,
+        "entities": [
+          "缓存层",
+          "Redis"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "最近进度：用户模块写完 80%，下周开始订单模块",
+      "ok": true,
+      "retried": false,
+      "ms": 7197,
+      "output": {
+        "type": "progress",
+        "subject": "项目开发进度",
+        "attribute": "当前状态",
+        "value": "用户模块写完80%，下周开始订单模块",
+        "valid_time": "下周",
+        "time_precision": "WEEK",
+        "time_confidence": 0.9,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.7,
+        "confidence": 0.95,
+        "entities": [
+          "用户模块",
+          "订单模块"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "记一下，我偏好 pnpm，别用 npm",
+      "ok": true,
+      "retried": false,
+      "ms": 7240,
+      "output": {
+        "type": "preference",
+        "subject": "用户",
+        "attribute": "包管理器偏好",
+        "value": "偏好 pnpm，不要使用 npm",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.9,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 1,
+        "entities": [
+          "pnpm",
+          "npm"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "刚才说错了，Node 版本是 24 不是 22",
+      "ok": true,
+      "retried": false,
+      "ms": 10650,
+      "output": {
+        "type": "fact",
+        "subject": "Node",
+        "attribute": "版本",
+        "value": "24",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.8,
+        "assertion_intent": "CORRECT",
+        "source_type": "USER_CORRECTION",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "Node",
+          "24"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "考试周那两周暂停开发，之后恢复",
+      "ok": true,
+      "retried": false,
+      "ms": 5039,
+      "output": {
+        "type": "decision",
+        "subject": "开发",
+        "attribute": "开发安排",
+        "value": "考试周那两周暂停开发，之后恢复",
+        "valid_time": "考试周那两周",
+        "time_precision": "FUZZY",
+        "time_confidence": 0.5,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.7,
+        "confidence": 0.9,
+        "entities": [
+          "考试周",
+          "开发"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "CLI 用 Ink 做，参考 Codex 的交互",
+      "ok": true,
+      "retried": false,
+      "ms": 4893,
+      "output": {
+        "type": "decision",
+        "subject": "CLI",
+        "attribute": "实现技术/交互参考",
+        "value": "使用 Ink 实现，参考 Codex 的交互",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.8,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "CLI",
+          "Ink",
+          "Codex"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "测试框架 Vitest，集成测试用 Testcontainers",
+      "ok": true,
+      "retried": false,
+      "ms": 12793,
+      "output": {
+        "type": "fact",
+        "subject": "项目",
+        "attribute": "测试框架",
+        "value": "Vitest；集成测试使用 Testcontainers",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.5,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "Vitest",
+          "Testcontainers"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "模型接入走 OpenAI 兼容协议，先做 DeepSeek 和千问",
+      "ok": true,
+      "retried": false,
+      "ms": 4336,
+      "output": {
+        "type": "decision",
+        "subject": "模型接入",
+        "attribute": "接入方案与优先级",
+        "value": "走 OpenAI 兼容协议，先做 DeepSeek 和千问",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.7,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.9,
+        "entities": [
+          "OpenAI 兼容协议",
+          "DeepSeek",
+          "千问"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "这个项目是毕设，截止明年五月",
+      "ok": true,
+      "retried": false,
+      "ms": 8600,
+      "output": {
+        "type": "fact",
+        "subject": "这个项目",
+        "attribute": "项目性质与截止时间",
+        "value": "毕设，截止2027-05",
+        "valid_time": "2027-05",
+        "time_precision": "MONTH",
+        "time_confidence": 0.9,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.9,
+        "confidence": 0.95,
+        "entities": [
+          "这个项目",
+          "毕设",
+          "2027-05"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "API 错误格式统一 problem+json",
+      "ok": true,
+      "retried": false,
+      "ms": 9298,
+      "output": {
+        "type": "decision",
+        "subject": "API 错误格式",
+        "attribute": "统一格式",
+        "value": "problem+json",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.5,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "API",
+          "problem+json"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "权限模型先做单用户 Bearer token，不做账号体系",
+      "ok": true,
+      "retried": false,
+      "ms": 6243,
+      "output": {
+        "type": "decision",
+        "subject": "权限模型",
+        "attribute": "实现方案",
+        "value": "先做单用户 Bearer token，不做账号体系",
+        "valid_time": "先",
+        "time_precision": "FUZZY",
+        "time_confidence": 0.6,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "权限模型",
+          "单用户",
+          "Bearer token",
+          "账号体系"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "embedding 用通义的，DeepSeek 没有 embedding 模型",
+      "ok": true,
+      "retried": false,
+      "ms": 12639,
+      "output": {
+        "type": "decision",
+        "subject": "embedding",
+        "attribute": "模型供应商",
+        "value": "通义（DeepSeek 没有 embedding 模型）",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.5,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.7,
+        "confidence": 0.9,
+        "entities": [
+          "embedding",
+          "通义",
+          "DeepSeek"
+        ],
+        "is_profile": true
+      }
+    },
+    {
+      "input": "搜索结果要支持拒答，不确定就说不记得",
+      "ok": true,
+      "retried": false,
+      "ms": 12679,
+      "output": {
+        "type": "decision",
+        "subject": "搜索结果",
+        "attribute": "拒答策略",
+        "value": "支持拒答；不确定就说不记得",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.5,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.7,
+        "confidence": 0.95,
+        "entities": [
+          "搜索结果",
+          "拒答"
+        ],
+        "is_profile": false
+      }
+    },
+    {
+      "input": "以后所有提交信息都用英文",
+      "ok": true,
+      "retried": false,
+      "ms": 3522,
+      "output": {
+        "type": "preference",
+        "subject": "提交信息",
+        "attribute": "语言",
+        "value": "英文",
+        "valid_time": "以后",
+        "time_precision": "FUZZY",
+        "time_confidence": 0.8,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.7,
+        "confidence": 0.95,
+        "entities": [
+          "提交信息",
+          "英文"
+        ],
+        "is_profile": false
+      }
+    },
+    {
+      "input": "等我确认之后再合并 PR",
+      "ok": true,
+      "retried": false,
+      "ms": 22004,
+      "output": {
+        "type": "decision",
+        "subject": "PR 合并",
+        "attribute": "前置条件",
+        "value": "等待用户确认后再合并",
+        "valid_time": "等我确认之后",
+        "time_precision": "FUZZY",
+        "time_confidence": 0.7,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.8,
+        "confidence": 0.95,
+        "entities": [
+          "PR"
+        ],
+        "is_profile": false
+      }
+    },
+    {
+      "input": "记忆中心页面要有版本时间线",
+      "ok": true,
+      "retried": false,
+      "ms": 5619,
+      "output": {
+        "type": "preference",
+        "subject": "记忆中心页面",
+        "attribute": "版本时间线",
+        "value": "要有",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 0.5,
+        "assertion_intent": "ASSERT",
+        "source_type": "USER_EXPLICIT",
+        "importance": 0.7,
+        "confidence": 0.9,
+        "entities": [
+          "记忆中心页面",
+          "版本时间线"
+        ],
+        "is_profile": false
+      }
+    },
+    {
+      "input": "当我没说过要加 Redis 那句话",
+      "ok": true,
+      "retried": false,
+      "ms": 7281,
+      "output": {
+        "type": "decision",
+        "subject": "Redis",
+        "attribute": "添加决策",
+        "value": "撤回要加 Redis 的说法",
+        "valid_time": "2026-09-17",
+        "time_precision": "DAY",
+        "time_confidence": 1,
+        "assertion_intent": "RETRACT",
+        "source_type": "USER_CORRECTION",
+        "importance": 0.7,
+        "confidence": 0.95,
+        "entities": [
+          "Redis"
+        ],
+        "is_profile": true
+      }
+    }
+  ]
+}
