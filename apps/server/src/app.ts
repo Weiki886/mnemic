@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import { stdSerializers } from "pino";
 import { ErrorCode, problem } from "@mnemic/shared";
 
 export interface BuildAppOptions {
@@ -11,6 +12,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
+      // Fastify 默认 req 序列化不含 headers，redact 会落空；显式带上 headers，让脱敏真实生效
+      serializers: {
+        req: (req): Record<string, unknown> => ({ ...stdSerializers.req(req.raw) }),
+      },
       redact: {
         paths: ["req.headers.authorization", 'res.headers["set-cookie"]'],
         censor: "[REDACTED]",
