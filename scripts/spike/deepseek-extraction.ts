@@ -1,5 +1,5 @@
 /**
- * Spike ①：DeepSeek 经 Vercel AI SDK generateObject 按 zod schema 提取的稳定性
+ * Spike ①：DeepSeek 经 Vercel AI SDK generateText 按 zod schema 提取的稳定性
  * 运行：DEEPSEEK_API_KEY=xxx pnpm --filter @mnemic/spike run spike:deepseek
  * 采样 ≥20 次，统计 schema 合法率与延迟；结果写入 docs/spike-deepseek-results.json
  *
