@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // 开发/测试/typecheck 专用：直接解析 workspace 源码，不要求 shared 先构建
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@mnemic/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["src", "test", "vitest.config.ts", "drizzle.config.ts"]
+}
