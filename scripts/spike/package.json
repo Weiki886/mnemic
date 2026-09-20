@@ -6,7 +6,9 @@
   "scripts": {
     "spike:deepseek": "tsx deepseek-extraction.ts",
     "spike:pgvector": "tsx pgvector-hybrid.ts",
-    "spike:conflict": "tsx conflict-loop.ts"
+    "spike:conflict": "tsx conflict-loop.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^1.0.0",
