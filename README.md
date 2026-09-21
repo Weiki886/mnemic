@@ -14,6 +14,9 @@ brew services start postgresql@17
 createuser mnemic -d -P   # 密码示例：mnemic（仅本地）
 createdb mnemic -O mnemic
 psql -d mnemic -c "CREATE EXTENSION IF NOT EXISTS vector;"
+#    集成测试独立库（#3 起；不碰开发库数据）：
+createdb mnemic_test -O mnemic
+psql -d mnemic_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
 #    等价容器环境（CI / 部署使用）：
 #    docker compose up -d
 
