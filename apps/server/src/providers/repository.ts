@@ -6,9 +6,9 @@ import { decrypt, encrypt, maskApiKey } from "./crypto.js";
 
 /** 三槽位模型配置（ADR-005）；槽位未配置时该键缺省 */
 export interface ModelSlots {
-  chat?: string;
-  extraction?: string;
-  embedding?: string;
+  chat?: string | undefined;
+  extraction?: string | undefined;
+  embedding?: string | undefined;
 }
 
 export interface CreateProviderInput {

@@ -11,6 +11,8 @@ describe("provider_configs 仓储（#14）", () => {
   let t: TestDb;
   beforeAll(async () => {
     t = await setupTestDb();
+    // 测试库跨运行持久：清理本文件用例行，保证重跑幂等
+    await t.sql`delete from provider_configs where name = 'deepseek'`;
   }, 180_000);
   afterAll(async () => {
     await t.close();
