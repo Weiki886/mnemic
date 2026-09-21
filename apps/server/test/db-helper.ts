@@ -60,6 +60,8 @@ export async function setupTestDb(): Promise<TestDb> {
 
   // 迁移串行化：vitest 多测试文件并行 worker 会并发 migrate 同一测试库，
   // CREATE EXTENSION/TYPE 竞态导致 pg_namespace 唯一冲突——advisory lock 互斥。
+  // advisory lock key 727272：任意固定常量即可（取 Mnemic 谐音 7 的重复），
+  // 只需全仓库唯一使用、不与其他锁冲突。
   const migSql = postgres(url, { max: 1 });
   await migSql`select pg_advisory_lock(727272)`;
   try {

@@ -9,6 +9,8 @@
  * 1. RETRACT 后 Belief 的 status 落点 = 'retracted'（deleted=硬删除、expired=自然失效，语义均不符）。
  * 2. Observation.valid_time（证据声称的生效时点，单点）落为 BeliefVersion 区间：
  *    valid_from = valid_time，valid_to = null（开口）；被取代时由 Resolver 关闭 valid_to/recorded_to。
+ *    边界：valid_time 可空（证据未声称生效时点），而 belief_versions.valid_from 非空——
+ *    此时 valid_from 兜底为 Observation.recorded_at（系统首次获知之时），由 #16/#17 转换实现遵守。
  *
  * authority 映射（决策 4，创建即写入，非 Resolver 前现算）：
  * USER_CORRECTION=70 > USER_EXPLICIT=60 > PROJECT_FILE=50 > TOOL_OBSERVATION=40

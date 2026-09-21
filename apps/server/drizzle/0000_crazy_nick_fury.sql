@@ -7,6 +7,8 @@
 --   2. Observation.valid_time（证据声称的生效时点，单点）落为 BeliefVersion
 --      区间：valid_from = valid_time，valid_to = NULL（开口）；被取代时由
 --      Resolver 关闭 valid_to / recorded_to。两端命名差异由此注释统一语义。
+--      边界：valid_time 可空而 valid_from 非空——此时 valid_from 兜底为
+--      Observation.recorded_at（系统首次获知之时），由 #16/#17 转换实现遵守。
 --
 -- authority 映射（决策 4，创建即写入）：
 --   USER_CORRECTION=70 > USER_EXPLICIT=60 > PROJECT_FILE=50
