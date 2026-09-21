@@ -16,13 +16,15 @@ export interface ProviderFactory {
 export const realProviderFactory: ProviderFactory = {
   languageModel(config, modelId) {
     if (config.protocol === "anthropic") {
-      return createAnthropic({ baseURL: config.baseUrl, apiKey: config.apiKey })(modelId);
+      return createAnthropic({ baseURL: config.baseUrl, apiKey: config.apiKey })(
+        modelId,
+      ) as LanguageModel;
     }
     return createOpenAICompatible({
       name: config.name,
       baseURL: config.baseUrl,
       apiKey: config.apiKey,
-    })(modelId);
+    })(modelId) as LanguageModel;
   },
   embeddingModel(config, modelId) {
     if (config.protocol === "anthropic") {

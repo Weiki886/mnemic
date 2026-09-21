@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.58",
+    "@ai-sdk/anthropic": "^2.0.102",
     "@ai-sdk/openai-compatible": "^1.0.54",
     "@mnemic/shared": "workspace:*",
     "ai": "^5.0.259",

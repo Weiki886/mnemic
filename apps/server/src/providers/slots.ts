@@ -16,13 +16,25 @@ export interface ResolveOptions {
   factory?: ProviderFactory;
 }
 
-export interface ResolvedModel {
-  model: LanguageModel | EmbeddingModel;
+export interface ResolvedModel<M = LanguageModel | EmbeddingModel> {
+  model: M;
   modelId: string;
   providerName: string;
   slot: Slot;
 }
 
+export async function resolveModel(
+  db: PostgresJsDatabase,
+  masterKey: Buffer,
+  slot: "embedding",
+  options?: ResolveOptions,
+): Promise<ResolvedModel<EmbeddingModel>>;
+export async function resolveModel(
+  db: PostgresJsDatabase,
+  masterKey: Buffer,
+  slot: "chat" | "extraction",
+  options?: ResolveOptions,
+): Promise<ResolvedModel<LanguageModel>>;
 export async function resolveModel(
   db: PostgresJsDatabase,
   masterKey: Buffer,

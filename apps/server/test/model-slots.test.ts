@@ -1,12 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { embed, generateText } from "ai";
-import { parseMasterKey } from "../src/providers/crypto.js";
 import { createProvider } from "../src/providers/repository.js";
 import { fakeProviderFactory, realProviderFactory } from "../src/providers/factory.js";
 import { resolveModel } from "../src/providers/slots.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
-
-const MASTER_KEY = parseMasterKey("d".repeat(64));
+import { TEST_MASTER_KEY as MASTER_KEY } from "./test-keys.js";
 
 describe("模型槽位解析（#14，全离线 Fake）", () => {
   let t: TestDb;

@@ -1,13 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseMasterKey } from "../src/providers/crypto.js";
 import {
   createProvider,
   getProviderWithKey,
   listProviders,
 } from "../src/providers/repository.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
-
-const MASTER_KEY = parseMasterKey("c".repeat(64));
+import { TEST_MASTER_KEY as MASTER_KEY } from "./test-keys.js";
 
 describe("provider_configs 仓储（#14）", () => {
   let t: TestDb;
