@@ -66,6 +66,10 @@ export const beliefStatusEnum = pgEnum("belief_status", [
   "deleted",
   "retracted",
 ]);
+export const providerProtocolEnum = pgEnum("provider_protocol", [
+  "openai-compatible",
+  "anthropic",
+]);
 
 /** 项目命名空间（能力 2.5） */
 export const projects = pgTable("projects", {
@@ -213,4 +217,20 @@ export const auditLog = pgTable("audit_log", {
   target: text("target"),
   decision: text("decision"),
   meta: jsonb("meta"),
+});
+
+/**
+ * Provider 配置（#14 自带迁移；ADR-005 配置单源）。
+ * api_key_encrypted：AES-256-GCM 密文（v1:<iv>:<tag>:<ct>），任何读出方不得回传明文；
+ * models：{chat?, extraction?, embedding?} 三槽位模型名，槽位切换不改调用方代码。
+ */
+export const providerConfigs = pgTable("provider_configs", {
+  id: id(),
+  name: text("name").notNull().unique(),
+  protocol: providerProtocolEnum("protocol").notNull(),
+  baseUrl: text("base_url").notNull(),
+  apiKeyEncrypted: text("api_key_encrypted").notNull(),
+  models: jsonb("models").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
 });
