@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { stdSerializers } from "pino";
 import { ErrorCode, problem } from "@mnemic/shared";
+import { registerProviderRoutes } from "./providers/routes.js";
 
 export interface BuildAppOptions {
   /** 测试用：自定义日志输出流 */
   logStream?: { write: (chunk: string) => void };
+  /** 配置后注册 Providers 配置 API（#14）；二者缺一不注册 */
+  db?: PostgresJsDatabase | undefined;
+  masterKey?: Buffer | undefined;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -34,6 +39,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   app.get("/health", async () => ({ status: "ok" }));
+
+  if (options.db && options.masterKey) {
+    registerProviderRoutes(app, options.db, options.masterKey);
+  }
 
   app.setNotFoundHandler((request, reply) => {
     reply
