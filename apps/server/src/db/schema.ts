@@ -70,6 +70,13 @@ export const providerProtocolEnum = pgEnum("provider_protocol", [
   "openai-compatible",
   "anthropic",
 ]);
+export const pendingStatusEnum = pgEnum("pending_status", [
+  "pending",
+  "confirmed",
+  "expired",
+  "rejected",
+  "promoted",
+]);
 
 /** 项目命名空间（能力 2.5） */
 export const projects = pgTable("projects", {
@@ -233,4 +240,25 @@ export const providerConfigs = pgTable("provider_configs", {
   models: jsonb("models").notNull(),
   createdAt: ts("created_at").notNull().defaultNow(),
   updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * PENDING 候选（#15 自带迁移）：Gate 判 PENDING 的候选落此表，重启不丢。
+ * candidate = 候选快照（已脱敏，非派生物）；gate_scores 五因子；
+ * 生命周期：pending → confirmed（人工）/ rejected（人工）/ expired（TTL）/ promoted（重估通过，#16 消费）。
+ */
+export const pendingCandidates = pgTable("pending_candidates", {
+  id: id(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
+  candidate: jsonb("candidate").notNull(),
+  gateScores: jsonb("gate_scores").notNull(),
+  status: pendingStatusEnum("status").notNull().default("pending"),
+  ttlExpiresAt: ts("ttl_expires_at").notNull(),
+  evidenceId: uuid("evidence_id")
+    .notNull()
+    .references(() => messages.id),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  decidedAt: ts("decided_at"),
 });
