@@ -5,6 +5,7 @@ import { beliefVersions, beliefs, observations } from "../db/schema.js";
 import type { CandidateWithAuthority } from "../extraction/authority.js";
 import type { ConflictRelation } from "../resolver/types.js";
 import { RESOLVER_VERSION, resolveObservation, type ResolverDeps } from "../resolver/resolver.js";
+import { DbResolutionTraceWriter } from "../resolver/trace-writer.js";
 import { classifyValues } from "../resolver/value-compare.js";
 import { normalizeTerm } from "./normalization.js";
 
@@ -132,7 +133,11 @@ export async function ingestCandidate(
     ? await db.select().from(beliefVersions).where(eq(beliefVersions.id, belief.currentVersionId)).limit(1)
     : [undefined];
   const valueRelation = current ? classifyValues(current.value, obs!.value) : "conflict";
-  const resolved = await resolveObservation(db, { projectId, observation: obs!, belief }, deps);
+  // trace 落库接线（#18）：调用方未指定 writer 时默认落 resolution_traces
+  const resolved = await resolveObservation(db, { projectId, observation: obs!, belief }, {
+    ...deps,
+    traceWriter: deps.traceWriter ?? new DbResolutionTraceWriter(db),
+  });
   return {
     route: valueRelation === "equal" ? "merged" : "conflict",
     observationId: obs!.id,

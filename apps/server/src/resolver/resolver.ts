@@ -92,6 +92,8 @@ export async function resolveObservation(
       beliefId: belief.id,
       observationId: observation.id,
       relation: null,
+      confidenceBefore: belief.confidence === null ? null : Number(belief.confidence),
+      confidenceAfter: belief.confidence === null ? null : Number(belief.confidence),
       policies: { intent: { action: "ignore", intent: observation.assertionIntent } },
       previousVersionId: belief.currentVersionId,
       resultVersionId: null,
@@ -123,6 +125,8 @@ export async function resolveObservation(
       beliefId: belief.id,
       observationId: observation.id,
       relation: null,
+      confidenceBefore: belief.confidence === null ? null : Number(belief.confidence),
+      confidenceAfter: belief.confidence === null ? null : Number(belief.confidence),
       policies: { intent: { action: "retract", intent: observation.assertionIntent } },
       previousVersionId: current?.id ?? null,
       resultVersionId: null,
@@ -145,17 +149,20 @@ export async function resolveObservation(
   // 4. 事务落库
   const at = now();
   let resultVersionId: string | null = null;
+  const confidenceBefore = belief.confidence === null ? null : Number(belief.confidence);
+  let confidenceAfter = confidenceBefore;
   await db.transaction(async (tx) => {
     const markDirty = belief.isProfile ? { profileDirty: true } : {};
     const bumpEvidence = sql`${beliefs.evidenceCount} + 1`;
     const currentConfidence = Number(belief.confidence ?? 0.5);
 
     if (outcome.relation === "strengthen") {
+      confidenceAfter = Math.min(1, currentConfidence + STRENGTHEN_BOOST);
       await tx
         .update(beliefs)
         .set({
           evidenceCount: bumpEvidence,
-          confidence: String(Math.min(1, currentConfidence + STRENGTHEN_BOOST)),
+          confidence: String(confidenceAfter),
           ...markDirty,
         })
         .where(eq(beliefs.id, belief.id));
@@ -181,11 +188,12 @@ export async function resolveObservation(
         .where(eq(beliefs.id, belief.id));
       resultVersionId = id;
     } else if (outcome.relation === "weaken") {
+      confidenceAfter = Math.max(0, currentConfidence - WEAKEN_PENALTY);
       await tx
         .update(beliefs)
         .set({
           evidenceCount: bumpEvidence,
-          confidence: String(Math.max(0, currentConfidence - WEAKEN_PENALTY)),
+          confidence: String(confidenceAfter),
           ...markDirty,
         })
         .where(eq(beliefs.id, belief.id));
@@ -219,6 +227,9 @@ export async function resolveObservation(
           ...markDirty,
         })
         .where(eq(beliefs.id, belief.id));
+      confidenceAfter = observation.confidence === null
+        ? confidenceBefore
+        : Number(observation.confidence);
       resultVersionId = id;
     }
   });
@@ -229,6 +240,8 @@ export async function resolveObservation(
     beliefId: belief.id,
     observationId: observation.id,
     relation: outcome.relation,
+    confidenceBefore,
+    confidenceAfter,
     policies: { intent: { action: "proceed" }, detail: outcome.detail },
     previousVersionId: current?.id ?? null,
     resultVersionId,

@@ -142,6 +142,27 @@ describe("Resolver 编排与落库（#5）", () => {
     expect(records).toHaveLength(1);
     expect(records[0]!.relation).toBe("supersede");
     expect(records[0]!.resolverVersion).toBe(RESOLVER_VERSION);
+    // 置信前后值（#18）：supersede 后置信切换为新证据置信
+    expect(records[0]!.confidenceBefore).toBeCloseTo(0.6);
+    expect(records[0]!.confidenceAfter).toBeCloseTo(0.8);
+  });
+
+  it("trace 记录置信前后值：strengthen 提升、weaken 下降、ignore 不变（#18）", async () => {
+    const belief = await seedBelief({
+      value: "Redis", authority: 60, validFrom: "2026-09-01", subject: "cf-1", confidence: 0.6,
+    });
+    const { records, writer } = collector();
+    // strengthen：0.6 → 0.7
+    const eqObs = await mkObservation({ value: "redis", authority: 60, validTime: "2026-09-02", subject: "cf-1" });
+    await resolveObservation(t.db, { projectId, observation: eqObs, belief }, { traceWriter: writer });
+    expect(records[0]!.confidenceBefore).toBeCloseTo(0.6);
+    expect(records[0]!.confidenceAfter).toBeCloseTo(0.7);
+    // weaken（低权威挑战）：0.7 → 0.5
+    const wkObs = await mkObservation({ value: "Memcached", authority: 10, validTime: "2026-09-03", subject: "cf-1", intent: "UPDATE" });
+    const [b2] = await t.db.select().from(beliefs).where(eq(beliefs.id, belief.id));
+    await resolveObservation(t.db, { projectId, observation: wkObs, belief: b2! }, { traceWriter: writer });
+    expect(records[1]!.confidenceBefore).toBeCloseTo(0.7);
+    expect(records[1]!.confidenceAfter).toBeCloseTo(0.5);
   });
 
   it("weaken：低权威冲突不改判——当前值/版本不变，confidence 降、evidence_count 加", async () => {

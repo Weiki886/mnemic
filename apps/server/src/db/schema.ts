@@ -227,6 +227,34 @@ export const auditLog = pgTable("audit_log", {
 });
 
 /**
+ * 消解决策轨迹（#18 自带迁移；决策 11：更新链路与检索链路对等可观测）。
+ * 只存引用与决策数据，不复制正文（值等正文一律经 FK 回查，negative test 断言无内容快照列）。
+ * relation：四态之一；null = ignore/retract（具体动作见 policies.intent）。
+ * model_snapshot：提取模型名称/版本快照（§11 实验锁定），落库时从 provider_configs 现查。
+ */
+export const resolutionTraces = pgTable("resolution_traces", {
+  id: id(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
+  beliefId: uuid("belief_id")
+    .notNull()
+    .references(() => beliefs.id),
+  observationId: uuid("observation_id")
+    .notNull()
+    .references(() => observations.id),
+  previousVersionId: uuid("previous_version_id").references(() => beliefVersions.id),
+  resultVersionId: uuid("result_version_id").references(() => beliefVersions.id),
+  relation: text("relation"),
+  confidenceBefore: score("confidence_before"),
+  confidenceAfter: score("confidence_after"),
+  policies: jsonb("policies").notNull(),
+  modelSnapshot: jsonb("model_snapshot"),
+  resolverVersion: text("resolver_version").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+/**
  * Provider 配置（#14 自带迁移；ADR-005 配置单源）。
  * api_key_encrypted：AES-256-GCM 密文（v1:<iv>:<tag>:<ct>），任何读出方不得回传明文；
  * models：{chat?, extraction?, embedding?} 三槽位模型名，槽位切换不改调用方代码。

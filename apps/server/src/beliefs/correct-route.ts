@@ -1,10 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { uuidv7 } from "uuidv7";
 import { z } from "zod";
 import { ErrorCode, problem } from "@mnemic/shared";
-import { beliefs, conversations, messages } from "../db/schema.js";
+import { beliefs, conversations, messages, resolutionTraces } from "../db/schema.js";
 import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
 
@@ -14,6 +14,27 @@ const CorrectBody = z.object({ value: z.string().min(1) });
 const CORRECTIONS_CONVERSATION_TITLE = "manual-corrections";
 
 export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
+  // 消解历史查询（#18）：UI 版本时间线与实验分析消费
+  app.get("/beliefs/:id/resolutions", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const [belief] = await db.select({ id: beliefs.id }).from(beliefs).where(eq(beliefs.id, id)).limit(1);
+    if (!belief) {
+      return reply.code(404).header("content-type", "application/problem+json").send(
+        problem({
+          status: 404,
+          code: ErrorCode.NOT_FOUND,
+          detail: `Belief 不存在：${id}`,
+          requestId: request.id,
+        }),
+      );
+    }
+    return db
+      .select()
+      .from(resolutionTraces)
+      .where(eq(resolutionTraces.beliefId, id))
+      .orderBy(asc(resolutionTraces.createdAt));
+  });
+
   app.post("/beliefs/:id/correct", async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = CorrectBody.safeParse(request.body);
