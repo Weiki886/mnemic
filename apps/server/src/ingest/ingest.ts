@@ -21,6 +21,18 @@ export interface IngestResult {
   relation: ConflictRelation | null;
 }
 
+export interface IndexEmbeddingArgs {
+  beliefVersionId: string;
+  subject: string;
+  attribute: string;
+  value: unknown;
+}
+
+export interface IngestDeps extends ResolverDeps {
+  /** embedding 写入钩子（#6）：新版本产生后调用；未注入则不索引（fail fast：注入后抛错则 ingest 抛错） */
+  indexEmbedding?: (args: IndexEmbeddingArgs) => Promise<void>;
+}
+
 /** valid_time 为 ISO 原文则解析，模糊原文无法解析 → null（recorded_at 兜底规则见 schema 注释） */
 function parseValidTime(raw: string): Date | null {
   const d = new Date(raw);
@@ -37,7 +49,7 @@ export async function ingestCandidate(
   projectId: string,
   candidate: CandidateWithAuthority,
   evidenceId: string,
-  deps: ResolverDeps = {},
+  deps: IngestDeps = {},
 ): Promise<IngestResult> {
   const subject = normalizeTerm(candidate.subject);
   const attribute = normalizeTerm(candidate.attribute);
@@ -125,6 +137,9 @@ export async function ingestCandidate(
       });
       await tx.update(beliefs).set({ currentVersionId: versionId }).where(eq(beliefs.id, beliefId));
     });
+    if (deps.indexEmbedding) {
+      await deps.indexEmbedding({ beliefVersionId: versionId, subject, attribute, value: candidate.value });
+    }
     return { route: "created", observationId: obs!.id, beliefId, relation: null };
   }
 
@@ -138,6 +153,11 @@ export async function ingestCandidate(
     ...deps,
     traceWriter: deps.traceWriter ?? new DbResolutionTraceWriter(db),
   });
+  if (deps.indexEmbedding && resolved.resultVersionId) {
+    await deps.indexEmbedding({
+      beliefVersionId: resolved.resultVersionId, subject, attribute, value: candidate.value,
+    });
+  }
   return {
     route: valueRelation === "equal" ? "merged" : "conflict",
     observationId: obs!.id,
