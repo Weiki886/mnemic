@@ -5,6 +5,7 @@ import { ingestCandidate } from "../src/ingest/ingest.js";
 import type { CandidateWithAuthority } from "../src/extraction/authority.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { TEST_MASTER_KEY } from "./test-keys.js";
+import { buildApp } from "../src/app.js";
 
 describe("resolution_traces 落库（#18，决策 11）", () => {
   let t: TestDb;
@@ -114,5 +115,27 @@ describe("resolution_traces 落库（#18，决策 11）", () => {
     expect(rows[0]!.model_snapshot.provider).toContain("trace-test-");
     expect(rows[0]!.model_snapshot.model).toBe("deepseek-flash");
     expect(rows[0]!.model_snapshot.slot).toBe("extraction");
+  });
+
+  it("GET /beliefs/:id/resolutions → 按时间升序返回消解历史；belief 不存在 → 404", async () => {
+    const app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    const subject = `tr-api-${uuidv7().slice(0, 8)}`;
+    const first = await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: "Redis" }), await mkMessage());
+    await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: "redis" }), await mkMessage());
+    await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: "Memcached", assertion_intent: "UPDATE", valid_time: "2026-09-10" }), await mkMessage());
+
+    const res = await app.inject({ method: "GET", url: `/beliefs/${first.beliefId}/resolutions` });
+    expect(res.statusCode).toBe(200);
+    const list = res.json();
+    expect(list).toHaveLength(2);
+    expect(list[0].relation).toBe("strengthen");
+    expect(list[1].relation).toBe("supersede");
+    expect(new Date(list[0].createdAt).getTime()).toBeLessThanOrEqual(new Date(list[1].createdAt).getTime());
+    expect(list[0].policies).toBeTruthy();
+
+    const missing = await app.inject({ method: "GET", url: `/beliefs/${uuidv7()}/resolutions` });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.headers["content-type"]).toContain("application/problem+json");
+    await app.close();
   });
 });
