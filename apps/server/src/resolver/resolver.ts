@@ -124,6 +124,9 @@ export async function resolveObservation(
         })
         .where(eq(beliefs.id, belief.id));
     } else if (outcome.relation === "weaken" && outcome.detail.reason === "late_evidence" && current) {
+      // 历史版本是旁支事实，不取代任何版本：supersedesVersionId 有意留空（非遗漏）。
+      // 该字段语义 = "本版本取代了谁"；迟到证据没有取代当前版本。
+      // 版本时间线（#8）按 belief_id + valid_from 查询，不依赖取代链遍历，故旁支可达。
       const id = uuidv7();
       await tx.insert(beliefVersions).values({
         id,

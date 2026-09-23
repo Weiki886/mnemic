@@ -203,6 +203,8 @@ describe("Resolver 编排与落库（#5）", () => {
     expect(hist).toHaveLength(1);
     expect(new Date(hist[0]!.valid_from).getTime()).toBe(new Date("2026-09-01T00:00:00.000Z").getTime());
     expect(new Date(hist[0]!.valid_to).getTime()).toBe(new Date("2026-09-10T00:00:00.000Z").getTime());
+    // 旁支历史不取代任何版本：supersedes_version_id 必须为 null（设计决定，见 resolver.ts 注释）
+    expect(hist[0]!.supersedes_version_id).toBeNull();
     expect(records[0]!.relation).toBe("weaken");
     expect((records[0]!.policies as { detail: { reason: string } }).detail.reason).toBe("late_evidence");
   });
