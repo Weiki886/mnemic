@@ -40,7 +40,7 @@ export async function processCandidate(
           action: "redact",
           target: `candidate.${field}`,
           decision: "redacted",
-          meta: { pattern: hit.pattern },
+          meta: { pattern: hit.pattern, count: hit.count },
         });
       }
     }

@@ -51,6 +51,15 @@ describe("Secret 检测与脱敏（#15，安全没有第二阶段）", () => {
     expect(r.hits).toHaveLength(2);
   });
 
+  it("同一模式多处命中：全部替换且 count 记录实际命中次数", () => {
+    const r = sanitizeText("key1=AKIAIOSFODNN7EXAMPLE key2=AKIAJKLMNOPQRSTUVWXY");
+    expect(r.text).toBe("key1=[REDACTED] key2=[REDACTED]");
+    const hit = r.hits.find((h) => h.pattern === "aws_access_key");
+    expect(hit).toBeDefined();
+    expect(hit!.count).toBe(2);
+    expect(r.hits).toHaveLength(1);
+  });
+
   it("命中记录只含模式名，绝不含密钥本体", () => {
     const secret = "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz123456";
     const r = sanitizeText(`token=${secret}`);

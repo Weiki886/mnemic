@@ -65,6 +65,20 @@ describe("PENDING 四态生命周期（#15）", () => {
     expect(after[0]!.status).toBe("promoted");
   });
 
+  it("retry：不同 subject/attribute 的 PENDING 不受影响，保持 pending", async () => {
+    const other = await createPending(t.db, {
+      projectId,
+      candidate: { ...baseCandidate, subject: "other-project", attribute: "orm" },
+      gateScores,
+      evidenceId: messageId,
+      ttlMs: 7 * 24 * 3600 * 1000,
+    });
+    const promoted = await retryPendingGroup(t.db, projectId, "my-project", "cache");
+    expect(promoted.map((p) => p.id)).not.toContain(other.id);
+    const after = await t.sql`select status from pending_candidates where id = ${other.id}`;
+    expect(after[0]!.status).toBe("pending");
+  });
+
   it("expire：TTL 过期 → expired", async () => {
     const row = await mkPending(-1000); // 已过期
     const expired = await expirePending(t.db);

@@ -1,4 +1,4 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { pendingCandidates } from "../db/schema.js";
 import type { CandidateWithAuthority } from "../extraction/authority.js";
@@ -28,12 +28,14 @@ export async function retryPendingGroup(
       and(
         eq(pendingCandidates.projectId, projectId),
         eq(pendingCandidates.status, "pending"),
+        // subject/attribute 过滤下推到 SQL（JSONB 路径），避免全量加载后 JS 侧过滤
+        sql`${pendingCandidates.candidate}->>'subject' = ${subject}`,
+        sql`${pendingCandidates.candidate}->>'attribute' = ${attribute}`,
       ),
     );
   const promoted: PendingRow[] = [];
   for (const row of rows) {
     const candidate = row.candidate as CandidateWithAuthority;
-    if (candidate.subject !== subject || candidate.attribute !== attribute) continue;
     const boosted = {
       ...candidate,
       confidence: Math.min(1, candidate.confidence + CORROBORATION_BOOST),

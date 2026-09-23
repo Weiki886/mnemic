@@ -8,6 +8,8 @@ export const REDACTED = "[REDACTED]";
 
 export interface SecretHit {
   pattern: string;
+  /** 该模式在文本中的命中次数（同一模式多处命中不合并漏报） */
+  count: number;
 }
 
 interface SecretPattern {
@@ -42,9 +44,9 @@ export function sanitizeText(input: string): SanitizeResult {
   const hits: SecretHit[] = [];
   for (const { name, regex } of PATTERNS) {
     regex.lastIndex = 0;
-    if (regex.test(text)) {
-      hits.push({ pattern: name });
-      regex.lastIndex = 0;
+    const matches = text.match(regex);
+    if (matches && matches.length > 0) {
+      hits.push({ pattern: name, count: matches.length });
       text = text.replace(regex, REDACTED);
     }
   }
