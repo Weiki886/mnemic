@@ -55,6 +55,9 @@ importers:
       uuidv7:
         specifier: ^1.2.1
         version: 1.2.1
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       zod:
         specifier: ^3.23.0
         version: 3.25.76
