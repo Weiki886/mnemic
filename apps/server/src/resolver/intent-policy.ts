@@ -7,7 +7,7 @@ export interface IntentPolicy {
 
 /** 默认 ASSERT 直通（A0）：不做意图门控，全部放行给 Authority/Temporal/Conflict */
 export class DefaultAssertIntentPolicy implements IntentPolicy {
-  decide(): IntentVerdict {
+  decide(_input: { intent: string }): IntentVerdict {
     return { action: "proceed" };
   }
 }
