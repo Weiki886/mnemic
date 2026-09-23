@@ -2,7 +2,7 @@ import { embed } from "ai";
 import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
-import { beliefs, retrievalTraces } from "../db/schema.js";
+import { retrievalTraces } from "../db/schema.js";
 import { resolveModel, type ResolveOptions } from "../providers/slots.js";
 
 // A0 融合权重与拒答阈值（校准归 #12 评测平台，勿分散硬编码）
