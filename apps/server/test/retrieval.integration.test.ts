@@ -118,4 +118,32 @@ describe("两路混合检索（#6）", () => {
     const candidates = rows[0]!.candidates as Array<{ reason: string }>;
     expect(candidates.every((c) => c.reason === "below_threshold")).toBe(true);
   });
+
+  it("读时强化钩子：reinforce 开启时入选 belief 的 salience 提升（封顶 1）且开关状态入 trace", async () => {
+    const { beliefId } = await seedFact({
+      subject: `rf-${uuidv7().slice(0, 8)}`, attribute: "db", value: "reinforce target postgresql", indexed: true,
+    });
+    const r = await retrieve(t.db, TEST_MASTER_KEY, projectId, "reinforce postgresql", {
+      ...opts, threshold: 0.1, reinforce: true,
+    });
+    expect(r.abstained).toBe(false);
+    const hit = r.candidates.find((c) => c.beliefId === beliefId);
+    expect(hit).toBeDefined();
+    const b = await t.sql`select salience from beliefs where id = ${beliefId}`;
+    expect(Number(b[0]!.salience)).toBeCloseTo(Math.min(1, 0.5 + 0.05));
+    const rows = await t.sql`select reinforce_enabled from retrieval_traces where id = ${r.traceId}`;
+    expect(rows[0]!.reinforce_enabled).toBe(true);
+  });
+
+  it("默认关闭时读取不改变任一强度字段（salience 不变，trace 记录开关关闭）", async () => {
+    const { beliefId } = await seedFact({
+      subject: `norf-${uuidv7().slice(0, 8)}`, attribute: "db", value: "plain read postgresql", indexed: true,
+    });
+    const r = await retrieve(t.db, TEST_MASTER_KEY, projectId, "plain postgresql", { ...opts, threshold: 0.1 });
+    expect(r.candidates.find((c) => c.beliefId === beliefId)).toBeDefined();
+    const b = await t.sql`select salience from beliefs where id = ${beliefId}`;
+    expect(Number(b[0]!.salience)).toBeCloseTo(0.5); // 未变
+    const rows = await t.sql`select reinforce_enabled from retrieval_traces where id = ${r.traceId}`;
+    expect(rows[0]!.reinforce_enabled).toBe(false);
+  });
 });
