@@ -102,7 +102,7 @@ describe("写入路径③：去重与四路分流（#16）", () => {
   it("同 subject+attribute 不同值 → conflict 转入 #5，绝不合并（值被改判而非混存）", async () => {
     const subject = `conf-${uuidv7().slice(0, 8)}`;
     const first = await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: "MySQL", valid_time: "2026-09-01" }), await mkMessage());
-    const second = await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: "PostgreSQL", valid_time: "2026-09-10" }), await mkMessage());
+    const second = await ingestCandidate(t.db, projectId, mkCandidate({ subject, assertion_intent: "UPDATE", value: "PostgreSQL", valid_time: "2026-09-10" }), await mkMessage());
     expect(second.route).toBe("conflict");
     expect(second.relation).toBe("supersede");
     const b = await t.sql`select current_version_id from beliefs where id = ${first.beliefId}`;
