@@ -110,6 +110,17 @@ describe("写入路径③：去重与四路分流（#16）", () => {
     expect(v[0]!.value).toBe("PostgreSQL"); // 改判为唯一当前值，不是两值并存
   });
 
+  it("候选涵盖当前值 → conflict 路由桶，Resolver 输出 extend（新版本为合并值）", async () => {
+    const subject = `ext-${uuidv7().slice(0, 8)}`;
+    const first = await ingestCandidate(t.db, projectId, mkCandidate({ subject, attribute: "frontend", value: "用 React" }), await mkMessage());
+    const second = await ingestCandidate(t.db, projectId, mkCandidate({ subject, attribute: "frontend", value: "用 React 和 TypeScript", valid_time: "2026-09-10" }), await mkMessage());
+    expect(second.route).toBe("conflict"); // 四路定义不含 extend 独立路由，归 conflict 桶
+    expect(second.relation).toBe("extend");
+    const b = await t.sql`select current_version_id from beliefs where id = ${first.beliefId}`;
+    const v = await t.sql`select value from belief_versions where id = ${b[0]!.current_version_id}`;
+    expect(v[0]!.value).toBe("用 React 和 TypeScript");
+  });
+
   it("画像类 Belief 创建 → profile_dirty 置位，is_profile 从候选正确复制入行", async () => {
     const r = await ingestCandidate(t.db, projectId, mkCandidate({ is_profile: true }), await mkMessage());
     const b = await t.sql`select is_profile, profile_dirty from beliefs where id = ${r.beliefId}`;
