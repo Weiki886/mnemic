@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { stdSerializers } from "pino";
 import { ErrorCode, problem } from "@mnemic/shared";
 import { registerProviderRoutes } from "./providers/routes.js";
+import { registerGateRoutes } from "./gate/routes.js";
 
 export interface BuildAppOptions {
   /** 测试用：自定义日志输出流 */
@@ -42,6 +43,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   if (options.db && options.masterKey) {
     registerProviderRoutes(app, options.db, options.masterKey);
+  }
+  if (options.db) {
+    registerGateRoutes(app, options.db);
   }
 
   app.setNotFoundHandler((request, reply) => {
