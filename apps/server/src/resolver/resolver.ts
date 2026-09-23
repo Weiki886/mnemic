@@ -213,6 +213,7 @@ export async function resolveObservation(
         .update(beliefs)
         .set({
           currentVersionId: id,
+          status: "active", // 修正 RETRACT 后的信念时复活（新版本成当前即恢复生效）
           evidenceCount: bumpEvidence,
           confidence: observation.confidence ?? belief.confidence,
           ...markDirty,
