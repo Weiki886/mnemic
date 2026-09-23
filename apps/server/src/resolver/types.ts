@@ -30,6 +30,9 @@ export interface ResolutionTraceRecord {
   beliefId: string;
   observationId: string;
   relation: ConflictRelation | null;
+  /** 置信前后值（决策数据；未变化时二者相等） */
+  confidenceBefore: number | null;
+  confidenceAfter: number | null;
   /** 各 Policy 决策数据（权威比较、时序判定、前后置信），只存决策数据不复制正文 */
   policies: Record<string, unknown>;
   previousVersionId: string | null;
