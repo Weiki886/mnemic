@@ -5,6 +5,7 @@ import { stdSerializers } from "pino";
 import { ErrorCode, problem } from "@mnemic/shared";
 import { registerProviderRoutes } from "./providers/routes.js";
 import { registerGateRoutes } from "./gate/routes.js";
+import { registerBeliefRoutes } from "./beliefs/correct-route.js";
 
 export interface BuildAppOptions {
   /** 测试用：自定义日志输出流 */
@@ -46,6 +47,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
   if (options.db) {
     registerGateRoutes(app, options.db);
+    registerBeliefRoutes(app, options.db);
   }
 
   app.setNotFoundHandler((request, reply) => {

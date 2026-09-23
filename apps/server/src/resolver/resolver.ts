@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
 import { beliefVersions, beliefs, observations } from "../db/schema.js";
-import { DefaultAssertIntentPolicy, type IntentPolicy } from "./intent-policy.js";
+import { AssertionIntentPolicy, type IntentPolicy } from "./intent-policy.js";
 import { decideRelation } from "./policies.js";
 import {
   noopTraceWriter,
@@ -56,28 +56,12 @@ export async function resolveObservation(
   params: ResolveParams,
   deps: ResolverDeps = {},
 ): Promise<ResolveResult> {
-  const intentPolicy = deps.intentPolicy ?? new DefaultAssertIntentPolicy();
+  const intentPolicy = deps.intentPolicy ?? new AssertionIntentPolicy();
   const traceWriter = deps.traceWriter ?? noopTraceWriter;
   const now = deps.now ?? (() => new Date());
   const { observation, belief, projectId } = params;
 
-  // 1. Intent Policy（#17 替换点；默认 ASSERT 直通）
-  const verdict = intentPolicy.decide({ intent: observation.assertionIntent });
-  if (verdict.action === "ignore") {
-    await traceWriter.write({
-      projectId,
-      beliefId: belief.id,
-      observationId: observation.id,
-      relation: null,
-      policies: { intent: { action: "ignore" } },
-      previousVersionId: belief.currentVersionId,
-      resultVersionId: null,
-      resolverVersion: RESOLVER_VERSION,
-    });
-    return { relation: null, resultVersionId: null };
-  }
-
-  // 2. 当前版本与其来源 Observation 的权威（权威创建即写入，非此处现算）
+  // 1. 当前版本与其来源 Observation 的权威（权威创建即写入，非此处现算）
   const [current] = belief.currentVersionId
     ? await db
         .select()
@@ -95,6 +79,58 @@ export async function resolveObservation(
     currentAuthority = src?.authority ?? 0;
   }
 
+  // 2. Intent Policy（#17 落地 AssertionIntentPolicy 为默认；值关系是无立场的事实计算，先于意图评估）
+  const valueRelation = current ? classifyValues(current.value, observation.value) : "conflict";
+  const verdict = intentPolicy.decide({
+    intent: observation.assertionIntent,
+    valueRelation,
+    sourceType: observation.sourceType,
+  });
+  if (verdict.action === "ignore") {
+    await traceWriter.write({
+      projectId,
+      beliefId: belief.id,
+      observationId: observation.id,
+      relation: null,
+      policies: { intent: { action: "ignore", intent: observation.assertionIntent } },
+      previousVersionId: belief.currentVersionId,
+      resultVersionId: null,
+      resolverVersion: RESOLVER_VERSION,
+    });
+    return { relation: null, resultVersionId: null };
+  }
+  if (verdict.action === "retract") {
+    // RETRACT：信念失效留痕（不物理删除）——status='retracted'，当前版本双时态关闭，版本链保留可查证
+    const at = now();
+    await db.transaction(async (tx) => {
+      if (current) {
+        await tx
+          .update(beliefVersions)
+          .set({ validTo: at, recordedTo: at })
+          .where(eq(beliefVersions.id, current.id));
+      }
+      await tx
+        .update(beliefs)
+        .set({
+          status: "retracted",
+          currentVersionId: null,
+          ...(belief.isProfile ? { profileDirty: true } : {}),
+        })
+        .where(eq(beliefs.id, belief.id));
+    });
+    await traceWriter.write({
+      projectId,
+      beliefId: belief.id,
+      observationId: observation.id,
+      relation: null,
+      policies: { intent: { action: "retract", intent: observation.assertionIntent } },
+      previousVersionId: current?.id ?? null,
+      resultVersionId: null,
+      resolverVersion: RESOLVER_VERSION,
+    });
+    return { relation: null, resultVersionId: null };
+  }
+
   // 3. Temporal/Conflict 判定（valid_time 兜底规则见 schema 注释，#3 已固化）
   const incomingValidFrom = observation.validTime ?? observation.recordedAt;
   const outcome = decideRelation({
@@ -103,7 +139,7 @@ export async function resolveObservation(
     incomingValidFrom,
     currentValidFrom: current?.validFrom ?? new Date(0),
     currentValidTo: current?.validTo ?? null,
-    valueRelation: current ? classifyValues(current.value, observation.value) : "conflict",
+    valueRelation,
   });
 
   // 4. 事务落库
@@ -177,6 +213,7 @@ export async function resolveObservation(
         .update(beliefs)
         .set({
           currentVersionId: id,
+          status: "active", // 修正 RETRACT 后的信念时复活（新版本成当前即恢复生效）
           evidenceCount: bumpEvidence,
           confidence: observation.confidence ?? belief.confidence,
           ...markDirty,

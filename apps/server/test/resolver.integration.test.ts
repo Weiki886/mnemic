@@ -124,7 +124,7 @@ describe("Resolver 编排与落库（#5）", () => {
     const belief = await seedBelief({
       value: "MySQL", authority: 10, validFrom: "2026-09-01", subject: "sp-1",
     });
-    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-10", subject: "sp-1" });
+    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-10", subject: "sp-1", intent: "UPDATE" });
     const { records, writer } = collector();
     const r = await resolveObservation(t.db, { projectId, observation: obs, belief }, { traceWriter: writer });
 
@@ -148,7 +148,7 @@ describe("Resolver 编排与落库（#5）", () => {
     const belief = await seedBelief({
       value: "PostgreSQL", authority: 60, validFrom: "2026-09-01", subject: "wk-1", confidence: 0.6,
     });
-    const obs = await mkObservation({ value: "MySQL", authority: 10, validTime: "2026-09-10", subject: "wk-1" });
+    const obs = await mkObservation({ value: "MySQL", authority: 10, validTime: "2026-09-10", subject: "wk-1", intent: "UPDATE" });
     const r = await resolveObservation(t.db, { projectId, observation: obs, belief });
 
     expect(r.relation).toBe("weaken");
@@ -192,7 +192,7 @@ describe("Resolver 编排与落库（#5）", () => {
     const belief = await seedBelief({
       value: "SQLite", authority: 60, validFrom: "2026-09-10", subject: "lt-1",
     });
-    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-01", subject: "lt-1" });
+    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-01", subject: "lt-1", intent: "UPDATE" });
     const { records, writer } = collector();
     const r = await resolveObservation(t.db, { projectId, observation: obs, belief }, { traceWriter: writer });
 
@@ -234,7 +234,7 @@ describe("Resolver 编排与落库（#5）", () => {
     });
     // 手动关闭当前版本（等价于历史上已被取代/失效的版本残留为 current 的防御场景）
     await t.sql`update belief_versions set valid_to = ${"2026-09-05T00:00:00Z"} where id = ${belief.currentVersionId}`;
-    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-10", subject: "cl-1" });
+    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-10", subject: "cl-1", intent: "UPDATE" });
     const r = await resolveObservation(t.db, { projectId, observation: obs, belief });
     expect(r.relation).toBe("supersede");
     const after = await t.sql`select current_version_id from beliefs where id = ${belief.id}`;
@@ -264,7 +264,7 @@ describe("Resolver 编排与落库（#5）", () => {
     const belief = await seedBelief({
       value: oldValue, authority: 60, validFrom: "2026-09-01", subject: `pd-${_rel}`, isProfile: true,
     });
-    const obs = await mkObservation({ value: newValue, authority: 60, validTime: "2026-09-10", subject: `pd-${_rel}` });
+    const obs = await mkObservation({ value: newValue, authority: 60, validTime: "2026-09-10", subject: `pd-${_rel}`, intent: "UPDATE" });
     await resolveObservation(t.db, { projectId, observation: obs, belief });
     const after = await t.sql`select profile_dirty from beliefs where id = ${belief.id}`;
     expect(after[0]!.profile_dirty).toBe(true);
@@ -274,7 +274,7 @@ describe("Resolver 编排与落库（#5）", () => {
     const belief = await seedBelief({
       value: "PostgreSQL", authority: 60, validFrom: "2026-09-01", subject: "pd-weaken", isProfile: true,
     });
-    const obs = await mkObservation({ value: "MySQL", authority: 10, validTime: "2026-09-10", subject: "pd-weaken" });
+    const obs = await mkObservation({ value: "MySQL", authority: 10, validTime: "2026-09-10", subject: "pd-weaken", intent: "UPDATE" });
     const r = await resolveObservation(t.db, { projectId, observation: obs, belief });
     expect(r.relation).toBe("weaken");
     const after = await t.sql`select profile_dirty from beliefs where id = ${belief.id}`;
@@ -285,7 +285,7 @@ describe("Resolver 编排与落库（#5）", () => {
     const belief = await seedBelief({
       value: "MySQL", authority: 60, validFrom: "2026-09-01", subject: "pd-non", isProfile: false,
     });
-    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-10", subject: "pd-non" });
+    const obs = await mkObservation({ value: "PostgreSQL", authority: 60, validTime: "2026-09-10", subject: "pd-non", intent: "UPDATE" });
     await resolveObservation(t.db, { projectId, observation: obs, belief });
     const after = await t.sql`select profile_dirty from beliefs where id = ${belief.id}`;
     expect(after[0]!.profile_dirty).toBe(false);
