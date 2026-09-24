@@ -118,5 +118,6 @@ describe("人工修正入口 API（#17）", () => {
     const res = await app.inject({ method: "POST", url: `/beliefs/${beliefId}/correct`, payload: { value: "" } });
     expect(res.statusCode).toBe(400);
     expect(res.headers["content-type"]).toContain("application/problem+json");
+    expect(res.json().errors).toContainEqual({ path: "value", message: expect.any(String) });
   });
 });

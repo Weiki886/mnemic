@@ -3,7 +3,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { uuidv7 } from "uuidv7";
 import { z } from "zod";
-import { ErrorCode, problem } from "@mnemic/shared";
+import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { beliefs, conversations, messages, resolutionTraces } from "../db/schema.js";
 import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
@@ -44,6 +44,7 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
           status: 400,
           code: ErrorCode.VALIDATION_FAILED,
           detail: "value（非空字符串）为必填字段",
+          errors: zodIssues(parsed.error),
           requestId: request.id,
         }),
       );
