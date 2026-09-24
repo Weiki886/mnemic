@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
-import { ErrorCode, problem } from "@mnemic/shared";
+import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { listPending, updatePendingStatus } from "./pending-repository.js";
 
 /** 待确认列表 API（#15）：PENDING 候选的人工确认/拒绝入口（记忆中心消费） */
@@ -20,6 +20,7 @@ export function registerGateRoutes(app: FastifyInstance, db: PostgresJsDatabase)
           status: 400,
           code: ErrorCode.VALIDATION_FAILED,
           detail: "project_id（uuid）为必填查询参数",
+          errors: zodIssues(parsed.error),
           requestId: request.id,
         }),
       );

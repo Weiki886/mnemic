@@ -54,6 +54,8 @@ describe("Providers 配置 API（#14）", () => {
     expect(missing.statusCode).toBe(400);
     expect(missing.headers["content-type"]).toContain("application/problem+json");
     expect(missing.json().code).toBe("VALIDATION_FAILED");
+    // 字段级错误数组（客户端可定位字段，不必解析 detail 字符串）
+    expect(missing.json().errors).toContainEqual({ path: "api_key", message: expect.any(String) });
 
     const badProtocol = await app.inject({
       method: "POST",
@@ -61,6 +63,7 @@ describe("Providers 配置 API（#14）", () => {
       payload: { ...validBody, name: "x2", protocol: "fake" },
     });
     expect(badProtocol.statusCode).toBe(400);
+    expect(badProtocol.json().errors).toContainEqual({ path: "protocol", message: expect.any(String) });
   });
 
   it("POST 重名 → 409 CONFLICT problem+json", async () => {
