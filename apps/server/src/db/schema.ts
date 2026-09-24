@@ -255,6 +255,23 @@ export const resolutionTraces = pgTable("resolution_traces", {
 });
 
 /**
+ * 检索轨迹（#6 自带迁移；决策 11：检索链路与更新链路对等可观测）。
+ * candidates 只存 ID 与得分（belief_version_id/各路分/融合分/入选与原因），不存内容快照。
+ * reinforce_enabled：读时强化实验钩子开关状态（#22 消融，默认关闭）随 trace 留痕。
+ */
+export const retrievalTraces = pgTable("retrieval_traces", {
+  id: id(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id),
+  queryText: text("query_text").notNull(),
+  candidates: jsonb("candidates").notNull(),
+  abstained: boolean("abstained").notNull(),
+  reinforceEnabled: boolean("reinforce_enabled").notNull().default(false),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+/**
  * Provider 配置（#14 自带迁移；ADR-005 配置单源）。
  * api_key_encrypted：AES-256-GCM 密文（v1:<iv>:<tag>:<ct>），任何读出方不得回传明文；
  * models：{chat?, extraction?, embedding?} 三槽位模型名，槽位切换不改调用方代码。
