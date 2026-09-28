@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
-import { ErrorCode, problem } from "@mnemic/shared";
+import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { createProvider, listProviders } from "./repository.js";
 
 /**
@@ -39,6 +39,7 @@ export function registerProviderRoutes(
           status: 400,
           code: ErrorCode.VALIDATION_FAILED,
           detail: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("；"),
+          errors: zodIssues(parsed.error),
           requestId: request.id,
         }),
       );

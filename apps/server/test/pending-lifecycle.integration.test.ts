@@ -117,4 +117,11 @@ describe("PENDING 四态生命周期（#15）", () => {
     expect(res.statusCode).toBe(404);
     expect(res.json().code).toBe("NOT_FOUND");
   });
+
+  it("GET /pending：project_id 非法 → 400 带结构化 errors 字段", async () => {
+    const res = await app.inject({ method: "GET", url: "/pending?project_id=not-a-uuid" });
+    expect(res.statusCode).toBe(400);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+    expect(res.json().errors).toEqual([{ path: "project_id", message: expect.stringContaining("uuid") }]);
+  });
 });
