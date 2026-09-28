@@ -6,6 +6,8 @@ import { ErrorCode, problem } from "@mnemic/shared";
 import { registerProviderRoutes } from "./providers/routes.js";
 import { registerGateRoutes } from "./gate/routes.js";
 import { registerBeliefRoutes } from "./beliefs/correct-route.js";
+import { registerChatRoutes } from "./chat/routes.js";
+import type { ProviderFactory } from "./providers/factory.js";
 
 export interface BuildAppOptions {
   /** 测试用：自定义日志输出流 */
@@ -13,6 +15,8 @@ export interface BuildAppOptions {
   /** 配置后注册 Providers 配置 API（#14）；二者缺一不注册 */
   db?: PostgresJsDatabase | undefined;
   masterKey?: Buffer | undefined;
+  /** 测试注入 Fake 模型工厂（#7 对话闭环等模型消费者共用） */
+  providerFactory?: ProviderFactory | undefined;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -48,6 +52,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.db) {
     registerGateRoutes(app, options.db);
     registerBeliefRoutes(app, options.db);
+  }
+  if (options.db && options.masterKey) {
+    registerChatRoutes(app, options.db, options.masterKey, {
+      ...(options.providerFactory ? { factory: options.providerFactory } : {}),
+    });
   }
 
   app.setNotFoundHandler((request, reply) => {
