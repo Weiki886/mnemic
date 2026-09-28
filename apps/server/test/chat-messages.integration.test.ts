@@ -36,6 +36,7 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
   let app: ReturnType<typeof buildApp>;
   let chatCalls: string[][];
   let extractionQueue: string[];
+  let extractCalls: string[];
   let logChunks: string;
   let fakeFactory: ProviderFactory;
 
@@ -51,6 +52,7 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     });
     chatCalls = [];
     extractionQueue = [];
+    extractCalls = [];
     logChunks = "";
     const chatModel = new MockLanguageModelV2({
       doGenerate: async (opts) => {
@@ -70,12 +72,15 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
       },
     });
     const extractionModel = new MockLanguageModelV2({
-      doGenerate: async () => ({
-        content: [{ type: "text" as const, text: extractionQueue.shift() ?? "[]" }],
-        finishReason: "stop" as const,
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-        warnings: [],
-      }),
+      doGenerate: async (opts) => {
+        extractCalls.push(JSON.stringify(opts.prompt));
+        return {
+          content: [{ type: "text" as const, text: extractionQueue.shift() ?? "[]" }],
+          finishReason: "stop" as const,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          warnings: [],
+        };
+      },
     });
     fakeFactory = {
       languageModel: (_cfg, modelId) =>
@@ -231,5 +236,56 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     const res = await postMessage(conv, "还能说吗");
     expect(res.statusCode).toBe(409);
     expect(res.json().code).toBe("CONFLICT");
+  });
+
+  it("先发消息再 commit：同一句话只提取一次，佐证不重复计数（决策 6）", async () => {
+    const projectId = await seedProject("chat-no-dup-extract");
+    const conv = await createConv(projectId);
+    extractionQueue.push(candidateJson());
+    await postMessage(conv, "我们数据库决定用 PostgreSQL");
+    await waitForChatJobs();
+
+    const res = await app.inject({ method: "POST", url: `/v1/conversations/${conv}/commit` });
+    expect(res.statusCode).toBe(200);
+    // 所有 user 消息都已被单条路径提取过，commit 无可提取对象
+    expect(res.json().extraction_triggered).toBe(false);
+    await waitForChatJobs();
+
+    const obs = await t.sql`select id from observations where project_id = ${projectId}`;
+    expect(obs.length).toBe(1);
+    const versions = await t.sql`
+      select bv.id, b.evidence_count from belief_versions bv
+      join beliefs b on b.id = bv.belief_id where b.project_id = ${projectId}`;
+    expect(versions.length).toBe(1);
+    expect(versions[0]!.evidence_count).toBe(1);
+  });
+
+  it("commit 只提取未提取过的消息，出处锚定消息自身", async () => {
+    const projectId = await seedProject("chat-selective-commit");
+    const conv = await createConv(projectId);
+    extractionQueue.push(candidateJson());
+    await postMessage(conv, "我们数据库决定用 PostgreSQL");
+    await waitForChatJobs();
+    // 模拟离线导入的消息（未经 messages 接口，未被提取）
+    const offlineMsgId = uuidv7();
+    await t.sql`insert into messages (id, conversation_id, speaker, raw_text, msg_time)
+      values (${offlineMsgId}, ${conv}, 'user', 'ORM 选了 Drizzle', now())`;
+
+    extractionQueue.push(candidateJson({ attribute: "orm", value: "Drizzle", entities: ["chat-proj", "Drizzle"] }));
+    const res = await app.inject({ method: "POST", url: `/v1/conversations/${conv}/commit` });
+    expect(res.json().extraction_triggered).toBe(true);
+    await waitForChatJobs();
+
+    // commit 提取的输入只含未提取过的消息，不重送已提取的 msg1
+    const commitExtractPrompt = extractCalls.at(-1)!;
+    expect(commitExtractPrompt).toContain("Drizzle");
+    expect(commitExtractPrompt).not.toContain("PostgreSQL");
+
+    // 新候选只锚定离线消息；已提取过的消息不产生重复 Observation
+    const obs = await t.sql`select attribute, evidence_id from observations where project_id = ${projectId} order by attribute`;
+    expect(obs.length).toBe(2);
+    expect(obs[0]!.attribute).toBe("database");
+    expect(obs[1]!.attribute).toBe("orm");
+    expect(obs[1]!.evidence_id).toBe(offlineMsgId);
   });
 });

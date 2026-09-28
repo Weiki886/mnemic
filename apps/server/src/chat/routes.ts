@@ -70,6 +70,7 @@ export function registerChatRoutes(
       ...modelOpts,
       onJob: (job) =>
         trackJob(job, (err) => request.log.error({ err, conversationId: id }, "commit writeback failed")),
+      logger: { error: (obj, msg) => request.log.error(obj, msg) },
     });
     if (result.kind === "not_found") {
       return reply.code(404).header("content-type", "application/problem+json").send(

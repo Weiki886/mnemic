@@ -6,7 +6,7 @@ import { conversations, messages } from "../db/schema.js";
 import { resolveModel, type ResolveOptions } from "../providers/slots.js";
 import { retrieve, type RetrievalCandidate } from "../retrieval/search.js";
 import { buildChatSystemPrompt } from "./prompt.js";
-import { runExtractionWriteback } from "./writeback.js";
+import { claimMessageForExtraction, runExtractionWriteback } from "./writeback.js";
 
 /** 消息应答编排（#7）：存消息 → 检索注入 → 模型回答 → 存回答 → 异步写记忆 */
 
@@ -47,24 +47,34 @@ export async function respondToMessage(
   text: string,
   options: RespondOptions,
 ): Promise<RespondResult> {
-  const [conv] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-  if (!conv) return { kind: "not_found" };
-  if (conv.endedAt) return { kind: "ended" };
-
   const userMessageId = uuidv7();
-  await db.insert(messages).values({
-    id: userMessageId,
-    conversationId,
-    speaker: "user",
-    rawText: text,
-    msgTime: new Date(),
+  // 会话行锁内完成"未提交检查 + 写入消息"：与并发 commit 互斥，
+  // 要么先于 commit 写入（commit 会提取它），要么看到已提交直接 409，不留孤儿消息
+  const entered = await db.transaction(async (tx) => {
+    const [conv] = await tx
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update")
+      .limit(1);
+    if (!conv) return { kind: "not_found" } as const;
+    if (conv.endedAt) return { kind: "ended" } as const;
+    await tx.insert(messages).values({
+      id: userMessageId,
+      conversationId,
+      speaker: "user",
+      rawText: text,
+      msgTime: new Date(),
+    });
+    return { kind: "ok" as const, projectId: conv.projectId };
   });
+  if (entered.kind !== "ok") return { kind: entered.kind };
 
   // 检索（#6）；检索失败降级为无记忆回答，不阻塞对话
   let candidates: RetrievalCandidate[] = [];
   let abstained = true;
   try {
-    const r = await (options.retrieveFn ?? retrieve)(db, masterKey, conv.projectId, text, options);
+    const r = await (options.retrieveFn ?? retrieve)(db, masterKey, entered.projectId, text, options);
     candidates = r.candidates;
     abstained = r.abstained;
   } catch (err) {
@@ -87,11 +97,13 @@ export async function respondToMessage(
     msgTime: new Date(),
   });
 
-  // 异步写记忆：单条消息提取，证据锚定该用户消息
-  const projectId = conv.projectId;
-  options.onJob(() =>
-    runExtractionWriteback(db, masterKey, { projectId, text, evidenceId: userMessageId }, options).then(() => undefined),
-  );
+  // 异步写记忆：先认领再提取（认领失败 = 并发 commit 已接管，无需重复提取）
+  const projectId = entered.projectId;
+  if (await claimMessageForExtraction(db, userMessageId)) {
+    options.onJob(() =>
+      runExtractionWriteback(db, masterKey, { projectId, text, evidenceId: userMessageId }, options).then(() => undefined),
+    );
+  }
 
   return {
     kind: "answered",

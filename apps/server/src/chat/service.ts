@@ -1,9 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
 import { conversations, messages, projects } from "../db/schema.js";
 import type { ResolveOptions } from "../providers/slots.js";
-import { runExtractionWriteback } from "./writeback.js";
+import { claimMessageForExtraction, runExtractionWriteback } from "./writeback.js";
 
 /** 会话编排（#7）：创建/提交；消息应答在 respond.ts（Task B） */
 
@@ -52,33 +52,52 @@ export async function commitConversation(
   db: PostgresJsDatabase,
   masterKey: Buffer,
   conversationId: string,
-  options: ResolveOptions & { onJob: (job: () => Promise<void>) => void },
+  options: ResolveOptions & {
+    onJob: (job: () => Promise<void>) => void;
+    logger?: { error: (obj: object, msg: string) => void };
+  },
 ): Promise<CommitResult> {
   const [row] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
   if (!row) return { kind: "not_found" };
-  if (row.endedAt) return { kind: "already_ended", conversation: toApi(row) };
 
+  // 原子置 ended_at（并发 commit 只有一个成功；落选者即重复提交）
   const [updated] = await db
     .update(conversations)
     .set({ endedAt: new Date() })
-    .where(eq(conversations.id, conversationId))
+    .where(and(eq(conversations.id, conversationId), isNull(conversations.endedAt)))
     .returning();
+  if (!updated) return { kind: "already_ended", conversation: toApi(row) };
 
-  const transcript = await db
-    .select({ id: messages.id, speaker: messages.speaker, rawText: messages.rawText })
+  // 只提取"未被提取过的 user 消息"（决策 6：同一句话不重复计数佐证；
+  // 助手回答不参与提取——模型自述不能成为事实来源）
+  const pendingMsgs = await db
+    .select({ id: messages.id, rawText: messages.rawText })
     .from(messages)
-    .where(eq(messages.conversationId, conversationId))
+    .where(
+      and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.speaker, "user"),
+        isNull(messages.extractedAt),
+      ),
+    )
     .orderBy(asc(messages.msgTime));
 
-  let extractionTriggered = false;
-  if (transcript.length > 0) {
-    extractionTriggered = true;
-    const text = transcript.map((m) => `[${m.speaker}] ${m.rawText}`).join("\n");
-    const lastMessageId = transcript.at(-1)!.id;
+  const extractionTriggered = pendingMsgs.length > 0;
+  if (extractionTriggered) {
     const projectId = row.projectId;
-    const job = (): Promise<void> =>
-      runExtractionWriteback(db, masterKey, { projectId, text, evidenceId: lastMessageId }, options).then(() => undefined);
-    options.onJob(job);
+    options.onJob(async () => {
+      for (const msg of pendingMsgs) {
+        // 先认领再提取：与并发单条路径互斥，认领失败者已被对方提取
+        if (!(await claimMessageForExtraction(db, msg.id))) continue;
+        try {
+          // 每条消息单独提取，出处精确锚定消息自身
+          await runExtractionWriteback(db, masterKey, { projectId, text: msg.rawText, evidenceId: msg.id }, options);
+        } catch (err) {
+          // 单条失败不阻塞其余消息（重试归 A1 #21 队列）
+          options.logger?.error({ err, messageId: msg.id }, "commit writeback failed for message");
+        }
+      }
+    });
   }
   return { kind: "committed", conversation: toApi(updated!), extractionTriggered };
 }

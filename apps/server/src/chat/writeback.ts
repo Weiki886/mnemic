@@ -1,4 +1,5 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { sql } from "drizzle-orm";
 import { extractCandidates } from "../extraction/extractor.js";
 import { processCandidate } from "../gate/pipeline.js";
 import { ingestCandidate, type IngestRoute } from "../ingest/ingest.js";
@@ -22,6 +23,21 @@ export interface WritebackResult {
   /** Gate 判 SKIP 的数量 */
   skipped: number;
   degraded: boolean;
+}
+
+/**
+ * 提取认领（#7，决策 6）：原子置 extracted_at，返回 true 表示认领成功。
+ * 同一句话绝不重复提取——单条路径与 commit 批提取都先认领再提取，竞态下只有一方成功。
+ * 认领后提取失败仅落日志（重试归 A1 #21 队列），消息不会再次被提取。
+ */
+export async function claimMessageForExtraction(
+  db: PostgresJsDatabase,
+  messageId: string,
+): Promise<boolean> {
+  const rows = await db.execute(
+    sql`update messages set extracted_at = now() where id = ${messageId} and extracted_at is null returning id`,
+  );
+  return rows.length > 0;
 }
 
 /**
