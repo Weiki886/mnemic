@@ -10,6 +10,15 @@ import { registerChatRoutes } from "./chat/routes.js";
 import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 
+/** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
+const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
+  400: ErrorCode.VALIDATION_FAILED,
+  401: ErrorCode.UNAUTHORIZED,
+  403: ErrorCode.FORBIDDEN,
+  404: ErrorCode.NOT_FOUND,
+  409: ErrorCode.CONFLICT,
+};
+
 export interface BuildAppOptions {
   /** 测试用：自定义日志输出流 */
   logStream?: { write: (chunk: string) => void };
@@ -85,20 +94,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       request.log.error({ err: error }, "unhandled error");
     }
     const code =
-      status === 400
-        ? ErrorCode.VALIDATION_FAILED
-        : status === 401
-          ? ErrorCode.UNAUTHORIZED
-          : status === 403
-            ? ErrorCode.FORBIDDEN
-            : status === 404
-              ? ErrorCode.NOT_FOUND
-              : status === 409
-                ? ErrorCode.CONFLICT
-                : status >= 500
-                  ? ErrorCode.INTERNAL_ERROR
-                  : // 其余 4xx（413/415/405 等）均为客户端错误类，绝不能标成 INTERNAL_ERROR
-                    ErrorCode.VALIDATION_FAILED;
+      ERROR_CODE_BY_STATUS[status] ??
+      (status >= 500
+        ? ErrorCode.INTERNAL_ERROR
+        : // 其余 4xx（413/415/405 等）均为客户端错误类，绝不能标成 INTERNAL_ERROR
+          ErrorCode.VALIDATION_FAILED);
     reply
       .code(status)
       .header("content-type", "application/problem+json")
