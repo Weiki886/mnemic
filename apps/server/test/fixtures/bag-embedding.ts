@@ -8,7 +8,10 @@ import type { ProviderFactory } from "../../src/providers/factory.js";
  */
 export function bagOfWordsVector(text: string, dim = 1024): number[] {
   const vec = new Array<number>(dim).fill(0);
-  for (const token of text.toLowerCase().split(/[^a-z0-9一-鿿]+/).filter(Boolean)) {
+  for (const token of text
+    .toLowerCase()
+    .split(/[^a-z0-9一-鿿]+/)
+    .filter(Boolean)) {
     let h = 2166136261;
     for (const ch of token) {
       h ^= ch.codePointAt(0)!;

@@ -39,7 +39,9 @@ function stripFence(text: string): string {
 }
 
 /** 解析输出为候选数组；返回 null 表示整体失败（应重试），非法元素被丢弃 */
-function parseCandidates(text: string): { valid: CandidateWithAuthority[]; dropped: number } | null {
+function parseCandidates(
+  text: string,
+): { valid: CandidateWithAuthority[]; dropped: number } | null {
   let raw: unknown;
   try {
     raw = JSON.parse(stripFence(text));

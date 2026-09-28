@@ -42,4 +42,25 @@ describe("请求 ID 贯穿", () => {
     expect(withReqId.length).toBeGreaterThan(0);
     await app.close();
   });
+
+  it("非法 x-request-id（超长/含特殊字符）不透传，降级为新生成的 UUID", async () => {
+    const app = buildApp();
+
+    const tooLong = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: { "x-request-id": "a".repeat(5000) },
+    });
+    const longId = tooLong.headers["x-request-id"] as string;
+    expect(longId).not.toBe("a".repeat(5000));
+    expect(longId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const injected = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: { "x-request-id": 'evil"id\nforged-log-line' },
+    });
+    expect(injected.headers["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
+    await app.close();
+  });
 });

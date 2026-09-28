@@ -4,11 +4,7 @@ import { uuidv7 } from "uuidv7";
 import { beliefVersions, beliefs, observations } from "../db/schema.js";
 import { AssertionIntentPolicy, type IntentPolicy } from "./intent-policy.js";
 import { decideRelation } from "./policies.js";
-import {
-  noopTraceWriter,
-  type ConflictRelation,
-  type ResolutionTraceWriter,
-} from "./types.js";
+import { noopTraceWriter, type ConflictRelation, type ResolutionTraceWriter } from "./types.js";
 import { classifyValues } from "./value-compare.js";
 
 export type ObservationRow = typeof observations.$inferSelect;
@@ -166,7 +162,11 @@ export async function resolveObservation(
           ...markDirty,
         })
         .where(eq(beliefs.id, belief.id));
-    } else if (outcome.relation === "weaken" && outcome.detail.reason === "late_evidence" && current) {
+    } else if (
+      outcome.relation === "weaken" &&
+      outcome.detail.reason === "late_evidence" &&
+      current
+    ) {
       // 历史版本是旁支事实，不取代任何版本：supersedesVersionId 有意留空（非遗漏）。
       // 该字段语义 = "本版本取代了谁"；迟到证据没有取代当前版本。
       // 版本时间线（#8）按 belief_id + valid_from 查询，不依赖取代链遍历，故旁支可达。
@@ -227,9 +227,8 @@ export async function resolveObservation(
           ...markDirty,
         })
         .where(eq(beliefs.id, belief.id));
-      confidenceAfter = observation.confidence === null
-        ? confidenceBefore
-        : Number(observation.confidence);
+      confidenceAfter =
+        observation.confidence === null ? confidenceBefore : Number(observation.confidence);
       resultVersionId = id;
     }
   });

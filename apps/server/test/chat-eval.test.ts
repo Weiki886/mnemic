@@ -35,10 +35,20 @@ const FACT_SAMPLES = [
 ];
 
 const UPDATE_SAMPLES = [
-  { tell: "数据库用 MySQL", then: "数据库换成 PostgreSQL 了", ask: "数据库现在用哪个？", expect: "postgresql" },
+  {
+    tell: "数据库用 MySQL",
+    then: "数据库换成 PostgreSQL 了",
+    ask: "数据库现在用哪个？",
+    expect: "postgresql",
+  },
   { tell: "前端用 React", then: "前端改成 Vue 3 了", ask: "前端框架现在是什么？", expect: "vue" },
   { tell: "缓存用 Memcached", then: "缓存换成 Redis 了", ask: "缓存现在用什么？", expect: "redis" },
-  { tell: "Node 版本是 22", then: "Node 升级到 24 了", ask: "现在 Node 版本是多少？", expect: "24" },
+  {
+    tell: "Node 版本是 22",
+    then: "Node 升级到 24 了",
+    ask: "现在 Node 版本是多少？",
+    expect: "24",
+  },
 ];
 
 const ABSTAIN_SAMPLES = [
@@ -88,7 +98,11 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
     const projectId = uuidv7();
     await t.sql`insert into projects (id, name) values (${projectId}, 'chat-eval')`;
     const conv1 = (
-      await app.inject({ method: "POST", url: "/v1/conversations", payload: { project_id: projectId } })
+      await app.inject({
+        method: "POST",
+        url: "/v1/conversations",
+        payload: { project_id: projectId },
+      })
     ).json().id as string;
     for (const tell of tells) {
       const res = await app.inject({
@@ -100,7 +114,11 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
       await waitForChatJobs();
     }
     const conv2 = (
-      await app.inject({ method: "POST", url: "/v1/conversations", payload: { project_id: projectId } })
+      await app.inject({
+        method: "POST",
+        url: "/v1/conversations",
+        payload: { project_id: projectId },
+      })
     ).json().id as string;
     const asked = await app.inject({
       method: "POST",
@@ -119,7 +137,12 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
       const rows = [];
       for (const s of FACT_SAMPLES) {
         const r = await runScenario([s.tell], s.ask);
-        rows.push({ tell: s.tell, expect: s.expect, answer: r.answer.slice(0, 40), hit: r.answer.toLowerCase().includes(s.expect) });
+        rows.push({
+          tell: s.tell,
+          expect: s.expect,
+          answer: r.answer.slice(0, 40),
+          hit: r.answer.toLowerCase().includes(s.expect),
+        });
       }
       console.table(rows);
       const hits = rows.filter((r) => r.hit).length;
@@ -135,7 +158,12 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
       const rows = [];
       for (const s of UPDATE_SAMPLES) {
         const r = await runScenario([s.tell, s.then], s.ask);
-        rows.push({ then: s.then, expect: s.expect, answer: r.answer.slice(0, 40), hit: r.answer.toLowerCase().includes(s.expect) });
+        rows.push({
+          then: s.then,
+          expect: s.expect,
+          answer: r.answer.slice(0, 40),
+          hit: r.answer.toLowerCase().includes(s.expect),
+        });
       }
       console.table(rows);
       const hits = rows.filter((r) => r.hit).length;
@@ -166,7 +194,12 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
       const rows = [];
       for (const s of PROFILE_SAMPLES) {
         const r = await runScenario([s.tell], s.ask);
-        rows.push({ tell: s.tell, expect: s.expect, answer: r.answer.slice(0, 40), hit: r.answer.toLowerCase().includes(s.expect.toLowerCase()) });
+        rows.push({
+          tell: s.tell,
+          expect: s.expect,
+          answer: r.answer.slice(0, 40),
+          hit: r.answer.toLowerCase().includes(s.expect.toLowerCase()),
+        });
       }
       console.table(rows);
       const hits = rows.filter((r) => r.hit).length;

@@ -63,7 +63,10 @@ describe("Providers 配置 API（#14）", () => {
       payload: { ...validBody, name: "x2", protocol: "fake" },
     });
     expect(badProtocol.statusCode).toBe(400);
-    expect(badProtocol.json().errors).toContainEqual({ path: "protocol", message: expect.any(String) });
+    expect(badProtocol.json().errors).toContainEqual({
+      path: "protocol",
+      message: expect.any(String),
+    });
   });
 
   it("POST 重名 → 409 CONFLICT problem+json", async () => {

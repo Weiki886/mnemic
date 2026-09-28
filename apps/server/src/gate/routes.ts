@@ -15,15 +15,18 @@ export function registerGateRoutes(app: FastifyInstance, db: PostgresJsDatabase)
   app.get("/pending", async (request, reply) => {
     const parsed = ListQuery.safeParse(request.query);
     if (!parsed.success) {
-      return reply.code(400).header("content-type", "application/problem+json").send(
-        problem({
-          status: 400,
-          code: ErrorCode.VALIDATION_FAILED,
-          detail: "project_id（uuid）为必填查询参数",
-          errors: zodIssues(parsed.error),
-          requestId: request.id,
-        }),
-      );
+      return reply
+        .code(400)
+        .header("content-type", "application/problem+json")
+        .send(
+          problem({
+            status: 400,
+            code: ErrorCode.VALIDATION_FAILED,
+            detail: "project_id（uuid）为必填查询参数",
+            errors: zodIssues(parsed.error),
+            requestId: request.id,
+          }),
+        );
     }
     return listPending(db, parsed.data.project_id, parsed.data.status ?? "pending");
   });
@@ -37,14 +40,17 @@ export function registerGateRoutes(app: FastifyInstance, db: PostgresJsDatabase)
       try {
         return await updatePendingStatus(db, id, status);
       } catch {
-        return reply.code(404).header("content-type", "application/problem+json").send(
-          problem({
-            status: 404,
-            code: ErrorCode.NOT_FOUND,
-            detail: `PENDING 候选不存在：${id}`,
-            requestId: request.id,
-          }),
-        );
+        return reply
+          .code(404)
+          .header("content-type", "application/problem+json")
+          .send(
+            problem({
+              status: 404,
+              code: ErrorCode.NOT_FOUND,
+              detail: `PENDING 候选不存在：${id}`,
+              requestId: request.id,
+            }),
+          );
       }
     });
   }

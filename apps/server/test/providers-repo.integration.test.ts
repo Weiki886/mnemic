@@ -1,9 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  createProvider,
-  getProviderWithKey,
-  listProviders,
-} from "../src/providers/repository.js";
+import { createProvider, getProviderWithKey, listProviders } from "../src/providers/repository.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { TEST_MASTER_KEY as MASTER_KEY } from "./test-keys.js";
 

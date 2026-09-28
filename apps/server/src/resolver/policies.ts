@@ -49,7 +49,11 @@ export function decideRelation(ctx: PolicyContext): PolicyOutcome {
   const late = ctx.incomingValidFrom < ctx.currentValidFrom;
   const currentClosed = ctx.currentValidTo !== null;
   const detail: PolicyOutcome["detail"] = {
-    authority: { incoming: ctx.incomingAuthority, current: ctx.currentAuthority, verdict: authorityVerdict },
+    authority: {
+      incoming: ctx.incomingAuthority,
+      current: ctx.currentAuthority,
+      verdict: authorityVerdict,
+    },
     temporal: {
       incomingValidFrom: ctx.incomingValidFrom.toISOString(),
       currentValidFrom: ctx.currentValidFrom.toISOString(),

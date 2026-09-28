@@ -17,16 +17,23 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
   // 消解历史查询（#18）：UI 版本时间线与实验分析消费
   app.get("/beliefs/:id/resolutions", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const [belief] = await db.select({ id: beliefs.id }).from(beliefs).where(eq(beliefs.id, id)).limit(1);
+    const [belief] = await db
+      .select({ id: beliefs.id })
+      .from(beliefs)
+      .where(eq(beliefs.id, id))
+      .limit(1);
     if (!belief) {
-      return reply.code(404).header("content-type", "application/problem+json").send(
-        problem({
-          status: 404,
-          code: ErrorCode.NOT_FOUND,
-          detail: `Belief 不存在：${id}`,
-          requestId: request.id,
-        }),
-      );
+      return reply
+        .code(404)
+        .header("content-type", "application/problem+json")
+        .send(
+          problem({
+            status: 404,
+            code: ErrorCode.NOT_FOUND,
+            detail: `Belief 不存在：${id}`,
+            requestId: request.id,
+          }),
+        );
     }
     return db
       .select()
@@ -39,26 +46,32 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
     const { id } = request.params as { id: string };
     const parsed = CorrectBody.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).header("content-type", "application/problem+json").send(
-        problem({
-          status: 400,
-          code: ErrorCode.VALIDATION_FAILED,
-          detail: "value（非空字符串）为必填字段",
-          errors: zodIssues(parsed.error),
-          requestId: request.id,
-        }),
-      );
+      return reply
+        .code(400)
+        .header("content-type", "application/problem+json")
+        .send(
+          problem({
+            status: 400,
+            code: ErrorCode.VALIDATION_FAILED,
+            detail: "value（非空字符串）为必填字段",
+            errors: zodIssues(parsed.error),
+            requestId: request.id,
+          }),
+        );
     }
     const [belief] = await db.select().from(beliefs).where(eq(beliefs.id, id)).limit(1);
     if (!belief) {
-      return reply.code(404).header("content-type", "application/problem+json").send(
-        problem({
-          status: 404,
-          code: ErrorCode.NOT_FOUND,
-          detail: `Belief 不存在：${id}`,
-          requestId: request.id,
-        }),
-      );
+      return reply
+        .code(404)
+        .header("content-type", "application/problem+json")
+        .send(
+          problem({
+            status: 404,
+            code: ErrorCode.NOT_FOUND,
+            detail: `Belief 不存在：${id}`,
+            requestId: request.id,
+          }),
+        );
     }
 
     // provenance 锚点：项目专用修正会话（找不到则建）+ 一条 user 消息
@@ -90,23 +103,28 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
     });
 
     // 走标准写入链（#16 去重分流 → #5 Resolver，意图 CORRECT + 权威 USER_CORRECTION）
-    const result = await ingestCandidate(db, belief.projectId, {
-      type: "fact",
-      subject: belief.subject,
-      attribute: belief.attribute,
-      value: parsed.data.value,
-      valid_time: new Date().toISOString(),
-      time_precision: "DAY",
-      time_confidence: 1,
-      assertion_intent: "CORRECT",
-      source_type: "USER_CORRECTION",
-      importance: Number(belief.importance ?? 0.8),
-      confidence: 1,
-      entities: [],
-      is_profile: belief.isProfile,
-      authority: AUTHORITY_TABLE.USER_CORRECTION.authority,
-      reliability: AUTHORITY_TABLE.USER_CORRECTION.reliability,
-    }, messageId);
+    const result = await ingestCandidate(
+      db,
+      belief.projectId,
+      {
+        type: "fact",
+        subject: belief.subject,
+        attribute: belief.attribute,
+        value: parsed.data.value,
+        valid_time: new Date().toISOString(),
+        time_precision: "DAY",
+        time_confidence: 1,
+        assertion_intent: "CORRECT",
+        source_type: "USER_CORRECTION",
+        importance: Number(belief.importance ?? 0.8),
+        confidence: 1,
+        entities: [],
+        is_profile: belief.isProfile,
+        authority: AUTHORITY_TABLE.USER_CORRECTION.authority,
+        reliability: AUTHORITY_TABLE.USER_CORRECTION.reliability,
+      },
+      messageId,
+    );
 
     return { beliefId: result.beliefId, route: result.route, relation: result.relation };
   });

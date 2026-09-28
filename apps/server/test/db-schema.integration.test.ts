@@ -107,7 +107,8 @@ describe("数据模型 V1（#3）", () => {
         'ASSERT', 'USER_EXPLICIT', 60, ${mid}
       )
     `;
-    const rows = await t.sql`select time_precision, time_confidence from observations where id = ${id}`;
+    const rows =
+      await t.sql`select time_precision, time_confidence from observations where id = ${id}`;
     expect(rows[0]!.time_precision).toBe("DAY");
     expect(Number(rows[0]!.time_confidence)).toBe(1);
     // 非法 precision 被拒

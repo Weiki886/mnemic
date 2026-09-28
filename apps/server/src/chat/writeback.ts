@@ -63,7 +63,11 @@ export async function runExtractionWriteback(
   const extraction = await extractCandidates(model, args.text);
   if (extraction.degraded) return empty;
 
-  const result: WritebackResult = { ...empty, extracted: extraction.candidates.length, degraded: false };
+  const result: WritebackResult = {
+    ...empty,
+    extracted: extraction.candidates.length,
+    degraded: false,
+  };
   for (const candidate of extraction.candidates) {
     const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
     if (gate.decision === "SKIP") {
