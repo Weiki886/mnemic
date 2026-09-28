@@ -39,6 +39,8 @@ const GENERIC_PHRASES = ["还行", "可以", "不错", "挺好", "随便", "再�
 function computeSpecificity(candidate: CandidateWithAuthority): number {
   if (GENERIC_PHRASES.some((p) => candidate.value.includes(p))) return 0.2;
   if (candidate.entities.length > 0 && candidate.value.length >= 4) return 0.8;
+  // 短但精确的值（"英文"/"24"/"80%"）：提取已锚定实体即视为具体，长度不是唯一判据
+  if (candidate.entities.length > 0) return 0.7;
   if (candidate.value.length >= 4) return 0.6;
   return 0.4;
 }

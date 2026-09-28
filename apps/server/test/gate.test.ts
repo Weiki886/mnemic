@@ -45,6 +45,18 @@ describe("Memory Gate 判定（#15）", () => {
     expect(r.decision).toBe("PENDING");
   });
 
+  it("短但精确的值（有实体锚定）→ WRITE：「英文」「24」「80%」（#7 真实评测暴露）", () => {
+    for (const value of ["英文", "24", "80%"]) {
+      const r = evaluateGate({ ...base, value, entities: ["my-project"] }, { beliefExists: false });
+      expect(r.decision).toBe("WRITE");
+    }
+  });
+
+  it("短值且无实体锚定 → 仍 PENDING（保守行为不变）", () => {
+    const r = evaluateGate({ ...base, value: "嗯好", entities: [] }, { beliefExists: false });
+    expect(r.decision).toBe("PENDING");
+  });
+
   it("重要但表述模糊（specificity 低）→ PENDING", () => {
     const r = evaluateGate({ ...base, value: "还行" }, { beliefExists: false });
     expect(r.decision).toBe("PENDING");
