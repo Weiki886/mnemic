@@ -8,6 +8,7 @@ import { registerGateRoutes } from "./gate/routes.js";
 import { registerBeliefRoutes } from "./beliefs/correct-route.js";
 import { registerChatRoutes } from "./chat/routes.js";
 import type { ProviderFactory } from "./providers/factory.js";
+import type { retrieve } from "./retrieval/search.js";
 
 export interface BuildAppOptions {
   /** 测试用：自定义日志输出流 */
@@ -17,6 +18,8 @@ export interface BuildAppOptions {
   masterKey?: Buffer | undefined;
   /** 测试注入 Fake 模型工厂（#7 对话闭环等模型消费者共用） */
   providerFactory?: ProviderFactory | undefined;
+  /** 对话闭环附加依赖（测试注入检索替身） */
+  chatDeps?: { retrieveFn?: typeof retrieve } | undefined;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -56,6 +59,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
       ...(options.providerFactory ? { factory: options.providerFactory } : {}),
+      ...(options.chatDeps?.retrieveFn ? { retrieveFn: options.chatDeps.retrieveFn } : {}),
     });
   }
 
