@@ -21,7 +21,13 @@ export interface MemoryRef {
 export type RespondResult =
   | { kind: "not_found" }
   | { kind: "ended" }
-  | { kind: "answered"; messageId: string; answer: string; memories: MemoryRef[]; abstained: boolean };
+  | {
+      kind: "answered";
+      messageId: string;
+      answer: string;
+      memories: MemoryRef[];
+      abstained: boolean;
+    };
 
 export interface RespondOptions extends ResolveOptions {
   onJob: (job: () => Promise<void>) => void;
@@ -74,7 +80,13 @@ export async function respondToMessage(
   let candidates: RetrievalCandidate[] = [];
   let abstained = true;
   try {
-    const r = await (options.retrieveFn ?? retrieve)(db, masterKey, entered.projectId, text, options);
+    const r = await (options.retrieveFn ?? retrieve)(
+      db,
+      masterKey,
+      entered.projectId,
+      text,
+      options,
+    );
     candidates = r.candidates;
     abstained = r.abstained;
   } catch (err) {
@@ -101,7 +113,12 @@ export async function respondToMessage(
   const projectId = entered.projectId;
   if (await claimMessageForExtraction(db, userMessageId)) {
     options.onJob(() =>
-      runExtractionWriteback(db, masterKey, { projectId, text, evidenceId: userMessageId }, options).then(() => undefined),
+      runExtractionWriteback(
+        db,
+        masterKey,
+        { projectId, text, evidenceId: userMessageId },
+        options,
+      ).then(() => undefined),
     );
   }
 

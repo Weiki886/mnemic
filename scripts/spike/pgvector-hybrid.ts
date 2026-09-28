@@ -85,7 +85,11 @@ async function main() {
 
   const report = {
     rows: ROWS,
-    vectorSearch: { ms: +vecMs.toFixed(1), top5全部命中目标主题: vecTopic0 === 5, hits: vecHits.length },
+    vectorSearch: {
+      ms: +vecMs.toFixed(1),
+      top5全部命中目标主题: vecTopic0 === 5,
+      hits: vecHits.length,
+    },
     fullTextSearch: { ms: +ftsMs.toFixed(1), hits: ftsHits.length },
     hybrid: { ms: +hybridMs.toFixed(1), hits: hybrid.length },
     totalMs: +(performance.now() - t0).toFixed(1),

@@ -34,19 +34,19 @@ describe("候选 Observation Schema（#4）", () => {
     expect(CandidateSchema.safeParse({ ...validCandidate, assertion_intent: "ADD" }).success).toBe(
       false,
     );
-    expect(
-      CandidateSchema.safeParse({ ...validCandidate, source_type: "GUESS" }).success,
-    ).toBe(false);
-    expect(
-      CandidateSchema.safeParse({ ...validCandidate, time_precision: "HOUR" }).success,
-    ).toBe(false);
+    expect(CandidateSchema.safeParse({ ...validCandidate, source_type: "GUESS" }).success).toBe(
+      false,
+    );
+    expect(CandidateSchema.safeParse({ ...validCandidate, time_precision: "HOUR" }).success).toBe(
+      false,
+    );
   });
 
   it("评分类字段越界拒收（0~1）", () => {
     expect(CandidateSchema.safeParse({ ...validCandidate, importance: 1.5 }).success).toBe(false);
-    expect(
-      CandidateSchema.safeParse({ ...validCandidate, time_confidence: -0.1 }).success,
-    ).toBe(false);
+    expect(CandidateSchema.safeParse({ ...validCandidate, time_confidence: -0.1 }).success).toBe(
+      false,
+    );
   });
 });
 

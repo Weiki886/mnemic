@@ -138,24 +138,40 @@ export async function ingestCandidate(
       await tx.update(beliefs).set({ currentVersionId: versionId }).where(eq(beliefs.id, beliefId));
     });
     if (deps.indexEmbedding) {
-      await deps.indexEmbedding({ beliefVersionId: versionId, subject, attribute, value: candidate.value });
+      await deps.indexEmbedding({
+        beliefVersionId: versionId,
+        subject,
+        attribute,
+        value: candidate.value,
+      });
     }
     return { route: "created", observationId: obs!.id, beliefId, relation: null };
   }
 
   // 4b. 等价（merged）/ 不同值（conflict）→ 委托 #5 Resolver
   const [current] = belief.currentVersionId
-    ? await db.select().from(beliefVersions).where(eq(beliefVersions.id, belief.currentVersionId)).limit(1)
+    ? await db
+        .select()
+        .from(beliefVersions)
+        .where(eq(beliefVersions.id, belief.currentVersionId))
+        .limit(1)
     : [undefined];
   const valueRelation = current ? classifyValues(current.value, obs!.value) : "conflict";
   // trace 落库接线（#18）：调用方未指定 writer 时默认落 resolution_traces
-  const resolved = await resolveObservation(db, { projectId, observation: obs!, belief }, {
-    ...deps,
-    traceWriter: deps.traceWriter ?? new DbResolutionTraceWriter(db),
-  });
+  const resolved = await resolveObservation(
+    db,
+    { projectId, observation: obs!, belief },
+    {
+      ...deps,
+      traceWriter: deps.traceWriter ?? new DbResolutionTraceWriter(db),
+    },
+  );
   if (deps.indexEmbedding && resolved.resultVersionId) {
     await deps.indexEmbedding({
-      beliefVersionId: resolved.resultVersionId, subject, attribute, value: candidate.value,
+      beliefVersionId: resolved.resultVersionId,
+      subject,
+      attribute,
+      value: candidate.value,
     });
   }
   return {

@@ -29,8 +29,14 @@ function contains(a: unknown, b: unknown): boolean {
   if (Array.isArray(a) && Array.isArray(b)) {
     return b.every((item) => a.some((x) => deepEqual(x, item)));
   }
-  if (a !== null && b !== null && typeof a === "object" && typeof b === "object"
-    && !Array.isArray(a) && !Array.isArray(b)) {
+  if (
+    a !== null &&
+    b !== null &&
+    typeof a === "object" &&
+    typeof b === "object" &&
+    !Array.isArray(a) &&
+    !Array.isArray(b)
+  ) {
     const ao = a as Record<string, unknown>;
     const bo = b as Record<string, unknown>;
     return Object.entries(bo).every(([k, bv]) => k in ao && deepEqual(ao[k], bv));

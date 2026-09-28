@@ -1,11 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { writeAuditLog } from "../src/gate/audit.js";
-import {
-  createPending,
-  listPending,
-  updatePendingStatus,
-} from "../src/gate/pending-repository.js";
+import { createPending, listPending, updatePendingStatus } from "../src/gate/pending-repository.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 
 describe("pending_candidates 仓储 + audit_log（#15）", () => {
@@ -29,7 +25,13 @@ describe("pending_candidates 仓储 + audit_log（#15）", () => {
   });
 
   const candidate = { subject: "p", attribute: "db", value: "SQLite" };
-  const gateScores = { importance: 0.7, novelty: 1, futureUtility: 0.8, specificity: 0.6, confidence: 0.5 };
+  const gateScores = {
+    importance: 0.7,
+    novelty: 1,
+    futureUtility: 0.8,
+    specificity: 0.6,
+    confidence: 0.5,
+  };
 
   it("PENDING 持久化：创建后重启语义不丢（库中可查），字段齐备", async () => {
     const row = await createPending(t.db, {

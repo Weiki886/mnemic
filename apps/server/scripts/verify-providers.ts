@@ -36,8 +36,11 @@ if (process.env.DEEPSEEK_API_KEY) {
 
 if (process.env.DASHSCOPE_API_KEY) {
   const model = realProviderFactory.embeddingModel(
-    cfg("dashscope", "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      process.env.DASHSCOPE_API_KEY),
+    cfg(
+      "dashscope",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      process.env.DASHSCOPE_API_KEY,
+    ),
     "text-embedding-v4",
   );
   const r = await embed({ model, value: "mnemic 长期记忆" });

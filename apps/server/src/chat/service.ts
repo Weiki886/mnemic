@@ -29,7 +29,11 @@ export async function createConversation(
   db: PostgresJsDatabase,
   input: { projectId: string; title?: string | undefined },
 ): Promise<ConversationRow | null> {
-  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, input.projectId)).limit(1);
+  const [project] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(eq(projects.id, input.projectId))
+    .limit(1);
   if (!project) return null;
   const [row] = await db
     .insert(conversations)
@@ -57,7 +61,11 @@ export async function commitConversation(
     logger?: { error: (obj: object, msg: string) => void };
   },
 ): Promise<CommitResult> {
-  const [row] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  const [row] = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
   if (!row) return { kind: "not_found" };
 
   // 原子置 ended_at（并发 commit 只有一个成功；落选者即重复提交）
@@ -91,7 +99,12 @@ export async function commitConversation(
         if (!(await claimMessageForExtraction(db, msg.id))) continue;
         try {
           // 每条消息单独提取，出处精确锚定消息自身
-          await runExtractionWriteback(db, masterKey, { projectId, text: msg.rawText, evidenceId: msg.id }, options);
+          await runExtractionWriteback(
+            db,
+            masterKey,
+            { projectId, text: msg.rawText, evidenceId: msg.id },
+            options,
+          );
         } catch (err) {
           // 单条失败不阻塞其余消息（重试归 A1 #21 队列）
           options.logger?.error({ err, messageId: msg.id }, "commit writeback failed for message");

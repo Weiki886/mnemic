@@ -23,7 +23,13 @@ const baseCandidate = {
   authority: 60,
   reliability: 0.95,
 };
-const gateScores = { importance: 0.9, novelty: 1, futureUtility: 0.8, specificity: 0.8, confidence: 0.5 };
+const gateScores = {
+  importance: 0.9,
+  novelty: 1,
+  futureUtility: 0.8,
+  specificity: 0.8,
+  confidence: 0.5,
+};
 
 describe("PENDING 四态生命周期（#15）", () => {
   let t: TestDb;
@@ -122,6 +128,8 @@ describe("PENDING 四态生命周期（#15）", () => {
     const res = await app.inject({ method: "GET", url: "/pending?project_id=not-a-uuid" });
     expect(res.statusCode).toBe(400);
     expect(res.headers["content-type"]).toContain("application/problem+json");
-    expect(res.json().errors).toEqual([{ path: "project_id", message: expect.stringContaining("uuid") }]);
+    expect(res.json().errors).toEqual([
+      { path: "project_id", message: expect.stringContaining("uuid") },
+    ]);
   });
 });

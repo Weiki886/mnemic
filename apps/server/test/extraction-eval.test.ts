@@ -85,16 +85,12 @@ describe.skipIf(!apiKey)("真实模型提取评测（DeepSeek，手动/本地）
     },
   );
 
-  it(
-    "is_profile：技术栈/进度类候选被标记 true",
-    { timeout: 120_000 },
-    async () => {
-      for (const input of PROFILE_SAMPLES) {
-        const r = await extractCandidates(model, input, { today: TODAY, temperature: 0 });
-        expect(r.degraded).toBe(false);
-        expect(r.candidates.length).toBeGreaterThan(0);
-        expect(r.candidates.some((c) => c.is_profile)).toBe(true);
-      }
-    },
-  );
+  it("is_profile：技术栈/进度类候选被标记 true", { timeout: 120_000 }, async () => {
+    for (const input of PROFILE_SAMPLES) {
+      const r = await extractCandidates(model, input, { today: TODAY, temperature: 0 });
+      expect(r.degraded).toBe(false);
+      expect(r.candidates.length).toBeGreaterThan(0);
+      expect(r.candidates.some((c) => c.is_profile)).toBe(true);
+    }
+  });
 });

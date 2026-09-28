@@ -44,7 +44,12 @@ describe("Gate 处理管道（脱敏 → 审计 → 判定 → 路由，#15）",
 
   it("含 GitHub token 的候选：value 被 [REDACTED]，脱敏事件入 audit_log，密钥本体全程不出现", async () => {
     const secret = "ghp_T0k3nT0k3nT0k3nT0k3nT0k3n";
-    const r = await processCandidate(t.db, projectId, { ...base, value: `token 是 ${secret}` }, messageId);
+    const r = await processCandidate(
+      t.db,
+      projectId,
+      { ...base, value: `token 是 ${secret}` },
+      messageId,
+    );
     expect(JSON.stringify(r)).not.toContain(secret);
 
     const audits = await t.sql`
@@ -82,7 +87,14 @@ describe("Gate 处理管道（脱敏 → 审计 → 判定 → 路由，#15）",
     const r = await processCandidate(
       t.db,
       projectId,
-      { ...base, type: "fact", attribute: "chitchat", value: "还行", importance: 0.2, is_profile: false },
+      {
+        ...base,
+        type: "fact",
+        attribute: "chitchat",
+        value: "还行",
+        importance: 0.2,
+        is_profile: false,
+      },
       messageId,
     );
     expect(r.decision).toBe("SKIP");

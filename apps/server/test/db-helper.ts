@@ -11,15 +11,10 @@ import postgres from "postgres";
  * 可用 MNEMIC_FORCE_TESTCONTAINERS=1 强制容器路径。
  */
 
-const DEV_URL =
-  process.env.DATABASE_URL ?? "postgres://mnemic:mnemic@localhost:5432/mnemic";
+const DEV_URL = process.env.DATABASE_URL ?? "postgres://mnemic:mnemic@localhost:5432/mnemic";
 const TEST_DB_NAME = "mnemic_test";
 
-const MIGRATIONS_FOLDER = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "drizzle",
-);
+const MIGRATIONS_FOLDER = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "drizzle");
 
 export interface TestDb {
   db: PostgresJsDatabase;

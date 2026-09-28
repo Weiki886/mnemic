@@ -10,6 +10,15 @@ import { registerChatRoutes } from "./chat/routes.js";
 import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 
+/** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
+const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
+  400: ErrorCode.VALIDATION_FAILED,
+  401: ErrorCode.UNAUTHORIZED,
+  403: ErrorCode.FORBIDDEN,
+  404: ErrorCode.NOT_FOUND,
+  409: ErrorCode.CONFLICT,
+};
+
 export interface BuildAppOptions {
   /** 测试用：自定义日志输出流 */
   logStream?: { write: (chunk: string) => void };
@@ -36,10 +45,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       },
       ...(options.logStream ? { stream: options.logStream } : {}),
     },
-    // 请求 ID：上游传入则透传，否则生成 UUID（贯穿日志与响应头）
+    // 请求 ID：上游传入且形态合法才透传（防日志放大/伪造），否则生成 UUID（贯穿日志与响应头）
     genReqId: (req) => {
       const incoming = req.headers["x-request-id"];
-      return typeof incoming === "string" && incoming.length > 0 ? incoming : randomUUID();
+      return typeof incoming === "string" && /^[\w.-]{1,128}$/.test(incoming)
+        ? incoming
+        : randomUUID();
     },
   });
 
@@ -83,13 +94,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       request.log.error({ err: error }, "unhandled error");
     }
     const code =
-      status === 400
-        ? ErrorCode.VALIDATION_FAILED
-        : status === 401
-          ? ErrorCode.UNAUTHORIZED
-          : status === 404
-            ? ErrorCode.NOT_FOUND
-            : ErrorCode.INTERNAL_ERROR;
+      ERROR_CODE_BY_STATUS[status] ??
+      (status >= 500
+        ? ErrorCode.INTERNAL_ERROR
+        : // 其余 4xx（413/415/405 等）均为客户端错误类，绝不能标成 INTERNAL_ERROR
+          ErrorCode.VALIDATION_FAILED);
     reply
       .code(status)
       .header("content-type", "application/problem+json")

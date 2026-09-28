@@ -115,7 +115,11 @@ describe("对话闭环：会话创建与提交（#7 Task A）", () => {
   it("commit：触发异步批提取，候选经完整写入路径入库（AC1）", async () => {
     const projectId = await seedProject("chat-commit");
     const conv = (
-      await app.inject({ method: "POST", url: "/v1/conversations", payload: { project_id: projectId } })
+      await app.inject({
+        method: "POST",
+        url: "/v1/conversations",
+        payload: { project_id: projectId },
+      })
     ).json();
     const messageId = uuidv7();
     await t.sql`insert into messages (id, conversation_id, speaker, raw_text, msg_time)
@@ -132,17 +136,23 @@ describe("对话闭环：会话创建与提交（#7 Task A）", () => {
     expect(extractCalls.length).toBeGreaterThan(before);
     expect(extractCalls.at(-1)!.prompt).toContain("PostgreSQL");
     // 候选经完整写入路径入库：Observation 锚定会话最后一条消息，Belief 已建
-    const obs = await t.sql`select evidence_id from observations where project_id = ${projectId} and attribute = 'database'`;
+    const obs =
+      await t.sql`select evidence_id from observations where project_id = ${projectId} and attribute = 'database'`;
     expect(obs.length).toBe(1);
     expect(obs[0]!.evidence_id).toBe(messageId);
-    const rows = await t.sql`select b.id from beliefs b where b.project_id = ${projectId} and b.attribute = 'database'`;
+    const rows =
+      await t.sql`select b.id from beliefs b where b.project_id = ${projectId} and b.attribute = 'database'`;
     expect(rows.length).toBe(1);
   });
 
   it("commit：重复提交 → 409", async () => {
     const projectId = await seedProject("chat-double-commit");
     const conv = (
-      await app.inject({ method: "POST", url: "/v1/conversations", payload: { project_id: projectId } })
+      await app.inject({
+        method: "POST",
+        url: "/v1/conversations",
+        payload: { project_id: projectId },
+      })
     ).json();
     const first = await app.inject({ method: "POST", url: `/v1/conversations/${conv.id}/commit` });
     expect(first.statusCode).toBe(200);

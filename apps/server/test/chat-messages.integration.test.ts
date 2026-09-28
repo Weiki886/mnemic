@@ -60,7 +60,9 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
         const texts = (opts.prompt as { content: unknown }[]).flatMap((m) =>
           typeof m.content === "string"
             ? [m.content]
-            : (m.content as { type: string; text?: string }[]).filter((c) => c.type === "text").map((c) => c.text ?? ""),
+            : (m.content as { type: string; text?: string }[])
+                .filter((c) => c.type === "text")
+                .map((c) => c.text ?? ""),
         );
         chatCalls.push(texts);
         return {
@@ -109,7 +111,13 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     return id;
   };
   const createConv = async (projectId: string) =>
-    (await app.inject({ method: "POST", url: "/v1/conversations", payload: { project_id: projectId } })).json().id as string;
+    (
+      await app.inject({
+        method: "POST",
+        url: "/v1/conversations",
+        payload: { project_id: projectId },
+      })
+    ).json().id as string;
   const postMessage = (convId: string, text: string) =>
     app.inject({ method: "POST", url: `/v1/conversations/${convId}/messages`, payload: { text } });
 
@@ -132,8 +140,10 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     expect(res1.statusCode).toBe(200);
     await waitForChatJobs();
     // 单条消息异步提取：候选入库且锚定该用户消息
-    const userMsg = await t.sql`select id from messages where conversation_id = ${conv1} and speaker = 'user'`;
-    const obs = await t.sql`select evidence_id from observations where project_id = ${projectId} and attribute = 'database'`;
+    const userMsg =
+      await t.sql`select id from messages where conversation_id = ${conv1} and speaker = 'user'`;
+    const obs =
+      await t.sql`select evidence_id from observations where project_id = ${projectId} and attribute = 'database'`;
     expect(obs.length).toBe(1);
     expect(obs[0]!.evidence_id).toBe(userMsg[0]!.id);
 
@@ -150,7 +160,8 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     expect(memories[0].value).toBe("PostgreSQL");
     expect(memories[0].belief_version_id).toBeDefined();
     // 助手回答已存为消息
-    const assistantMsg = await t.sql`select raw_text from messages where id = ${res2.json().message_id} and speaker = 'assistant'`;
+    const assistantMsg =
+      await t.sql`select raw_text from messages where id = ${res2.json().message_id} and speaker = 'assistant'`;
     expect(assistantMsg.length).toBe(1);
     await waitForChatJobs();
   });
@@ -162,7 +173,12 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     await postMessage(conv, "我们数据库用 PostgreSQL");
     await waitForChatJobs();
     extractionQueue.push(
-      candidateJson({ value: "MySQL", valid_time: "2026-09-25", assertion_intent: "UPDATE", entities: ["chat-proj", "MySQL"] }),
+      candidateJson({
+        value: "MySQL",
+        valid_time: "2026-09-25",
+        assertion_intent: "UPDATE",
+        entities: ["chat-proj", "MySQL"],
+      }),
     );
     await postMessage(conv, "换成 MySQL 了");
     await waitForChatJobs();
@@ -213,7 +229,11 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     });
     const projectId = await seedProject("chat-degraded");
     const conv = (
-      await degraded.inject({ method: "POST", url: "/v1/conversations", payload: { project_id: projectId } })
+      await degraded.inject({
+        method: "POST",
+        url: "/v1/conversations",
+        payload: { project_id: projectId },
+      })
     ).json().id as string;
     const res = await degraded.inject({
       method: "POST",
@@ -271,7 +291,9 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     await t.sql`insert into messages (id, conversation_id, speaker, raw_text, msg_time)
       values (${offlineMsgId}, ${conv}, 'user', 'ORM 选了 Drizzle', now())`;
 
-    extractionQueue.push(candidateJson({ attribute: "orm", value: "Drizzle", entities: ["chat-proj", "Drizzle"] }));
+    extractionQueue.push(
+      candidateJson({ attribute: "orm", value: "Drizzle", entities: ["chat-proj", "Drizzle"] }),
+    );
     const res = await app.inject({ method: "POST", url: `/v1/conversations/${conv}/commit` });
     expect(res.json().extraction_triggered).toBe(true);
     await waitForChatJobs();
@@ -282,7 +304,8 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     expect(commitExtractPrompt).not.toContain("PostgreSQL");
 
     // 新候选只锚定离线消息；已提取过的消息不产生重复 Observation
-    const obs = await t.sql`select attribute, evidence_id from observations where project_id = ${projectId} order by attribute`;
+    const obs =
+      await t.sql`select attribute, evidence_id from observations where project_id = ${projectId} order by attribute`;
     expect(obs.length).toBe(2);
     expect(obs[0]!.attribute).toBe("database");
     expect(obs[1]!.attribute).toBe("orm");

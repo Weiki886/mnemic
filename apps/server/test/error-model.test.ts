@@ -30,4 +30,20 @@ describe("统一错误模型（problem+json）", () => {
     expect(JSON.stringify(body)).not.toContain("secret internals");
     await app.close();
   });
+
+  it("不支持的媒体类型返回 415，错误码为客户端类而非 INTERNAL_ERROR", async () => {
+    const app = buildApp();
+    app.post("/echo", async () => ({ ok: true }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/echo",
+      headers: { "content-type": "text/xml" },
+      payload: "<x/>",
+    });
+    expect(res.statusCode).toBe(415);
+    const body = res.json();
+    expect(body.code).not.toBe("INTERNAL_ERROR");
+    expect(body.code).toBe("VALIDATION_FAILED");
+    await app.close();
+  });
 });

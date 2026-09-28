@@ -66,10 +66,7 @@ export const beliefStatusEnum = pgEnum("belief_status", [
   "deleted",
   "retracted",
 ]);
-export const providerProtocolEnum = pgEnum("provider_protocol", [
-  "openai-compatible",
-  "anthropic",
-]);
+export const providerProtocolEnum = pgEnum("provider_protocol", ["openai-compatible", "anthropic"]);
 export const pendingStatusEnum = pgEnum("pending_status", [
   "pending",
   "confirmed",
@@ -157,9 +154,7 @@ export const beliefs = pgTable(
       .references(() => projects.id),
     subject: text("subject").notNull(),
     attribute: text("attribute").notNull(),
-    currentVersionId: uuid("current_version_id").references(
-      (): AnyPgColumn => beliefVersions.id,
-    ),
+    currentVersionId: uuid("current_version_id").references((): AnyPgColumn => beliefVersions.id),
     evidenceCount: integer("evidence_count").notNull().default(1),
     // 三字段分离（决策 6）：confidence 多可信 / salience 多值得召回 / importance 多重要
     confidence: score("confidence"),
@@ -170,11 +165,13 @@ export const beliefs = pgTable(
     status: beliefStatusEnum("status").notNull().default("active"),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("beliefs_project_subject_attribute_key").on(
-    table.projectId,
-    table.subject,
-    table.attribute,
-  )],
+  (table) => [
+    uniqueIndex("beliefs_project_subject_attribute_key").on(
+      table.projectId,
+      table.subject,
+      table.attribute,
+    ),
+  ],
 );
 
 /**

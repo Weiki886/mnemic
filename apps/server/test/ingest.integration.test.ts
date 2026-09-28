@@ -53,26 +53,50 @@ describe("写入路径③：去重与四路分流（#16）", () => {
     expect(beliefsRows).toHaveLength(1);
     expect(beliefsRows[0]!.current_version_id).not.toBeNull();
     expect(beliefsRows[0]!.evidence_count).toBe(1);
-    const v = await t.sql`select * from belief_versions where id = ${beliefsRows[0]!.current_version_id}`;
+    const v =
+      await t.sql`select * from belief_versions where id = ${beliefsRows[0]!.current_version_id}`;
     expect(v[0]!.value).toBe("PostgreSQL");
-    expect(new Date(v[0]!.valid_from).getTime()).toBe(new Date("2026-09-01T00:00:00.000Z").getTime());
+    expect(new Date(v[0]!.valid_from).getTime()).toBe(
+      new Date("2026-09-01T00:00:00.000Z").getTime(),
+    );
     expect(v[0]!.source_observation_id).toBe(r.observationId);
   });
 
   it("规范化生效：' DB' / 'db ' / 别名 postgres↔postgresql 命中同一 Belief 而非新建", async () => {
     const subject = `norm-${uuidv7().slice(0, 8)}`;
-    const first = await ingestCandidate(t.db, projectId, mkCandidate({ subject, attribute: " DB", value: "PostgreSQL" }), await mkMessage());
+    const first = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject, attribute: " DB", value: "PostgreSQL" }),
+      await mkMessage(),
+    );
     expect(first.route).toBe("created");
     // attribute 大小写/空白差异 → 同一 Belief（conflict 而非 created）
-    const second = await ingestCandidate(t.db, projectId, mkCandidate({ subject, attribute: "db ", value: "MySQL" }), await mkMessage());
+    const second = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject, attribute: "db ", value: "MySQL" }),
+      await mkMessage(),
+    );
     expect(second.route).toBe("conflict");
     expect(second.beliefId).toBe(first.beliefId);
     // 别名差异（值里不算，subject 里算）：postgres vs postgresql
     const s2 = `alias-${uuidv7().slice(0, 8)}`;
-    const a = await ingestCandidate(t.db, projectId, mkCandidate({ subject: s2, attribute: "postgres", value: "v17" }), await mkMessage());
-    const b = await ingestCandidate(t.db, projectId, mkCandidate({ subject: s2, attribute: "PostgreSQL", value: "v18" }), await mkMessage());
+    const a = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject: s2, attribute: "postgres", value: "v17" }),
+      await mkMessage(),
+    );
+    const b = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject: s2, attribute: "PostgreSQL", value: "v18" }),
+      await mkMessage(),
+    );
     expect(b.beliefId).toBe(a.beliefId);
-    const count = await t.sql`select count(*)::int as c from beliefs where project_id = ${projectId} and subject = ${s2}`;
+    const count =
+      await t.sql`select count(*)::int as c from beliefs where project_id = ${projectId} and subject = ${s2}`;
     expect(count[0]!.c).toBe(1);
   });
 
@@ -83,7 +107,8 @@ describe("写入路径③：去重与四路分流（#16）", () => {
     const second = await ingestCandidate(t.db, projectId, candidate, evidenceId);
     expect(second.route).toBe("skipped");
     expect(second.observationId).toBe(first.observationId);
-    const obs = await t.sql`select count(*)::int as c from observations where evidence_id = ${evidenceId}`;
+    const obs =
+      await t.sql`select count(*)::int as c from observations where evidence_id = ${evidenceId}`;
     expect(obs[0]!.c).toBe(1);
     const b = await t.sql`select evidence_count from beliefs where id = ${first.beliefId}`;
     expect(b[0]!.evidence_count).toBe(1);
@@ -91,8 +116,18 @@ describe("写入路径③：去重与四路分流（#16）", () => {
 
   it("语义等价的重复事实 → merged，evidence_count 增加（经 #5 strengthen）", async () => {
     const subject = `merge-${uuidv7().slice(0, 8)}`;
-    const first = await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: "PostgreSQL" }), await mkMessage());
-    const second = await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: " postgresql " }), await mkMessage());
+    const first = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject, value: "PostgreSQL" }),
+      await mkMessage(),
+    );
+    const second = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject, value: " postgresql " }),
+      await mkMessage(),
+    );
     expect(second.route).toBe("merged");
     expect(second.relation).toBe("strengthen");
     const b = await t.sql`select evidence_count from beliefs where id = ${first.beliefId}`;
@@ -101,8 +136,23 @@ describe("写入路径③：去重与四路分流（#16）", () => {
 
   it("同 subject+attribute 不同值 → conflict 转入 #5，绝不合并（值被改判而非混存）", async () => {
     const subject = `conf-${uuidv7().slice(0, 8)}`;
-    const first = await ingestCandidate(t.db, projectId, mkCandidate({ subject, value: "MySQL", valid_time: "2026-09-01" }), await mkMessage());
-    const second = await ingestCandidate(t.db, projectId, mkCandidate({ subject, assertion_intent: "UPDATE", value: "PostgreSQL", valid_time: "2026-09-10" }), await mkMessage());
+    const first = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject, value: "MySQL", valid_time: "2026-09-01" }),
+      await mkMessage(),
+    );
+    const second = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({
+        subject,
+        assertion_intent: "UPDATE",
+        value: "PostgreSQL",
+        valid_time: "2026-09-10",
+      }),
+      await mkMessage(),
+    );
     expect(second.route).toBe("conflict");
     expect(second.relation).toBe("supersede");
     const b = await t.sql`select current_version_id from beliefs where id = ${first.beliefId}`;
@@ -112,8 +162,23 @@ describe("写入路径③：去重与四路分流（#16）", () => {
 
   it("候选涵盖当前值 → conflict 路由桶，Resolver 输出 extend（新版本为合并值）", async () => {
     const subject = `ext-${uuidv7().slice(0, 8)}`;
-    const first = await ingestCandidate(t.db, projectId, mkCandidate({ subject, attribute: "frontend", value: "用 React" }), await mkMessage());
-    const second = await ingestCandidate(t.db, projectId, mkCandidate({ subject, attribute: "frontend", value: "用 React 和 TypeScript", valid_time: "2026-09-10" }), await mkMessage());
+    const first = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ subject, attribute: "frontend", value: "用 React" }),
+      await mkMessage(),
+    );
+    const second = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({
+        subject,
+        attribute: "frontend",
+        value: "用 React 和 TypeScript",
+        valid_time: "2026-09-10",
+      }),
+      await mkMessage(),
+    );
     expect(second.route).toBe("conflict"); // 四路定义不含 extend 独立路由，归 conflict 桶
     expect(second.relation).toBe("extend");
     const b = await t.sql`select current_version_id from beliefs where id = ${first.beliefId}`;
@@ -122,14 +187,24 @@ describe("写入路径③：去重与四路分流（#16）", () => {
   });
 
   it("画像类 Belief 创建 → profile_dirty 置位，is_profile 从候选正确复制入行", async () => {
-    const r = await ingestCandidate(t.db, projectId, mkCandidate({ is_profile: true }), await mkMessage());
+    const r = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ is_profile: true }),
+      await mkMessage(),
+    );
     const b = await t.sql`select is_profile, profile_dirty from beliefs where id = ${r.beliefId}`;
     expect(b[0]!.is_profile).toBe(true);
     expect(b[0]!.profile_dirty).toBe(true);
   });
 
   it("非画像创建 → is_profile 与 profile_dirty 均为 false", async () => {
-    const r = await ingestCandidate(t.db, projectId, mkCandidate({ is_profile: false }), await mkMessage());
+    const r = await ingestCandidate(
+      t.db,
+      projectId,
+      mkCandidate({ is_profile: false }),
+      await mkMessage(),
+    );
     const b = await t.sql`select is_profile, profile_dirty from beliefs where id = ${r.beliefId}`;
     expect(b[0]!.is_profile).toBe(false);
     expect(b[0]!.profile_dirty).toBe(false);
