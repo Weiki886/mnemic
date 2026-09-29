@@ -39,8 +39,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       serializers: {
         req: (req): Record<string, unknown> => ({ ...stdSerializers.req(req.raw) }),
       },
+      // res 只序列化 statusCode，配 res.headers.* 永远匹配不到，不放摆设条目（#62）
       redact: {
-        paths: ["req.headers.authorization", 'res.headers["set-cookie"]'],
+        paths: ["req.headers.authorization", "req.headers.cookie", 'req.headers["x-api-key"]'],
         censor: "[REDACTED]",
       },
       ...(options.logStream ? { stream: options.logStream } : {}),
