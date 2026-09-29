@@ -6,10 +6,13 @@ describe("优雅停机等待异步写回（#62）", () => {
   it("app.close() 等待 chat 写回任务排空后才返回（停机不丢已 commit 的写回）", async () => {
     const app = buildApp();
     let settled = false;
-    trackJob(async () => {
-      await new Promise((r) => setTimeout(r, 300));
-      settled = true;
-    }, () => {});
+    trackJob(
+      async () => {
+        await new Promise((r) => setTimeout(r, 300));
+        settled = true;
+      },
+      () => {},
+    );
 
     await app.close();
     expect(settled).toBe(true);
@@ -25,7 +28,10 @@ describe("优雅停机等待异步写回（#62）", () => {
         },
       },
     });
-    trackJob(() => new Promise<void>(() => {}), () => {}); // 永不 settle
+    trackJob(
+      () => new Promise<void>(() => {}),
+      () => {},
+    ); // 永不 settle
 
     const t0 = Date.now();
     await app.close();
