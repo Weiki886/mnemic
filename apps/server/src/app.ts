@@ -7,6 +7,7 @@ import { registerProviderRoutes } from "./providers/routes.js";
 import { registerGateRoutes } from "./gate/routes.js";
 import { registerBeliefRoutes } from "./beliefs/correct-route.js";
 import { registerChatRoutes } from "./chat/routes.js";
+import { waitForChatJobs } from "./chat/jobs.js";
 import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 
@@ -29,7 +30,12 @@ export interface BuildAppOptions {
   providerFactory?: ProviderFactory | undefined;
   /** 对话闭环附加依赖（测试注入检索替身） */
   chatDeps?: { retrieveFn?: typeof retrieve } | undefined;
+  /** 停机等待异步写回任务的超时上限（毫秒），默认 10s；测试可调小 */
+  shutdownDrainMs?: number | undefined;
 }
+
+/** 停机排空写回任务的默认超时：覆盖批提取的正常耗时，又不至于让停机无限悬挂 */
+const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
@@ -57,6 +63,26 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.addHook("onSend", async (request, reply) => {
     reply.header("x-request-id", request.id);
+  });
+
+  // 优雅停机衔接异步写回（#62）：app.close() 先等 chat commit 的 pending
+  // 写回任务排空，否则刚返回成功的 commit 在停机时静默丢失；挂死任务超时放行
+  app.addHook("onClose", async () => {
+    const drainMs = options.shutdownDrainMs ?? DEFAULT_SHUTDOWN_DRAIN_MS;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        waitForChatJobs(),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(() => {
+            app.log.warn({ drainMs }, "shutdown drain timeout: pending writeback jobs abandoned");
+            resolve();
+          }, drainMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   });
 
   app.get("/health", async () => ({ status: "ok" }));
