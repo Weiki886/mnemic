@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { ErrorCode, problem } from "@mnemic/shared";
@@ -38,10 +38,15 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
     return convs.map((c) => ({ ...c, message_count: countBy.get(c.id) ?? 0 }));
   });
 
-  // 会话详情：消息时间线 + 引用记忆（版本 ID → 现查 subject/attribute/value）
-  app.get("/conversations/:id", async (request, reply: FastifyReply) => {
-    const { id } = request.params as { id: string };
-    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id)).limit(1);
+  // 会话详情：消息时间线 + 引用记忆（版本 ID → 现查 subject/attribute/value）。
+  // 项目隔离：URL 强制携带 projectId，跨项目一律 404（不泄露存在性）。
+  app.get("/projects/:projectId/conversations/:id", async (request, reply: FastifyReply) => {
+    const { projectId, id } = request.params as { projectId: string; id: string };
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.projectId, projectId)))
+      .limit(1);
     if (!conv) {
       return reply
         .code(404)

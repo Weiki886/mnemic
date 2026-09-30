@@ -160,7 +160,10 @@ describe("记忆只读 API 与软删除（#8）", () => {
   });
 
   it("详情：当前值 + 版本时间线（含来源会话跳转锚点）", async () => {
-    const res = await app.inject({ method: "GET", url: `/beliefs/${beliefId}` });
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/beliefs/${beliefId}`,
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
       id: string;
@@ -192,14 +195,29 @@ describe("记忆只读 API 与软删除（#8）", () => {
   });
 
   it("详情：不存在 → 404 problem+json", async () => {
-    const res = await app.inject({ method: "GET", url: `/beliefs/${uuidv7()}` });
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/beliefs/${uuidv7()}`,
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+  });
+
+  it("详情：跨项目访问 → 404（不泄露存在性）", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${otherProjectId}/beliefs/${beliefId}`,
+    });
     expect(res.statusCode).toBe(404);
     expect(res.headers["content-type"]).toContain("application/problem+json");
   });
 
   it("软删除：active → deleted，列表状态联动", async () => {
     const target = await seedBelief({ subject: "tmp", attribute: "orm", value: "Drizzle" });
-    const res = await app.inject({ method: "POST", url: `/beliefs/${target.id}/delete` });
+    const res = await app.inject({
+      method: "POST",
+      url: `/projects/${projectId}/beliefs/${target.id}/delete`,
+    });
     expect(res.statusCode).toBe(200);
     const rows = await t.sql`select status from beliefs where id = ${target.id}`;
     expect(rows[0]!.status).toBe("deleted");
@@ -214,23 +232,51 @@ describe("记忆只读 API 与软删除（#8）", () => {
   });
 
   it("软删除：非 active 不可删（409），不存在 404", async () => {
-    const again = await app.inject({ method: "POST", url: `/beliefs/${deletedBeliefId}/delete` });
+    const again = await app.inject({
+      method: "POST",
+      url: `/projects/${projectId}/beliefs/${deletedBeliefId}/delete`,
+    });
     expect(again.statusCode).toBe(409);
-    const missing = await app.inject({ method: "POST", url: `/beliefs/${uuidv7()}/delete` });
+    const missing = await app.inject({
+      method: "POST",
+      url: `/projects/${projectId}/beliefs/${uuidv7()}/delete`,
+    });
     expect(missing.statusCode).toBe(404);
   });
 
+  it("软删除/恢复：跨项目操作 → 404", async () => {
+    const del = await app.inject({
+      method: "POST",
+      url: `/projects/${otherProjectId}/beliefs/${beliefId}/delete`,
+    });
+    expect(del.statusCode).toBe(404);
+    const res = await app.inject({
+      method: "POST",
+      url: `/projects/${otherProjectId}/beliefs/${deletedBeliefId}/restore`,
+    });
+    expect(res.statusCode).toBe(404);
+    // 未被实际操作：状态保持原样
+    const rows = await t.sql`select status from beliefs where id = ${beliefId}`;
+    expect(rows[0]!.status).toBe("active");
+  });
+
   it("恢复：deleted → active，非 deleted 不可恢复（409）", async () => {
-    const res = await app.inject({ method: "POST", url: `/beliefs/${deletedBeliefId}/restore` });
+    const res = await app.inject({
+      method: "POST",
+      url: `/projects/${projectId}/beliefs/${deletedBeliefId}/restore`,
+    });
     expect(res.statusCode).toBe(200);
     const rows = await t.sql`select status from beliefs where id = ${deletedBeliefId}`;
     expect(rows[0]!.status).toBe("active");
     const conflict = await app.inject({
       method: "POST",
-      url: `/beliefs/${deletedBeliefId}/restore`,
+      url: `/projects/${projectId}/beliefs/${deletedBeliefId}/restore`,
     });
     expect(conflict.statusCode).toBe(409);
-    const missing = await app.inject({ method: "POST", url: `/beliefs/${uuidv7()}/restore` });
+    const missing = await app.inject({
+      method: "POST",
+      url: `/projects/${projectId}/beliefs/${uuidv7()}/restore`,
+    });
     expect(missing.statusCode).toBe(404);
   });
 });

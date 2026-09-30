@@ -9,6 +9,7 @@ describe("对话只读 API（#8）", () => {
   let t: TestDb;
   let app: ReturnType<typeof buildApp>;
   let projectId: string;
+  let otherProject: string;
   let convId: string;
   let beliefId: string;
   let versionId: string;
@@ -17,7 +18,7 @@ describe("对话只读 API（#8）", () => {
     t = await setupTestDb();
     projectId = uuidv7();
     await t.sql`insert into projects (id, name) values (${projectId}, 'conv-read')`;
-    const otherProject = uuidv7();
+    otherProject = uuidv7();
     await t.sql`insert into projects (id, name) values (${otherProject}, 'conv-read-other')`;
     await t.sql`insert into conversations (id, project_id, title) values (${uuidv7()}, ${otherProject}, 'other-conv')`;
 
@@ -68,7 +69,10 @@ describe("对话只读 API（#8）", () => {
   });
 
   it("会话详情：消息按时间排序，引用记忆现查解析", async () => {
-    const res = await app.inject({ method: "GET", url: `/conversations/${convId}` });
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/conversations/${convId}`,
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
       id: string;
@@ -108,7 +112,19 @@ describe("对话只读 API（#8）", () => {
   });
 
   it("会话详情：不存在 → 404 problem+json", async () => {
-    const res = await app.inject({ method: "GET", url: `/conversations/${uuidv7()}` });
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/conversations/${uuidv7()}`,
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+  });
+
+  it("会话详情：跨项目访问 → 404（不泄露存在性）", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${otherProject}/conversations/${convId}`,
+    });
     expect(res.statusCode).toBe(404);
     expect(res.headers["content-type"]).toContain("application/problem+json");
   });

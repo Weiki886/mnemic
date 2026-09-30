@@ -88,10 +88,15 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
     return rows;
   });
 
-  // 详情：当前值 + 完整版本时间线 + 每版来源（observation → 消息 → 会话，供 UI 跳转）
-  app.get("/beliefs/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const [belief] = await db.select().from(beliefs).where(eq(beliefs.id, id)).limit(1);
+  // 详情：当前值 + 完整版本时间线 + 每版来源（observation → 消息 → 会话，供 UI 跳转）。
+  // 项目隔离：URL 强制携带 projectId，跨项目一律 404（不泄露存在性，防 ID 枚举）。
+  app.get("/projects/:projectId/beliefs/:id", async (request, reply) => {
+    const { projectId, id } = request.params as { projectId: string; id: string };
+    const [belief] = await db
+      .select()
+      .from(beliefs)
+      .where(and(eq(beliefs.id, id), eq(beliefs.projectId, projectId)))
+      .limit(1);
     if (!belief) return notFound(reply, request.id, id);
     const [current] = belief.currentVersionId
       ? await db
@@ -155,9 +160,14 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
   });
 
   // 基础软删除（#8）：active → deleted；恢复 deleted → active。其余状态迁移拒绝。
-  app.post("/beliefs/:id/delete", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const [belief] = await db.select().from(beliefs).where(eq(beliefs.id, id)).limit(1);
+  // 与详情同一项目隔离约束。
+  app.post("/projects/:projectId/beliefs/:id/delete", async (request, reply) => {
+    const { projectId, id } = request.params as { projectId: string; id: string };
+    const [belief] = await db
+      .select()
+      .from(beliefs)
+      .where(and(eq(beliefs.id, id), eq(beliefs.projectId, projectId)))
+      .limit(1);
     if (!belief) return notFound(reply, request.id, id);
     if (belief.status !== "active") {
       return conflict(reply, request.id, `仅 active 状态可软删除，当前：${belief.status}`);
@@ -166,9 +176,13 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
     return { id, status: "deleted" };
   });
 
-  app.post("/beliefs/:id/restore", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const [belief] = await db.select().from(beliefs).where(eq(beliefs.id, id)).limit(1);
+  app.post("/projects/:projectId/beliefs/:id/restore", async (request, reply) => {
+    const { projectId, id } = request.params as { projectId: string; id: string };
+    const [belief] = await db
+      .select()
+      .from(beliefs)
+      .where(and(eq(beliefs.id, id), eq(beliefs.projectId, projectId)))
+      .limit(1);
     if (!belief) return notFound(reply, request.id, id);
     if (belief.status !== "deleted") {
       return conflict(reply, request.id, `仅 deleted 状态可恢复，当前：${belief.status}`);
