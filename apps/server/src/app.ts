@@ -8,6 +8,7 @@ import { registerGateRoutes } from "./gate/routes.js";
 import { registerBeliefRoutes } from "./beliefs/correct-route.js";
 import { registerBeliefReadRoutes } from "./beliefs/read-routes.js";
 import { registerChatRoutes } from "./chat/routes.js";
+import { registerConversationReadRoutes } from "./chat/read-routes.js";
 import { waitForChatJobs } from "./chat/jobs.js";
 import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
@@ -95,6 +96,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerGateRoutes(app, options.db);
     registerBeliefRoutes(app, options.db);
     registerBeliefReadRoutes(app, options.db);
+    registerConversationReadRoutes(app, options.db);
   }
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
