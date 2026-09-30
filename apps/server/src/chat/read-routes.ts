@@ -7,10 +7,7 @@ import { beliefVersions, beliefs, conversations, messages } from "../db/schema.j
 /** 对话只读视图 API（#8）：交互式对话不做，仅会话列表 + 消息时间线 + 引用记忆现查解析。
  *  messages.memories 只存 belief_version_id（决策 8），读出时 join 现查内容。 */
 
-export function registerConversationReadRoutes(
-  app: FastifyInstance,
-  db: PostgresJsDatabase,
-): void {
+export function registerConversationReadRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
   // 会话列表（按项目），带消息数
   app.get("/projects/:projectId/conversations", async (request) => {
     const { projectId } = request.params as { projectId: string };
