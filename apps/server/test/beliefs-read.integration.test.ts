@@ -212,6 +212,54 @@ describe("记忆只读 API 与软删除（#8）", () => {
     expect(res.headers["content-type"]).toContain("application/problem+json");
   });
 
+  it("参数校验：非法 UUID → 400", async () => {
+    const badProject = await app.inject({
+      method: "GET",
+      url: `/projects/not-a-uuid/beliefs`,
+    });
+    expect(badProject.statusCode).toBe(400);
+    const badBelief = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/beliefs/not-a-uuid`,
+    });
+    expect(badBelief.statusCode).toBe(400);
+    const badDelete = await app.inject({
+      method: "POST",
+      url: `/projects/${projectId}/beliefs/not-a-uuid/delete`,
+    });
+    expect(badDelete.statusCode).toBe(400);
+  });
+
+  it("列表分页：limit/offset 生效，limit 上限 1000", async () => {
+    const paged = uuidv7();
+    await t.sql`insert into projects (id, name) values (${paged}, 'paged')`;
+    for (let i = 0; i < 5; i++) {
+      await seedBelief({
+        subject: `s${i}`,
+        attribute: "a",
+        value: `v${i}`,
+        project: paged,
+      });
+    }
+    const page1 = await app.inject({
+      method: "GET",
+      url: `/projects/${paged}/beliefs?limit=2`,
+    });
+    expect(page1.statusCode).toBe(200);
+    expect((page1.json() as { subject: string }[]).map((r) => r.subject)).toEqual(["s0", "s1"]);
+    const page3 = await app.inject({
+      method: "GET",
+      url: `/projects/${paged}/beliefs?limit=2&offset=4`,
+    });
+    expect((page3.json() as { subject: string }[]).map((r) => r.subject)).toEqual(["s4"]);
+    // 上限：limit 超过 1000 → 400
+    const tooBig = await app.inject({
+      method: "GET",
+      url: `/projects/${paged}/beliefs?limit=5000`,
+    });
+    expect(tooBig.statusCode).toBe(400);
+  });
+
   it("软删除：active → deleted，列表状态联动", async () => {
     const target = await seedBelief({ subject: "tmp", attribute: "orm", value: "Drizzle" });
     const res = await app.inject({

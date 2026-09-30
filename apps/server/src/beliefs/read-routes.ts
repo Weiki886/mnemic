@@ -12,7 +12,27 @@ const ListQuery = z.object({
   status: z.enum(["active", "deleted", "retracted", "all"]).default("active"),
   profile: z.enum(["true", "false"]).optional(),
   q: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(200),
+  offset: z.coerce.number().int().min(0).default(0),
 });
+
+const ProjectParams = z.object({ projectId: z.string().uuid() });
+const BeliefParams = ProjectParams.extend({ id: z.string().uuid() });
+
+function badRequest(reply: FastifyReply, requestId: string, detail: string, error: z.ZodError) {
+  return reply
+    .code(400)
+    .header("content-type", "application/problem+json")
+    .send(
+      problem({
+        status: 400,
+        code: ErrorCode.VALIDATION_FAILED,
+        detail,
+        errors: zodIssues(error),
+        requestId,
+      }),
+    );
+}
 
 function notFound(reply: FastifyReply, requestId: string, id: string) {
   return reply
@@ -44,23 +64,16 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
 
   // 列表：状态/画像过滤 + subject/attribute 搜索；当前值随行列出
   app.get("/projects/:projectId/beliefs", async (request, reply) => {
-    const { projectId } = request.params as { projectId: string };
+    const params = ProjectParams.safeParse(request.params);
+    if (!params.success) {
+      return badRequest(reply, request.id, "路径参数非法：projectId 必须为 UUID", params.error);
+    }
     const parsed = ListQuery.safeParse(request.query);
     if (!parsed.success) {
-      return reply
-        .code(400)
-        .header("content-type", "application/problem+json")
-        .send(
-          problem({
-            status: 400,
-            code: ErrorCode.VALIDATION_FAILED,
-            detail: "列表查询参数非法",
-            errors: zodIssues(parsed.error),
-            requestId: request.id,
-          }),
-        );
+      return badRequest(reply, request.id, "列表查询参数非法", parsed.error);
     }
-    const { status, profile, q } = parsed.data;
+    const { projectId } = params.data;
+    const { status, profile, q, limit, offset } = parsed.data;
     const conds: SQL[] = [eq(beliefs.projectId, projectId)];
     if (status !== "all") conds.push(eq(beliefs.status, status));
     if (profile) conds.push(eq(beliefs.isProfile, profile === "true"));
@@ -84,14 +97,20 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
       .from(beliefs)
       .leftJoin(beliefVersions, eq(beliefs.currentVersionId, beliefVersions.id))
       .where(and(...conds))
-      .orderBy(asc(beliefs.subject), asc(beliefs.attribute));
+      .orderBy(asc(beliefs.subject), asc(beliefs.attribute))
+      .limit(limit)
+      .offset(offset);
     return rows;
   });
 
   // 详情：当前值 + 完整版本时间线 + 每版来源（observation → 消息 → 会话，供 UI 跳转）。
   // 项目隔离：URL 强制携带 projectId，跨项目一律 404（不泄露存在性，防 ID 枚举）。
   app.get("/projects/:projectId/beliefs/:id", async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const params = BeliefParams.safeParse(request.params);
+    if (!params.success) {
+      return badRequest(reply, request.id, "路径参数非法：必须为 UUID", params.error);
+    }
+    const { projectId, id } = params.data;
     const [belief] = await db
       .select()
       .from(beliefs)
@@ -162,7 +181,11 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
   // 基础软删除（#8）：active → deleted；恢复 deleted → active。其余状态迁移拒绝。
   // 与详情同一项目隔离约束。
   app.post("/projects/:projectId/beliefs/:id/delete", async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const params = BeliefParams.safeParse(request.params);
+    if (!params.success) {
+      return badRequest(reply, request.id, "路径参数非法：必须为 UUID", params.error);
+    }
+    const { projectId, id } = params.data;
     const [belief] = await db
       .select()
       .from(beliefs)
@@ -177,7 +200,11 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
   });
 
   app.post("/projects/:projectId/beliefs/:id/restore", async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const params = BeliefParams.safeParse(request.params);
+    if (!params.success) {
+      return badRequest(reply, request.id, "路径参数非法：必须为 UUID", params.error);
+    }
+    const { projectId, id } = params.data;
     const [belief] = await db
       .select()
       .from(beliefs)

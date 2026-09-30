@@ -1,16 +1,49 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { ErrorCode, problem } from "@mnemic/shared";
+import { z } from "zod";
+import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { beliefVersions, beliefs, conversations, messages } from "../db/schema.js";
 
 /** 对话只读视图 API（#8）：交互式对话不做，仅会话列表 + 消息时间线 + 引用记忆现查解析。
  *  messages.memories 只存 belief_version_id（决策 8），读出时 join 现查内容。 */
 
+const ListQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(1000).default(200),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+const ProjectParams = z.object({ projectId: z.string().uuid() });
+const ConvParams = ProjectParams.extend({ id: z.string().uuid() });
+
+function badRequest(reply: FastifyReply, requestId: string, detail: string, error: z.ZodError) {
+  return reply
+    .code(400)
+    .header("content-type", "application/problem+json")
+    .send(
+      problem({
+        status: 400,
+        code: ErrorCode.VALIDATION_FAILED,
+        detail,
+        errors: zodIssues(error),
+        requestId,
+      }),
+    );
+}
+
 export function registerConversationReadRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
   // 会话列表（按项目），带消息数
-  app.get("/projects/:projectId/conversations", async (request) => {
-    const { projectId } = request.params as { projectId: string };
+  app.get("/projects/:projectId/conversations", async (request, reply: FastifyReply) => {
+    const params = ProjectParams.safeParse(request.params);
+    if (!params.success) {
+      return badRequest(reply, request.id, "路径参数非法：projectId 必须为 UUID", params.error);
+    }
+    const query = ListQuery.safeParse(request.query);
+    if (!query.success) {
+      return badRequest(reply, request.id, "列表查询参数非法", query.error);
+    }
+    const { projectId } = params.data;
+    const { limit, offset } = query.data;
     const convs = await db
       .select({
         id: conversations.id,
@@ -20,7 +53,9 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
       })
       .from(conversations)
       .where(eq(conversations.projectId, projectId))
-      .orderBy(asc(conversations.startedAt));
+      .orderBy(asc(conversations.startedAt))
+      .limit(limit)
+      .offset(offset);
     if (convs.length === 0) return [];
     const counts = await db
       .select({ conversationId: messages.conversationId })
@@ -41,7 +76,11 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
   // 会话详情：消息时间线 + 引用记忆（版本 ID → 现查 subject/attribute/value）。
   // 项目隔离：URL 强制携带 projectId，跨项目一律 404（不泄露存在性）。
   app.get("/projects/:projectId/conversations/:id", async (request, reply: FastifyReply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
+    const params = ConvParams.safeParse(request.params);
+    if (!params.success) {
+      return badRequest(reply, request.id, "路径参数非法：必须为 UUID", params.error);
+    }
+    const { projectId, id } = params.data;
     const [conv] = await db
       .select()
       .from(conversations)
@@ -81,7 +120,10 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
             })
             .from(beliefVersions)
             .innerJoin(beliefs, eq(beliefVersions.beliefId, beliefs.id))
-            .where(inArray(beliefVersions.id, versionIds))
+            // 不信任 jsonb 内容：join 时重新断言项目边界，跨项目引用静默过滤
+            .where(
+              and(inArray(beliefVersions.id, versionIds), eq(beliefs.projectId, conv.projectId)),
+            )
         : [];
     const citedBy = new Map(cited.map((c) => [c.versionId, c]));
     return {
