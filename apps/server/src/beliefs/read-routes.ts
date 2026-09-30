@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
@@ -36,6 +36,12 @@ function conflict(reply: FastifyReply, requestId: string, detail: string) {
 }
 
 export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
+  // ILIKE 通配符转义：用户输入的 % / _ / \ 一律按字面量处理
+  const contains = (column: typeof beliefs.subject | typeof beliefs.attribute, q: string) => {
+    const escaped = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    return sql`${column} ilike ${`%${escaped}%`} escape '\\'`;
+  };
+
   // 列表：状态/画像过滤 + subject/attribute 搜索；当前值随行列出
   app.get("/projects/:projectId/beliefs", async (request, reply) => {
     const { projectId } = request.params as { projectId: string };
@@ -59,8 +65,7 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
     if (status !== "all") conds.push(eq(beliefs.status, status));
     if (profile) conds.push(eq(beliefs.isProfile, profile === "true"));
     if (q) {
-      const pattern = `%${q}%`;
-      conds.push(or(ilike(beliefs.subject, pattern), ilike(beliefs.attribute, pattern))!);
+      conds.push(or(contains(beliefs.subject, q), contains(beliefs.attribute, q))!);
     }
     const rows = await db
       .select({

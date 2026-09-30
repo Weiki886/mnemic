@@ -139,6 +139,18 @@ describe("记忆只读 API 与软删除（#8）", () => {
     });
     expect((searched.json() as { id: string }[]).map((r) => r.id)).toEqual([beliefId]);
 
+    // 通配符转义：% / _ 是字面量不是通配符，q=% 不该匹配所有行
+    const wildcard = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/beliefs?q=${encodeURIComponent("%")}`,
+    });
+    expect(wildcard.json()).toEqual([]);
+    const underscore = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/beliefs?q=${encodeURIComponent("_")}`,
+    });
+    expect(underscore.json()).toEqual([]);
+
     // 项目隔离：other 项目的信念不会混入
     const other = await app.inject({
       method: "GET",
