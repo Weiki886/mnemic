@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { stdSerializers } from "pino";
 import { ErrorCode, problem } from "@mnemic/shared";
@@ -34,6 +35,8 @@ export interface BuildAppOptions {
   chatDeps?: { retrieveFn?: typeof retrieve } | undefined;
   /** 停机等待异步写回任务的超时上限（毫秒），默认 10s；测试可调小 */
   shutdownDrainMs?: number | undefined;
+  /** CORS 允许的源（#8 Web 记忆中心跨源调 API）；未配置则不启用 CORS */
+  corsOrigin?: string | undefined;
 }
 
 /** 停机排空写回任务的默认超时：覆盖批提取的正常耗时，又不至于让停机无限悬挂 */
@@ -62,6 +65,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : randomUUID();
     },
   });
+
+  if (options.corsOrigin) {
+    app.register(cors, { origin: options.corsOrigin });
+  }
 
   app.addHook("onSend", async (request, reply) => {
     reply.header("x-request-id", request.id);

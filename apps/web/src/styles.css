@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* 设计 token（#8）：视觉主线 = 双时态版本时间线。
+ *  valid（teal）= 事实成立时间；record（violet）= 系统记录时间；
+ *  zinc = 中性界面；red = 破坏性操作（软删除等）。
+ *  双字体：正文 Geist Sans；数据/时间戳/ID 一律等宽 JetBrains Mono。 */
+@theme {
+  --font-sans: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-valid-50: #f0fdfa;
+  --color-valid-100: #ccfbf1;
+  --color-valid-500: #14b8a6;
+  --color-valid-600: #0d9488;
+  --color-valid-700: #0f766e;
+
+  --color-record-50: #f5f3ff;
+  --color-record-100: #ede9fe;
+  --color-record-500: #8b5cf6;
+  --color-record-600: #7c3aed;
+  --color-record-700: #6d28d9;
+}
