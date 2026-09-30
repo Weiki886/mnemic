@@ -260,6 +260,16 @@ describe("记忆只读 API 与软删除（#8）", () => {
     expect(tooBig.statusCode).toBe(400);
   });
 
+  it("软删除竞态：两个并发 delete 恰好一个成功（原子条件更新）", async () => {
+    const target = await seedBelief({ subject: "race", attribute: "orm", value: "x" });
+    const [r1, r2] = await Promise.all([
+      app.inject({ method: "POST", url: `/projects/${projectId}/beliefs/${target.id}/delete` }),
+      app.inject({ method: "POST", url: `/projects/${projectId}/beliefs/${target.id}/delete` }),
+    ]);
+    const codes = [r1.statusCode, r2.statusCode].sort();
+    expect(codes).toEqual([200, 409]);
+  });
+
   it("软删除：active → deleted，列表状态联动", async () => {
     const target = await seedBelief({ subject: "tmp", attribute: "orm", value: "Drizzle" });
     const res = await app.inject({

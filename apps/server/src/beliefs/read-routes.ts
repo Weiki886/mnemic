@@ -186,17 +186,23 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
       return badRequest(reply, request.id, "路径参数非法：必须为 UUID", params.error);
     }
     const { projectId, id } = params.data;
+    // 原子条件更新：状态检查与写同一条 SQL，消除 TOCTOU（并发删除恰好一个成功）
+    const updated = await db
+      .update(beliefs)
+      .set({ status: "deleted" })
+      .where(
+        and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "active")),
+      )
+      .returning({ id: beliefs.id });
+    if (updated.length > 0) return { id, status: "deleted" };
+    // 未命中：区分不存在（404）与状态不允许（409）
     const [belief] = await db
       .select()
       .from(beliefs)
       .where(and(eq(beliefs.id, id), eq(beliefs.projectId, projectId)))
       .limit(1);
     if (!belief) return notFound(reply, request.id, id);
-    if (belief.status !== "active") {
-      return conflict(reply, request.id, `仅 active 状态可软删除，当前：${belief.status}`);
-    }
-    await db.update(beliefs).set({ status: "deleted" }).where(eq(beliefs.id, id));
-    return { id, status: "deleted" };
+    return conflict(reply, request.id, `仅 active 状态可软删除，当前：${belief.status}`);
   });
 
   app.post("/projects/:projectId/beliefs/:id/restore", async (request, reply) => {
@@ -205,16 +211,20 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
       return badRequest(reply, request.id, "路径参数非法：必须为 UUID", params.error);
     }
     const { projectId, id } = params.data;
+    const updated = await db
+      .update(beliefs)
+      .set({ status: "active" })
+      .where(
+        and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "deleted")),
+      )
+      .returning({ id: beliefs.id });
+    if (updated.length > 0) return { id, status: "active" };
     const [belief] = await db
       .select()
       .from(beliefs)
       .where(and(eq(beliefs.id, id), eq(beliefs.projectId, projectId)))
       .limit(1);
     if (!belief) return notFound(reply, request.id, id);
-    if (belief.status !== "deleted") {
-      return conflict(reply, request.id, `仅 deleted 状态可恢复，当前：${belief.status}`);
-    }
-    await db.update(beliefs).set({ status: "active" }).where(eq(beliefs.id, id));
-    return { id, status: "active" };
+    return conflict(reply, request.id, `仅 deleted 状态可恢复，当前：${belief.status}`);
   });
 }
