@@ -29,9 +29,11 @@ export function assertDimensionMatch(actual: number, expected: number): void {
 
 /** 读 memory_embeddings.embedding 列的 vector 维度（pg_attribute.atttypmod） */
 export async function getEmbeddingColumnDimension(sql: postgres.Sql): Promise<number> {
+  // to_regclass：表不存在（迁移未执行）返回 NULL 而非抛错，
+  // 让下方友好提示分支真实可达（'...'::regclass 会直接抛 PostgresError，#60）
   const rows = await sql`
     select atttypmod from pg_attribute
-    where attrelid = 'public.memory_embeddings'::regclass and attname = 'embedding'
+    where attrelid = to_regclass('public.memory_embeddings') and attname = 'embedding'
   `;
   if (rows.length === 0) {
     throw new Error("memory_embeddings.embedding 列不存在（迁移未执行？）");

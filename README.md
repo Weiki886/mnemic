@@ -24,10 +24,13 @@ psql -d mnemic_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
 pnpm install
 pnpm -r run lint && pnpm -r run typecheck && pnpm -r run test && pnpm -r run build
 
-# 3. 启动记忆服务
+# 3. 执行数据库迁移（全新库必须；幂等，可重复执行）
+pnpm --filter @mnemic/server db:migrate
+
+# 4. 启动记忆服务
 pnpm dev:server
 
-# 4. 验证
+# 5. 验证
 curl http://localhost:3000/health   # {"status":"ok"}
 ```
 
