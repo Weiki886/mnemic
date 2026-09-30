@@ -107,6 +107,8 @@ export async function respondToMessage(
     speaker: "assistant",
     rawText: answer,
     msgTime: new Date(),
+    // 引用留痕（#8）：只存版本 ID，内容读出时现查（决策 8 引用不复制）
+    memories: candidates.length > 0 ? candidates.map((c) => c.beliefVersionId) : null,
   });
 
   // 异步写记忆：先认领再提取（认领失败 = 并发 commit 已接管，无需重复提取）

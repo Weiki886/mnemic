@@ -166,6 +166,26 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     await waitForChatJobs();
   });
 
+  it("回答引用的记忆版本 ID 持久化到助手消息（#8 只读视图数据源）", async () => {
+    const projectId = await seedProject("chat-cited");
+    const conv1 = await createConv(projectId);
+    extractionQueue.push(candidateJson());
+    await postMessage(conv1, "我们数据库决定用 PostgreSQL");
+    await waitForChatJobs();
+
+    const conv2 = await createConv(projectId);
+    extractionQueue.push("[]");
+    const res = await postMessage(conv2, "database 选型是 PostgreSQL 吗？");
+    expect(res.json().memories.length).toBeGreaterThan(0);
+    const cited = res.json().memories[0].belief_version_id as string;
+    // 响应里返回的引用必须落库：助手消息 memories 只存版本 ID（决策 8 引用不复制）
+    const rows =
+      await t.sql`select memories from messages where id = ${res.json().message_id} and speaker = 'assistant'`;
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.memories).toEqual([cited]);
+    await waitForChatJobs();
+  });
+
   it("更新场景（AC3）：换 MySQL → 再问回答 MySQL 且旧版本留痕", async () => {
     const projectId = await seedProject("chat-update");
     const conv = await createConv(projectId);

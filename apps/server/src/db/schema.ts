@@ -18,6 +18,7 @@
  */
 import {
   boolean,
+  index,
   integer,
   jsonb,
   numeric,
@@ -107,6 +108,9 @@ export const messages = pgTable("messages", {
   /** 提取认领标记（#7）：非空表示该消息已被提取流程认领过，commit 批提取据此跳过——
    *  同一句话绝不重复提取（决策 6：只有新证据才能提升佐证计数） */
   extractedAt: ts("extracted_at"),
+  /** 回答引用的记忆（#8 对话只读视图）：只存 belief_version_id 数组（决策 8 引用不复制），
+   *  内容读出时 join belief_versions/beliefs 现查；null = 无引用（用户消息/无记忆回答） */
+  memories: jsonb("memories"),
 });
 
 /**
@@ -171,6 +175,9 @@ export const beliefs = pgTable(
       table.subject,
       table.attribute,
     ),
+    // 记忆中心列表（#8）：排序按 subject/attribute，当前值 join 走 current_version_id
+    index("beliefs_subject_attribute_idx").on(table.subject, table.attribute),
+    index("beliefs_current_version_id_idx").on(table.currentVersionId),
   ],
 );
 
@@ -179,26 +186,33 @@ export const beliefs = pgTable(
  * 内容列（value/valid_from/supersedes_version_id/...）不物理修改；
  * 唯一允许的 UPDATE 是区间关闭（recorded_to/valid_to）——集成测试断言。
  */
-export const beliefVersions = pgTable("belief_versions", {
-  id: id(),
-  beliefId: uuid("belief_id")
-    .notNull()
-    .references(() => beliefs.id),
-  value: jsonb("value").notNull(),
-  /** 现实何时为真；null = 开口 */
-  validFrom: ts("valid_from").notNull(),
-  validTo: ts("valid_to"),
-  /** 系统何时认为为真；null = 开口 */
-  recordedFrom: ts("recorded_from").notNull(),
-  recordedTo: ts("recorded_to"),
-  supersedesVersionId: uuid("supersedes_version_id").references(
-    (): AnyPgColumn => beliefVersions.id,
-  ),
-  sourceObservationId: uuid("source_observation_id").references(() => observations.id),
-  /** 产生本版本的 Resolver 版本 */
-  resolverVersion: text("resolver_version"),
-  confidence: score("confidence"),
-});
+export const beliefVersions = pgTable(
+  "belief_versions",
+  {
+    id: id(),
+    beliefId: uuid("belief_id")
+      .notNull()
+      .references(() => beliefs.id),
+    value: jsonb("value").notNull(),
+    /** 现实何时为真；null = 开口 */
+    validFrom: ts("valid_from").notNull(),
+    validTo: ts("valid_to"),
+    /** 系统何时认为为真；null = 开口 */
+    recordedFrom: ts("recorded_from").notNull(),
+    recordedTo: ts("recorded_to"),
+    supersedesVersionId: uuid("supersedes_version_id").references(
+      (): AnyPgColumn => beliefVersions.id,
+    ),
+    sourceObservationId: uuid("source_observation_id").references(() => observations.id),
+    /** 产生本版本的 Resolver 版本 */
+    resolverVersion: text("resolver_version"),
+    confidence: score("confidence"),
+  },
+  (table) => [
+    // 版本详情 join 来源 observation（#8 记忆详情页）
+    index("belief_versions_source_observation_id_idx").on(table.sourceObservationId),
+  ],
+);
 
 /**
  * 向量索引（运行时 owner：retrieval 模块）。

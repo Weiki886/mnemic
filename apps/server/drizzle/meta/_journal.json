@@ -43,6 +43,20 @@
       "when": 1790567043214,
       "tag": "0005_message_extraction_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790746531755,
+      "tag": "0006_cute_lenny_balinger",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790747866734,
+      "tag": "0007_cold_texas_twister",
+      "breakpoints": true
     }
   ]
 }
