@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-/** 延迟创建：未配置 DATABASE_URL 时不阻塞 server 启动（本期 DB 非必需） */
+/** 创建 DB 客户端；调用方（index.ts）保证仅在配置了 DATABASE_URL 时调用，未配置直接抛错 */
 export function createDb(url: string = process.env.DATABASE_URL ?? "") {
   if (!url) {
     throw new Error("DATABASE_URL 未配置");

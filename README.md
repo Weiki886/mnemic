@@ -4,7 +4,7 @@
 
 ## Quickstart
 
-前置：Node.js ≥ 22、pnpm ≥ 10、Docker。
+前置：Node.js ≥ 22.9（dev 脚本依赖 --env-file-if-exists）、pnpm ≥ 10。
 
 ```bash
 # 1. 起依赖（PostgreSQL 17 + pgvector）
@@ -40,15 +40,15 @@ curl http://localhost:3000/health   # {"status":"ok"}
 
 ```text
 apps/server        记忆服务（Fastify 5 + Drizzle + PostgreSQL/pgvector）
-apps/cli           CLI 客户端（占位，实现归 Issue #19；拆分 2/4 起创建）
-apps/web           Web 记忆中心（占位，实现归 Issue #8；拆分 2/4 起创建）
+apps/cli           CLI 客户端（占位，实现归 Issue #19）
+apps/web           Web 记忆中心（占位，实现归 Issue #8）
 packages/shared    类型 + API 客户端 + 统一错误模型
-scripts/spike      可行性验证脚本（拆分 3/4 起创建）
-docs/adr           架构决策记录（拆分 4/4 起创建）
+scripts/spike      可行性验证脚本
+docs/adr           架构决策记录
 ```
 
 ## 工程约定
 
 - 分支：`<type>/<issue>-<slug>` 短生命周期分支，squash 合并后即删
-- Commit：Conventional Commits；分支名与提交标题用英文的约定见 Issue #1 工程决策
+- Commit：Conventional Commits；分支名与提交/PR 标题用英文（项目约定，正文可中文）
 - 统一错误模型：RFC 7807 problem+json（`packages/shared`）
