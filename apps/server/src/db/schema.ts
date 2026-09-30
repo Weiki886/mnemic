@@ -107,6 +107,9 @@ export const messages = pgTable("messages", {
   /** 提取认领标记（#7）：非空表示该消息已被提取流程认领过，commit 批提取据此跳过——
    *  同一句话绝不重复提取（决策 6：只有新证据才能提升佐证计数） */
   extractedAt: ts("extracted_at"),
+  /** 回答引用的记忆（#8 对话只读视图）：只存 belief_version_id 数组（决策 8 引用不复制），
+   *  内容读出时 join belief_versions/beliefs 现查；null = 无引用（用户消息/无记忆回答） */
+  memories: jsonb("memories"),
 });
 
 /**
