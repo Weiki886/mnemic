@@ -141,9 +141,11 @@ export interface ApiClientOptions {
   fetch?: typeof globalThis.fetch;
 }
 
-function toQuery(params: object): string {
+type QueryValue = string | number | undefined;
+
+function toQuery<T extends { [K in keyof T]: QueryValue }>(params: T): string {
   const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params) as [string, string | number | undefined][]) {
+  for (const [k, v] of Object.entries(params) as [string, QueryValue][]) {
     if (v !== undefined) q.set(k, String(v));
   }
   const s = q.toString();
@@ -180,11 +182,16 @@ export function createApiClient(options: ApiClientOptions) {
   }
 
   const post = <T>(path: string, body?: unknown): Promise<T> =>
-    request<T>(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: body === undefined ? "{}" : JSON.stringify(body),
-    });
+    request<T>(
+      path,
+      body === undefined
+        ? { method: "POST" }
+        : {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          },
+    );
 
   return {
     listBeliefs: (projectId: string, params: BeliefListParams = {}) =>

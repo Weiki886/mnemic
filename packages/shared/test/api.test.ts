@@ -32,7 +32,9 @@ describe("API client（#8）", () => {
     expect(calls[0]![0]).toBe("http://localhost:3000/projects/p1/beliefs/b1");
     expect(calls[1]![0]).toBe("http://localhost:3000/projects/p1/beliefs/b1/delete");
     expect(calls[1]![1]?.method).toBe("POST");
+    expect(calls[1]![1]?.body).toBeUndefined();
     expect(calls[2]![0]).toBe("http://localhost:3000/projects/p1/beliefs/b1/restore");
+    expect(calls[2]![1]?.body).toBeUndefined();
   });
 
   it("listConversations / getConversation：分页参数与会话详情", async () => {
