@@ -20,3 +20,11 @@ describe("启动配置解析（#62）", () => {
     expect(resolveHost("0.0.0.0")).toBe("0.0.0.0");
   });
 });
+
+describe("resolveCorsOrigin", () => {
+  it("默认 http://localhost:5173（vite dev）；显式值优先", async () => {
+    const { resolveCorsOrigin } = await import("../src/config.js");
+    expect(resolveCorsOrigin(undefined)).toBe("http://localhost:5173");
+    expect(resolveCorsOrigin("https://mem.example.com")).toBe("https://mem.example.com");
+  });
+});

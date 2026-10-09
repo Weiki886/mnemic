@@ -17,6 +17,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.102",
     "@ai-sdk/openai-compatible": "^1.0.54",
+    "@fastify/cors": "^11.3.0",
     "@mnemic/shared": "workspace:*",
     "ai": "^5.0.259",
     "drizzle-orm": "^0.36.0",
