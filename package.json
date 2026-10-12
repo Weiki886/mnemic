@@ -12,12 +12,14 @@
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
     "dev:server": "pnpm --filter @mnemic/server run dev",
+    "dev:web": "pnpm --filter @mnemic/web run dev",
     "format:check": "prettier --check .",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "eslint": "^9.0.0",
+    "eslint-plugin-vue": "^10.11.1",
     "prettier": "^3.3.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.0.0"

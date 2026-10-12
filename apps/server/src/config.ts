@@ -20,3 +20,12 @@ export function resolvePort(raw: string | undefined): number {
 export function resolveHost(raw: string | undefined): string {
   return raw ?? "127.0.0.1";
 }
+
+/**
+ * CORS_ORIGIN（#8）：Web 记忆中心（vite dev :5173）跨源调 API 所需。
+ * 默认 http://localhost:5173；生产部署显式设为前端源。单源放开即可，
+ * 凭据/多源策略归 #20 鉴权落地时再收紧。
+ */
+export function resolveCorsOrigin(raw: string | undefined): string {
+  return raw ?? "http://localhost:5173";
+}
