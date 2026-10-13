@@ -32,7 +32,7 @@ async function load() {
   try {
     const [detail, history] = await Promise.all([
       props.api.getBelief(props.projectId, props.beliefId),
-      props.api.listResolutions(props.beliefId),
+      props.api.listResolutions(props.projectId, props.beliefId),
     ]);
     belief.value = detail;
     traces.value = history;
@@ -49,7 +49,7 @@ async function submitCorrection() {
   saving.value = true;
   actionError.value = null;
   try {
-    const result = await props.api.correctBelief(props.beliefId, value);
+    const result = await props.api.correctBelief(props.projectId, props.beliefId, value);
     await load();
     emit("corrected", result);
   } catch (err) {

@@ -130,7 +130,7 @@ describe("MemoryDetail", () => {
     await flushPromises();
 
     expect(getBelief).toHaveBeenCalledWith(projectId, beliefId);
-    expect(listResolutions).toHaveBeenCalledWith(beliefId);
+    expect(listResolutions).toHaveBeenCalledWith(projectId, beliefId);
     expect(wrapper.text()).toContain("PostgreSQL");
     expect(wrapper.text()).toContain("MySQL");
     expect(wrapper.text()).toContain("事实时间");
@@ -162,7 +162,7 @@ describe("MemoryDetail", () => {
     await wrapper.find("button[type='submit']").trigger("submit");
     await flushPromises();
 
-    expect(correctBelief).toHaveBeenCalledWith(beliefId, "CockroachDB");
+    expect(correctBelief).toHaveBeenCalledWith(projectId, beliefId, "CockroachDB");
     expect(wrapper.emitted("corrected")?.[0]).toEqual([expect.objectContaining({ beliefId })]);
     expect(wrapper.text()).toContain("CockroachDB");
   });

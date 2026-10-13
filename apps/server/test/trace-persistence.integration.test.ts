@@ -153,7 +153,7 @@ describe("resolution_traces 落库（#18，决策 11）", () => {
     expect(rows[0]!.model_snapshot.slot).toBe("extraction");
   });
 
-  it("GET /beliefs/:id/resolutions → 按时间升序返回消解历史；belief 不存在 → 404", async () => {
+  it("GET /projects/:projectId/beliefs/:id/resolutions → 按时间升序返回消解历史；belief 不存在 → 404", async () => {
     const app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
     const subject = `tr-api-${uuidv7().slice(0, 8)}`;
     const first = await ingestCandidate(
@@ -180,7 +180,10 @@ describe("resolution_traces 落库（#18，决策 11）", () => {
       await mkMessage(),
     );
 
-    const res = await app.inject({ method: "GET", url: `/beliefs/${first.beliefId}/resolutions` });
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/beliefs/${first.beliefId}/resolutions`,
+    });
     expect(res.statusCode).toBe(200);
     const list = res.json();
     expect(list).toHaveLength(2);
@@ -191,7 +194,10 @@ describe("resolution_traces 落库（#18，决策 11）", () => {
     );
     expect(list[0].policies).toBeTruthy();
 
-    const missing = await app.inject({ method: "GET", url: `/beliefs/${uuidv7()}/resolutions` });
+    const missing = await app.inject({
+      method: "GET",
+      url: `/projects/${projectId}/beliefs/${uuidv7()}/resolutions`,
+    });
     expect(missing.statusCode).toBe(404);
     expect(missing.headers["content-type"]).toContain("application/problem+json");
     await app.close();

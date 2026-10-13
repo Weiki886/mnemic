@@ -52,9 +52,10 @@ describe("API client（#8）", () => {
   it("correctBelief：POST JSON body", async () => {
     const f = mockFetch(200, { beliefId: "b1", route: "updated", relation: "supersede" });
     const api = createApiClient({ baseUrl: "http://localhost:3000", fetch: f });
-    const res = await api.correctBelief("b1", "MySQL");
+    const res = await api.correctBelief("p1", "b1", "MySQL");
     expect(res.route).toBe("updated");
-    const [, init] = f.mock.calls[0] as [string, RequestInit];
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/projects/p1/beliefs/b1/correct");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ value: "MySQL" });
     expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
@@ -63,8 +64,10 @@ describe("API client（#8）", () => {
   it("listResolutions：消解历史（server 返回 camelCase 键）", async () => {
     const f = mockFetch(200, [{ beliefId: "b1", relation: "supersede", confidenceBefore: 0.8 }]);
     const api = createApiClient({ baseUrl: "http://localhost:3000", fetch: f });
-    const rows = await api.listResolutions("b1");
-    expect((f.mock.calls[0] as [string])[0]).toBe("http://localhost:3000/beliefs/b1/resolutions");
+    const rows = await api.listResolutions("p1", "b1");
+    expect((f.mock.calls[0] as [string])[0]).toBe(
+      "http://localhost:3000/projects/p1/beliefs/b1/resolutions",
+    );
     expect(rows[0]!.relation).toBe("supersede");
   });
 
