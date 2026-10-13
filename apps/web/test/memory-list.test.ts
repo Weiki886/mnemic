@@ -32,6 +32,59 @@ function mountList(api: Pick<ApiClient, "listBeliefs" | "deleteBelief" | "restor
 }
 
 describe("MemoryList", () => {
+  it.each(["success", "failure"])(
+    "ignores stale request %s after a newer search completes",
+    async (outcome) => {
+      let resolveOld!: (rows: BeliefListItem[]) => void;
+      let rejectOld!: (error: Error) => void;
+      const oldRequest = new Promise<BeliefListItem[]>((resolve, reject) => {
+        resolveOld = resolve;
+        rejectOld = reject;
+      });
+      const listBeliefs = vi
+        .fn()
+        .mockReturnValueOnce(oldRequest)
+        .mockResolvedValueOnce([row({ current_value: "Newest result" })]);
+      const wrapper = mountList({ listBeliefs, deleteBelief: vi.fn(), restoreBelief: vi.fn() });
+
+      await wrapper.get("input[aria-label='搜索主体或属性']").setValue("new");
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
+      expect(wrapper.text()).toContain("Newest result");
+
+      if (outcome === "success") resolveOld([row({ current_value: "Stale result" })]);
+      else rejectOld(new Error("stale error"));
+      await flushPromises();
+
+      expect(wrapper.text()).toContain("Newest result");
+      expect(wrapper.text()).not.toContain("Stale result");
+      expect(wrapper.text()).not.toContain("stale error");
+    },
+  );
+
+  it("keeps loading until the latest search completes", async () => {
+    let resolveOld!: (rows: BeliefListItem[]) => void;
+    let resolveNew!: (rows: BeliefListItem[]) => void;
+    const oldRequest = new Promise<BeliefListItem[]>((resolve) => {
+      resolveOld = resolve;
+    });
+    const newRequest = new Promise<BeliefListItem[]>((resolve) => {
+      resolveNew = resolve;
+    });
+    const listBeliefs = vi.fn().mockReturnValueOnce(oldRequest).mockReturnValueOnce(newRequest);
+    const wrapper = mountList({ listBeliefs, deleteBelief: vi.fn(), restoreBelief: vi.fn() });
+    await wrapper.get("form").trigger("submit");
+
+    resolveOld([row()]);
+    await flushPromises();
+    expect(wrapper.text()).toContain("正在读取记忆");
+
+    resolveNew([row({ current_value: "Newest result" })]);
+    await flushPromises();
+    expect(wrapper.text()).toContain("Newest result");
+    expect(wrapper.text()).not.toContain("正在读取记忆");
+  });
+
   it("loads active memories and renders their current value and confidence", async () => {
     const listBeliefs = vi.fn().mockResolvedValue([row()]);
     const wrapper = mountList({ listBeliefs, deleteBelief: vi.fn(), restoreBelief: vi.fn() });

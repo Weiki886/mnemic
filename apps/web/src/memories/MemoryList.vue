@@ -20,8 +20,10 @@ const status = ref<StatusFilter>("active");
 const profileOnly = ref(false);
 const query = ref("");
 const offset = ref(0);
+let requestSequence = 0;
 
 async function load() {
+  const request = ++requestSequence;
   loading.value = true;
   error.value = null;
   try {
@@ -33,12 +35,14 @@ async function load() {
     if (profileOnly.value) params.profile = "true";
     const q = query.value.trim();
     if (q) params.q = q;
-    rows.value = await props.api.listBeliefs(props.projectId, params);
+    const result = await props.api.listBeliefs(props.projectId, params);
+    if (request === requestSequence) rows.value = result;
   } catch (err) {
+    if (request !== requestSequence) return;
     rows.value = [];
     error.value = err instanceof Error ? err.message : "未知错误";
   } finally {
-    loading.value = false;
+    if (request === requestSequence) loading.value = false;
   }
 }
 

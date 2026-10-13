@@ -58,6 +58,49 @@ const routerStub = {
 };
 
 describe("ConversationList", () => {
+  it("paginates forward and backward without hiding conversations beyond the first 50", async () => {
+    const page = Array.from({ length: 50 }, (_, i) => ({ ...listItem, id: `conversation-${i}` }));
+    const listConversations = vi
+      .fn()
+      .mockResolvedValueOnce(page)
+      .mockResolvedValueOnce([{ ...listItem, title: "page two" }])
+      .mockResolvedValueOnce(page);
+    const wrapper = mount(ConversationListView, {
+      props: { projectId, api: { listConversations } as unknown as ApiClient },
+      global: routerStub,
+    });
+    await flushPromises();
+    expect(wrapper.get("button[aria-label='上一页']").attributes("disabled")).toBeDefined();
+
+    await wrapper.get("button[aria-label='下一页']").trigger("click");
+    await flushPromises();
+    expect(listConversations).toHaveBeenLastCalledWith(projectId, { limit: 50, offset: 50 });
+    expect(wrapper.text()).toContain("page two");
+    expect(wrapper.get("button[aria-label='下一页']").attributes("disabled")).toBeDefined();
+
+    await wrapper.get("button[aria-label='上一页']").trigger("click");
+    await flushPromises();
+    expect(listConversations).toHaveBeenLastCalledWith(projectId, { limit: 50, offset: 0 });
+    expect(wrapper.text()).toContain("db 讨论");
+  });
+
+  it("shows an error when fetching a later conversation page fails", async () => {
+    const page = Array.from({ length: 50 }, (_, i) => ({ ...listItem, id: `conversation-${i}` }));
+    const listConversations = vi
+      .fn()
+      .mockResolvedValueOnce(page)
+      .mockRejectedValueOnce(new Error("page unavailable"));
+    const wrapper = mount(ConversationListView, {
+      props: { projectId, api: { listConversations } as unknown as ApiClient },
+      global: routerStub,
+    });
+    await flushPromises();
+    await wrapper.get("button[aria-label='下一页']").trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("page unavailable");
+    expect(wrapper.text()).not.toContain("db 讨论");
+  });
+
   it("loads conversations and shows the read-only timeline metadata", async () => {
     const listConversations = vi.fn().mockResolvedValue([listItem]);
     const wrapper = mount(ConversationListView, {
@@ -81,10 +124,33 @@ describe("ConversationList", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("暂无对话");
+    const hint = wrapper.findAll("p").find((p) => p.text().includes("通过 CLI 产生对话后"));
+    expect(hint?.classes()).toContain("text-zinc-500");
   });
 });
 
 describe("ConversationDetail", () => {
+  it("labels tool output separately from user messages", async () => {
+    const getConversation = vi.fn().mockResolvedValue({
+      ...detail,
+      messages: [
+        {
+          id: "tool-result",
+          speaker: "tool",
+          raw_text: "查询结果",
+          msg_time: "2026-09-24T09:00:03Z",
+          memories: null,
+        },
+      ],
+    });
+    const wrapper = mount(ConversationDetailView, {
+      props: { projectId, conversationId, api: { getConversation } as unknown as ApiClient },
+      global: routerStub,
+    });
+    await flushPromises();
+    expect(wrapper.get("li span").text()).toBe("工具");
+  });
+
   it("renders messages in order and links cited memories to belief detail", async () => {
     const getConversation = vi.fn().mockResolvedValue(detail);
     const wrapper = mount(ConversationDetailView, {

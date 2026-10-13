@@ -84,6 +84,45 @@ function mountDetail(api: Pick<ApiClient, "getBelief" | "listResolutions" | "cor
 }
 
 describe("MemoryDetail", () => {
+  it("requires restoring a deleted memory before offering a correction", async () => {
+    const correctBelief = vi.fn();
+    const wrapper = mountDetail({
+      getBelief: vi.fn().mockResolvedValue({ ...detail, status: "deleted" }),
+      listResolutions: vi.fn().mockResolvedValue([]),
+      correctBelief,
+    });
+    await flushPromises();
+
+    expect(wrapper.find("form").exists()).toBe(false);
+    expect(wrapper.find("input[aria-label='人工修正后的新值']").exists()).toBe(false);
+    expect(wrapper.text()).toContain("请先在记忆列表恢复，再进行修正");
+    expect(correctBelief).not.toHaveBeenCalled();
+  });
+
+  it.each(["deleted", "retracted"])("uses a neutral badge for %s memories", async (status) => {
+    const wrapper = mountDetail({
+      getBelief: vi.fn().mockResolvedValue({ ...detail, status }),
+      listResolutions: vi.fn().mockResolvedValue([]),
+      correctBelief: vi.fn(),
+    });
+    await flushPromises();
+
+    const badge = wrapper.get("header span");
+    expect(badge.classes()).toContain("bg-zinc-100");
+    expect(badge.classes()).not.toContain("bg-valid-50");
+  });
+
+  it("keeps correction available for retracted memories", async () => {
+    const wrapper = mountDetail({
+      getBelief: vi.fn().mockResolvedValue({ ...detail, status: "retracted" }),
+      listResolutions: vi.fn().mockResolvedValue([]),
+      correctBelief: vi.fn(),
+    });
+    await flushPromises();
+
+    expect(wrapper.find("input[aria-label='人工修正后的新值']").exists()).toBe(true);
+  });
+
   it("renders current value, dual-time version history, source link, and resolution trace", async () => {
     const getBelief = vi.fn().mockResolvedValue(detail);
     const listResolutions = vi.fn().mockResolvedValue([trace]);

@@ -45,7 +45,7 @@ async function load() {
 
 async function submitCorrection() {
   const value = correction.value.trim();
-  if (!value || saving.value) return;
+  if (!value || saving.value || !belief.value || belief.value.status === "deleted") return;
   saving.value = true;
   actionError.value = null;
   try {
@@ -101,7 +101,12 @@ onMounted(load);
           </h1>
           <p class="mt-1 font-mono text-sm text-zinc-500">{{ belief.attribute }}</p>
         </div>
-        <span class="rounded-full bg-valid-50 px-3 py-1 text-xs font-medium text-valid-700">
+        <span
+          class="rounded-full px-3 py-1 text-xs font-medium"
+          :class="
+            belief.status === 'active' ? 'bg-valid-50 text-valid-700' : 'bg-zinc-100 text-zinc-600'
+          "
+        >
           {{ statusLabel(belief.status) }}
         </span>
       </div>
@@ -217,6 +222,7 @@ onMounted(load);
       </div>
 
       <form
+        v-if="belief.status !== 'deleted'"
         class="rounded-2xl border border-zinc-200 bg-white p-6"
         @submit.prevent="submitCorrection"
       >
@@ -242,6 +248,13 @@ onMounted(load);
           {{ saving ? "正在保存…" : "保存修正" }}
         </button>
       </form>
+      <div v-else class="rounded-2xl border border-zinc-200 bg-white p-6">
+        <h2 class="text-lg font-semibold text-zinc-950">人工修正</h2>
+        <p class="mt-2 text-sm text-zinc-500">这条记忆已删除。请先在记忆列表恢复，再进行修正。</p>
+        <RouterLink class="mt-4 inline-flex text-sm font-medium underline" to="/memories">
+          返回记忆列表
+        </RouterLink>
+      </div>
     </section>
   </article>
 </template>

@@ -24,7 +24,16 @@ describe("format helpers", () => {
     expect(statusLabel("deleted")).toBe("已删除");
     expect(statusLabel("retracted")).toBe("已撤回");
     expect(relationLabel("supersede")).toBe("取代");
-    expect(relationLabel("late_evidence")).toBe("迟到证据");
+    expect(relationLabel("strengthen")).toBe("增强");
+    expect(relationLabel("weaken")).toBe("削弱");
+    expect(relationLabel("extend")).toBe("补充");
+  });
+
+  it("does not label intent actions or detail reasons as resolver relations", () => {
+    for (const nonRelation of ["equal", "ignore", "retract", "late_evidence"]) {
+      expect(relationLabel(nonRelation)).toBe(nonRelation);
+    }
+    expect(relationLabel(null)).toBe("—");
   });
 
   it("formats confidence as a percentage with an absent state", () => {

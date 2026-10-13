@@ -10,14 +10,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const RELATION_LABELS: Record<string, string> = {
-  equal: "一致",
   strengthen: "增强",
   weaken: "削弱",
   supersede: "取代",
   extend: "补充",
-  ignore: "忽略",
-  retract: "撤回",
-  late_evidence: "迟到证据",
 };
 
 export function formatDateTime(value: string | null | undefined): string {

@@ -14,19 +14,37 @@ const props = defineProps<{
 const rows = ref<ConversationListItem[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const offset = ref(0);
 
-onMounted(async () => {
+async function load() {
+  loading.value = true;
+  error.value = null;
   try {
     rows.value = await props.api.listConversations(props.projectId, {
       limit: PAGE_SIZE,
-      offset: 0,
+      offset: offset.value,
     });
   } catch (err) {
+    rows.value = [];
     error.value = err instanceof Error ? err.message : "对话加载失败";
   } finally {
     loading.value = false;
   }
-});
+}
+
+function nextPage() {
+  if (loading.value) return;
+  offset.value += PAGE_SIZE;
+  void load();
+}
+
+function previousPage() {
+  if (loading.value) return;
+  offset.value = Math.max(0, offset.value - PAGE_SIZE);
+  void load();
+}
+
+onMounted(load);
 </script>
 
 <template>
@@ -56,7 +74,7 @@ onMounted(async () => {
       class="rounded-xl border border-dashed border-zinc-300 bg-white p-8 text-center"
     >
       <p class="text-sm font-medium text-zinc-800">暂无对话</p>
-      <p class="mt-1 text-sm text-zinc-50">通过 CLI 产生对话后，这里会显示回答的溯源链。</p>
+      <p class="mt-1 text-sm text-zinc-500">通过 CLI 产生对话后，这里会显示回答的溯源链。</p>
     </div>
     <ul v-else class="space-y-3">
       <li v-for="conversation in rows" :key="conversation.id">
@@ -79,5 +97,29 @@ onMounted(async () => {
         </RouterLink>
       </li>
     </ul>
+
+    <div v-if="!loading" class="flex items-center justify-between text-sm">
+      <p class="font-mono text-xs text-zinc-500">offset {{ offset }}</p>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          :disabled="offset === 0"
+          class="rounded-md border border-zinc-200 px-3 py-1.5 font-medium disabled:opacity-40"
+          aria-label="上一页"
+          @click="previousPage"
+        >
+          上一页
+        </button>
+        <button
+          type="button"
+          :disabled="!!error || rows.length < PAGE_SIZE"
+          class="rounded-md border border-zinc-200 px-3 py-1.5 font-medium disabled:opacity-40"
+          aria-label="下一页"
+          @click="nextPage"
+        >
+          下一页
+        </button>
+      </div>
+    </div>
   </section>
 </template>

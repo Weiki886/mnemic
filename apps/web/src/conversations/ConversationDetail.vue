@@ -4,6 +4,8 @@ import { RouterLink } from "vue-router";
 import type { ApiClient, ConversationDetail } from "@mnemic/shared";
 import { formatDateTime, formatValue } from "../lib/format.js";
 
+const speakerLabels: Record<string, string> = { user: "用户", assistant: "助手", tool: "工具" };
+
 const props = defineProps<{
   projectId: string;
   conversationId: string;
@@ -74,7 +76,7 @@ onMounted(async () => {
       >
         <div class="flex items-center justify-between gap-3">
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            {{ message.speaker === "assistant" ? "助手" : "用户" }}
+            {{ speakerLabels[message.speaker] ?? message.speaker }}
           </span>
           <time class="font-mono text-[11px] text-zinc-500">{{
             formatDateTime(message.msg_time)
