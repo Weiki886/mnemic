@@ -1,8 +1,30 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import type { ApiClient } from "@mnemic/shared";
+import { useRoute, useRouter } from "vue-router";
+import MemoryDetail from "../memories/MemoryDetail.vue";
+import MemoryList from "../memories/MemoryList.vue";
+
+const props = defineProps<{
+  projectId: string;
+  api: ApiClient;
+}>();
+
+const route = useRoute();
+const router = useRouter();
+const beliefId = computed(() =>
+  typeof route.params.beliefId === "string" ? route.params.beliefId : null,
+);
+</script>
+
 <template>
-  <section>
-    <h1 class="text-lg font-semibold">记忆列表</h1>
-    <p class="mt-2 text-sm text-zinc-500">
-      类型/状态过滤、搜索与分页归 #8 拆分 3/3；数据经 packages/shared API client。
-    </p>
-  </section>
+  <MemoryDetail
+    v-if="beliefId"
+    :key="beliefId"
+    :project-id="props.projectId"
+    :belief-id="beliefId"
+    :api="props.api"
+    @corrected="router.push('/memories')"
+  />
+  <MemoryList v-else :project-id="props.projectId" :api="props.api" />
 </template>

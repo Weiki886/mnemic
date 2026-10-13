@@ -1,6 +1,28 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import type { ApiClient } from "@mnemic/shared";
+import { useRoute } from "vue-router";
+import ConversationDetail from "../conversations/ConversationDetail.vue";
+import ConversationList from "../conversations/ConversationList.vue";
+
+const props = defineProps<{
+  projectId: string;
+  api: ApiClient;
+}>();
+
+const route = useRoute();
+const conversationId = computed(() =>
+  typeof route.params.conversationId === "string" ? route.params.conversationId : null,
+);
+</script>
+
 <template>
-  <section>
-    <h1 class="text-lg font-semibold">对话</h1>
-    <p class="mt-2 text-sm text-zinc-500">会话列表与消息时间线（只读）归 #8 拆分 3/3。</p>
-  </section>
+  <ConversationDetail
+    v-if="conversationId"
+    :key="conversationId"
+    :project-id="props.projectId"
+    :conversation-id="conversationId"
+    :api="props.api"
+  />
+  <ConversationList v-else :project-id="props.projectId" :api="props.api" />
 </template>

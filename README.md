@@ -33,8 +33,8 @@ pnpm dev:server
 # 5. 验证
 curl http://localhost:3000/health   # {"status":"ok"}
 
-# 6.（可选）启动 Web 记忆中心骨架（页面实现归 Issue #8 拆分 3/3）
-pnpm dev:web                      # http://localhost:5173
+# 6.（可选）启动 Web 记忆中心
+pnpm dev:web                      # http://localhost:5173，首次打开输入项目 UUID
 ```
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
@@ -44,7 +44,7 @@ pnpm dev:web                      # http://localhost:5173
 ```text
 apps/server        记忆服务（Fastify 5 + Drizzle + PostgreSQL/pgvector）
 apps/cli           CLI 客户端（占位，实现归 Issue #19）
-apps/web           Web 记忆中心（Vue 3 + Vite + Tailwind 4，页面归 Issue #8 拆分 3/3）
+apps/web           Web 记忆中心（Vue 3 + Vite + Tailwind 4）
 packages/shared    类型 + API 客户端 + 统一错误模型
 scripts/spike      可行性验证脚本
 docs/adr           架构决策记录
