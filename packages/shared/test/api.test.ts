@@ -9,6 +9,15 @@ function mockFetch(status: number, body: unknown) {
 }
 
 describe("API client（#8）", () => {
+  it("评分响应保留 JSON 小数、0 和 null，可直接使用数值方法", async () => {
+    const f = mockFetch(200, [{ id: "b1", confidence: 0.875, salience: 0, importance: null }]);
+    const api = createApiClient({ baseUrl: "http://localhost:3000", fetch: f });
+    const [row] = await api.listBeliefs("p1");
+    expect(row!.confidence!.toFixed(3)).toBe("0.875");
+    expect(row!.salience).toBe(0);
+    expect(row!.importance).toBeNull();
+  });
+
   it("listBeliefs：拼接项目路径与查询参数，解析列表", async () => {
     const f = mockFetch(200, [{ id: "b1", subject: "proj", current_value: "PostgreSQL" }]);
     const api = createApiClient({ baseUrl: "http://localhost:3000", fetch: f });

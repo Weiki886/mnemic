@@ -6,6 +6,7 @@
 import type { ErrorCode, FieldError } from "./errors.js";
 
 /* ---------- 响应类型（与 apps/server 路由返回结构对齐） ---------- */
+// 评分的 HTTP 契约为 JSON number | null（#68）；数据库 numeric 字符串由 server 在返回层转换。
 
 export interface BeliefListItem {
   id: string;

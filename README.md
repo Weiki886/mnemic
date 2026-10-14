@@ -53,6 +53,11 @@ shared client 对应方法为 `correctBelief(projectId, beliefId, value)` 和
 修正的状态检查与写入共享数据库事务和行锁，避免并发删除被修正覆盖。
 项目参数只限定数据范围，不代表用户权限；token 鉴权归 Issue #20。
 
+评分字段统一返回 JSON `number | null`：记忆列表/详情的 `confidence`、`salience`、`importance`，
+版本的 `confidence`，以及消解历史的 `confidenceBefore`、`confidenceAfter`。
+例如数据库 `0.875` 返回数字 `0.875`，0 和 null 保持原值；正文及其他 JSON 内容不转换。
+数据库仍使用 numeric 存储，shared client 可直接使用数值方法。
+
 ## 仓库结构
 
 ```text

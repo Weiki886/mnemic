@@ -85,6 +85,27 @@ function mountDetail(api: Pick<ApiClient, "getBelief" | "listResolutions" | "cor
 }
 
 describe("MemoryDetail", () => {
+  it("renders numeric API score boundaries and absent scores without string coercion", async () => {
+    const wrapper = mountDetail({
+      getBelief: vi.fn().mockResolvedValue({
+        ...detail,
+        confidence: 0,
+        importance: 1,
+        versions: [{ ...detail.versions[0], confidence: null }],
+      }),
+      listResolutions: vi
+        .fn()
+        .mockResolvedValue([{ ...trace, confidenceBefore: 0, confidenceAfter: 1 }]),
+      correctBelief: vi.fn(),
+    });
+    await flushPromises();
+    const metrics = wrapper.findAll("dl dd");
+    expect(metrics[0]!.text()).toBe("0%");
+    expect(metrics[2]!.text()).toBe("100%");
+    expect(wrapper.text()).toContain("confidence —");
+    expect(wrapper.text()).toContain("0% → 100%");
+  });
+
   it("shows a rejected correction's 409 detail without navigating or losing the input", async () => {
     const getBelief = vi.fn().mockResolvedValue(detail);
     const message = "已删除的记忆必须先恢复，再进行修正";
