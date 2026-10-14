@@ -39,6 +39,20 @@ pnpm dev:web                      # http://localhost:5173，首次打开输入�
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
 
+## 记忆修正与消解历史 API
+
+- `POST /projects/:projectId/beliefs/:id/correct`，JSON 请求体 `{ "value": "新值" }`
+- `GET /projects/:projectId/beliefs/:id/resolutions`，按记录时间升序返回历史
+
+路径参数必须为 UUID（非法返回带字段错误的 400）。信念不存在或不属于该项目均返回 404；
+旧的 `/beliefs/:id/correct`、`/beliefs/:id/resolutions` 路由已移除。
+shared client 对应方法为 `correctBelief(projectId, beliefId, value)` 和
+`listResolutions(projectId, beliefId)`，Web 已同步调用。
+
+已软删除的记忆修正返回 409，需先显式恢复；已撤回（retracted）的记忆仍可通过人工修正恢复生效。
+修正的状态检查与写入共享数据库事务和行锁，避免并发删除被修正覆盖。
+项目参数只限定数据范围，不代表用户权限；token 鉴权归 Issue #20。
+
 ## 仓库结构
 
 ```text

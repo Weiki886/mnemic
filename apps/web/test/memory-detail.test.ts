@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import type { ApiClient, BeliefDetail, ResolutionTrace } from "@mnemic/shared";
+import { ApiError } from "@mnemic/shared";
 import MemoryDetail from "../src/memories/MemoryDetail.vue";
 
 const projectId = "0192af7d-b792-7a41-90f8-9f0b2d6c6d8a";
@@ -84,6 +85,32 @@ function mountDetail(api: Pick<ApiClient, "getBelief" | "listResolutions" | "cor
 }
 
 describe("MemoryDetail", () => {
+  it("shows a rejected correction's 409 detail without navigating or losing the input", async () => {
+    const getBelief = vi.fn().mockResolvedValue(detail);
+    const message = "已删除的记忆必须先恢复，再进行修正";
+    const correctBelief = vi.fn().mockRejectedValue(new ApiError(409, "CONFLICT", message));
+    const wrapper = mountDetail({
+      getBelief,
+      listResolutions: vi.fn().mockResolvedValue([]),
+      correctBelief,
+    });
+    await flushPromises();
+
+    const input = wrapper.get("input[aria-label='人工修正后的新值']");
+    await input.setValue("CockroachDB");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(correctBelief).toHaveBeenCalledWith(projectId, beliefId, "CockroachDB");
+    expect(wrapper.get("form p.text-red-700").text()).toBe(message);
+    expect(wrapper.text()).toContain("PostgreSQL");
+    expect(wrapper.emitted("corrected")).toBeUndefined();
+    expect(getBelief).toHaveBeenCalledTimes(1);
+    expect((input.element as HTMLInputElement).value).toBe("CockroachDB");
+    expect(wrapper.get("button[type='submit']").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get("button[type='submit']").text()).toBe("保存修正");
+  });
+
   it("requires restoring a deleted memory before offering a correction", async () => {
     const correctBelief = vi.fn();
     const wrapper = mountDetail({
@@ -130,7 +157,7 @@ describe("MemoryDetail", () => {
     await flushPromises();
 
     expect(getBelief).toHaveBeenCalledWith(projectId, beliefId);
-    expect(listResolutions).toHaveBeenCalledWith(beliefId);
+    expect(listResolutions).toHaveBeenCalledWith(projectId, beliefId);
     expect(wrapper.text()).toContain("PostgreSQL");
     expect(wrapper.text()).toContain("MySQL");
     expect(wrapper.text()).toContain("事实时间");
@@ -162,7 +189,7 @@ describe("MemoryDetail", () => {
     await wrapper.find("button[type='submit']").trigger("submit");
     await flushPromises();
 
-    expect(correctBelief).toHaveBeenCalledWith(beliefId, "CockroachDB");
+    expect(correctBelief).toHaveBeenCalledWith(projectId, beliefId, "CockroachDB");
     expect(wrapper.emitted("corrected")?.[0]).toEqual([expect.objectContaining({ beliefId })]);
     expect(wrapper.text()).toContain("CockroachDB");
   });

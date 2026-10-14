@@ -206,10 +206,10 @@ export function createApiClient(options: ApiClientOptions) {
       request<ConversationListItem[]>(`/projects/${projectId}/conversations${toQuery(params)}`),
     getConversation: (projectId: string, id: string) =>
       request<ConversationDetail>(`/projects/${projectId}/conversations/${id}`),
-    correctBelief: (beliefId: string, value: string) =>
-      post<CorrectResult>(`/beliefs/${beliefId}/correct`, { value }),
-    listResolutions: (beliefId: string) =>
-      request<ResolutionTrace[]>(`/beliefs/${beliefId}/resolutions`),
+    correctBelief: (projectId: string, beliefId: string, value: string) =>
+      post<CorrectResult>(`/projects/${projectId}/beliefs/${beliefId}/correct`, { value }),
+    listResolutions: (projectId: string, beliefId: string) =>
+      request<ResolutionTrace[]>(`/projects/${projectId}/beliefs/${beliefId}/resolutions`),
   };
 }
 

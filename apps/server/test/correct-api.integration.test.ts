@@ -37,10 +37,10 @@ describe("人工修正入口 API（#17）", () => {
     await t.close();
   });
 
-  it("POST /beliefs/:id/correct → USER_CORRECTION(70) 版本成当前，历史保留，provenance 锚到修正会话", async () => {
+  it("POST /projects/:projectId/beliefs/:id/correct → USER_CORRECTION(70) 版本成当前，历史保留，provenance 锚到修正会话", async () => {
     const res = await app.inject({
       method: "POST",
-      url: `/beliefs/${beliefId}/correct`,
+      url: `/projects/${projectId}/beliefs/${beliefId}/correct`,
       payload: { value: "PostgreSQL" },
     });
     expect(res.statusCode).toBe(200);
@@ -129,7 +129,7 @@ describe("人工修正入口 API（#17）", () => {
     // 再修正 → 复活
     const res = await app.inject({
       method: "POST",
-      url: `/beliefs/${beliefId}/correct`,
+      url: `/projects/${projectId}/beliefs/${beliefId}/correct`,
       payload: { value: "SQLite" },
     });
     expect(res.statusCode).toBe(200);
@@ -142,7 +142,7 @@ describe("人工修正入口 API（#17）", () => {
   it("belief 不存在 → 404 problem+json", async () => {
     const res = await app.inject({
       method: "POST",
-      url: `/beliefs/${uuidv7()}/correct`,
+      url: `/projects/${projectId}/beliefs/${uuidv7()}/correct`,
       payload: { value: "x" },
     });
     expect(res.statusCode).toBe(404);
@@ -152,7 +152,7 @@ describe("人工修正入口 API（#17）", () => {
   it("value 为空 → 400 problem+json", async () => {
     const res = await app.inject({
       method: "POST",
-      url: `/beliefs/${beliefId}/correct`,
+      url: `/projects/${projectId}/beliefs/${beliefId}/correct`,
       payload: { value: "" },
     });
     expect(res.statusCode).toBe(400);
