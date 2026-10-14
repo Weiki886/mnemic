@@ -1,9 +1,9 @@
 import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { beliefs, beliefVersions, messages, observations } from "../db/schema.js";
+import { badRequest, notFound, conflict } from "./problem-responses.js";
 
 /** 记忆中心只读 API + 基础软删除（#8）：列表/详情/版本时间线/删除/恢复。
  *  硬删除与删除传播归 #11；软删除 = status 'deleted'，检索侧已过滤非 active（#6）。 */
@@ -18,42 +18,6 @@ const ListQuery = z.object({
 
 const ProjectParams = z.object({ projectId: z.string().uuid() });
 const BeliefParams = ProjectParams.extend({ id: z.string().uuid() });
-
-function badRequest(reply: FastifyReply, requestId: string, detail: string, error: z.ZodError) {
-  return reply
-    .code(400)
-    .header("content-type", "application/problem+json")
-    .send(
-      problem({
-        status: 400,
-        code: ErrorCode.VALIDATION_FAILED,
-        detail,
-        errors: zodIssues(error),
-        requestId,
-      }),
-    );
-}
-
-function notFound(reply: FastifyReply, requestId: string, id: string) {
-  return reply
-    .code(404)
-    .header("content-type", "application/problem+json")
-    .send(
-      problem({
-        status: 404,
-        code: ErrorCode.NOT_FOUND,
-        detail: `Belief 不存在：${id}`,
-        requestId,
-      }),
-    );
-}
-
-function conflict(reply: FastifyReply, requestId: string, detail: string) {
-  return reply
-    .code(409)
-    .header("content-type", "application/problem+json")
-    .send(problem({ status: 409, code: ErrorCode.CONFLICT, detail, requestId }));
-}
 
 export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
   // ILIKE 通配符转义：用户输入的 % / _ / \ 一律按字面量处理

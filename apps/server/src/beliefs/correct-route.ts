@@ -3,10 +3,10 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { uuidv7 } from "uuidv7";
 import { z } from "zod";
-import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { beliefs, conversations, messages, resolutionTraces } from "../db/schema.js";
 import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
+import { badRequest, notFound, conflict } from "./problem-responses.js";
 
 /** 人工修正入口（#17）：产生 USER_CORRECTION(70) 权威版本，provenance 锚到项目专用修正会话 */
 
@@ -19,18 +19,12 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
   app.get("/projects/:projectId/beliefs/:id/resolutions", async (request, reply) => {
     const params = BeliefParams.safeParse(request.params);
     if (!params.success) {
-      return reply
-        .code(400)
-        .header("content-type", "application/problem+json")
-        .send(
-          problem({
-            status: 400,
-            code: ErrorCode.VALIDATION_FAILED,
-            detail: "路径参数非法：projectId 和 id 必须为 UUID",
-            errors: zodIssues(params.error),
-            requestId: request.id,
-          }),
-        );
+      return badRequest(
+        reply,
+        request.id,
+        "路径参数非法：projectId 和 id 必须为 UUID",
+        params.error,
+      );
     }
     const { projectId, id } = params.data;
     const [belief] = await db
@@ -38,19 +32,7 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
       .from(beliefs)
       .where(and(eq(beliefs.id, id), eq(beliefs.projectId, projectId)))
       .limit(1);
-    if (!belief) {
-      return reply
-        .code(404)
-        .header("content-type", "application/problem+json")
-        .send(
-          problem({
-            status: 404,
-            code: ErrorCode.NOT_FOUND,
-            detail: `Belief 不存在：${id}`,
-            requestId: request.id,
-          }),
-        );
-    }
+    if (!belief) return notFound(reply, request.id, id);
     return db
       .select()
       .from(resolutionTraces)
@@ -61,34 +43,17 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
   app.post("/projects/:projectId/beliefs/:id/correct", async (request, reply) => {
     const params = BeliefParams.safeParse(request.params);
     if (!params.success) {
-      return reply
-        .code(400)
-        .header("content-type", "application/problem+json")
-        .send(
-          problem({
-            status: 400,
-            code: ErrorCode.VALIDATION_FAILED,
-            detail: "路径参数非法：projectId 和 id 必须为 UUID",
-            errors: zodIssues(params.error),
-            requestId: request.id,
-          }),
-        );
+      return badRequest(
+        reply,
+        request.id,
+        "路径参数非法：projectId 和 id 必须为 UUID",
+        params.error,
+      );
     }
     const { projectId, id } = params.data;
     const parsed = CorrectBody.safeParse(request.body);
     if (!parsed.success) {
-      return reply
-        .code(400)
-        .header("content-type", "application/problem+json")
-        .send(
-          problem({
-            status: 400,
-            code: ErrorCode.VALIDATION_FAILED,
-            detail: "value（非空字符串）为必填字段",
-            errors: zodIssues(parsed.error),
-            requestId: request.id,
-          }),
-        );
+      return badRequest(reply, request.id, "value（非空字符串）为必填字段", parsed.error);
     }
     // 与 delete/restore 的条件 UPDATE 串行：状态检查、provenance、标准写入链共享同一事务。
     // Resolver 的嵌套事务是同一连接的 savepoint；提交前不会释放该信念的行锁。
@@ -156,31 +121,11 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
       return { kind: "corrected" as const, result };
     });
     if (outcome.kind === "missing") {
-      return reply
-        .code(404)
-        .header("content-type", "application/problem+json")
-        .send(
-          problem({
-            status: 404,
-            code: ErrorCode.NOT_FOUND,
-            detail: `Belief 不存在：${id}`,
-            requestId: request.id,
-          }),
-        );
+      return notFound(reply, request.id, id);
     }
 
     if (outcome.kind === "deleted") {
-      return reply
-        .code(409)
-        .header("content-type", "application/problem+json")
-        .send(
-          problem({
-            status: 409,
-            code: ErrorCode.CONFLICT,
-            detail: "已删除的记忆必须先恢复，再进行修正",
-            requestId: request.id,
-          }),
-        );
+      return conflict(reply, request.id, "已删除的记忆必须先恢复，再进行修正");
     }
     const { result } = outcome;
     return { beliefId: result.beliefId, route: result.route, relation: result.relation };
