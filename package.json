@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r run typecheck",
     "dev:server": "pnpm --filter @mnemic/server run dev",
     "dev:web": "pnpm --filter @mnemic/web run dev",
+    "cli": "pnpm --filter @mnemic/cli start",
     "format:check": "prettier --check .",
     "format": "prettier --write ."
   },

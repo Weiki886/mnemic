@@ -39,6 +39,33 @@ pnpm dev:web                      # http://localhost:5173，首次打开输入�
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
 
+## CLI 诊断（Issue #19，拆分 1/2）
+
+服务启动后，构建并检查服务端连接与统一模型配置：
+
+```bash
+pnpm build
+pnpm cli doctor
+# 服务不在本机默认端口时
+pnpm cli doctor --server http://127.0.0.1:3000
+# 显式探测 chat / extraction / embedding：实际调用模型，可能计费
+pnpm cli doctor --probe
+# 供脚本读取的纯 JSON（直接调用构建产物，避开 pnpm 的脚本提示）
+node apps/cli/dist/index.js doctor --json
+```
+
+CLI 只通过 shared HTTP client 读取服务端配置，不直连数据库，不保存或读取本地模型 Key。
+从 shell 环境读取 `MNEMIC_SERVER_URL` 和 `MNEMIC_AUTH_TOKEN`，默认不自动加载 `.env`；
+`--server` 优先于环境变量。服务端接口为 `GET /v1/doctor?probe=false|true`。
+
+默认仅读取数据库、向量列维度和加密的三槽位配置，模型可用性显示 `SKIP`；
+`--probe` 使用固定的诊断文本探测两个文本槽位和一个 embedding 槽位，关闭自动重试，
+每槽位 15 秒中止信号，CLI 每次 HTTP 请求 25 秒超时。探测不写入记忆、Evidence 或 Trace。
+服务端鉴权尚待 #20，当前 `authentication` 始终显示 `SKIP`，不能据此认为 Token 已受到验证。
+
+退出码：0 = 未检测到错误（仍可能有 `SKIP`），1 = 诊断或网络失败，2 = 参数错误。
+本 PR 阶段仅交付诊断，Ink 对话、记忆引用与记忆详情命令在 #19 拆分 2/2 实现。
+
 ## 记忆修正与消解历史 API
 
 - `POST /projects/:projectId/beliefs/:id/correct`，JSON 请求体 `{ "value": "新值" }`
@@ -69,7 +96,7 @@ shared client 对应方法为 `correctBelief(projectId, beliefId, value)` 和
 
 ```text
 apps/server        记忆服务（Fastify 5 + Drizzle + PostgreSQL/pgvector）
-apps/cli           CLI 客户端（占位，实现归 Issue #19）
+apps/cli           CLI 客户端（doctor 已实现，Ink 对话归 Issue #19 后续拆分）
 apps/web           Web 记忆中心（Vue 3 + Vite + Tailwind 4）
 packages/shared    类型 + API 客户端 + 统一错误模型
 scripts/spike      可行性验证脚本
