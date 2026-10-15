@@ -99,9 +99,14 @@ describe("MemoryDetail", () => {
       correctBelief: vi.fn(),
     });
     await flushPromises();
-    const metrics = wrapper.findAll("dl dd");
-    expect(metrics[0]!.text()).toBe("0%");
-    expect(metrics[2]!.text()).toBe("100%");
+    const metricValue = (label: string) =>
+      wrapper
+        .findAll("dl > div")
+        .find((metric) => metric.get("dt").text() === label)
+        ?.get("dd")
+        .text();
+    expect(metricValue("置信度")).toBe("0%");
+    expect(metricValue("重要性")).toBe("100%");
     expect(wrapper.text()).toContain("confidence —");
     expect(wrapper.text()).toContain("0% → 100%");
   });
