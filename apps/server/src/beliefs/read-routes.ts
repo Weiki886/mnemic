@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { beliefs, beliefVersions, messages, observations } from "../db/schema.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
+import { toApiNumber } from "./serialization.js";
 
 /** 记忆中心只读 API + 基础软删除（#8）：列表/详情/版本时间线/删除/恢复。
  *  硬删除与删除传播归 #11；软删除 = status 'deleted'，检索侧已过滤非 active（#6）。 */
@@ -64,7 +65,12 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
       .orderBy(asc(beliefs.subject), asc(beliefs.attribute))
       .limit(limit)
       .offset(offset);
-    return rows;
+    return rows.map((row) => ({
+      ...row,
+      confidence: toApiNumber(row.confidence),
+      salience: toApiNumber(row.salience),
+      importance: toApiNumber(row.importance),
+    }));
   });
 
   // 详情：当前值 + 完整版本时间线 + 每版来源（observation → 消息 → 会话，供 UI 跳转）。
@@ -115,9 +121,9 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
       attribute: belief.attribute,
       status: belief.status,
       is_profile: belief.isProfile,
-      confidence: belief.confidence,
-      salience: belief.salience,
-      importance: belief.importance,
+      confidence: toApiNumber(belief.confidence),
+      salience: toApiNumber(belief.salience),
+      importance: toApiNumber(belief.importance),
       evidence_count: belief.evidenceCount,
       created_at: belief.createdAt,
       current_value: current?.value ?? null,
@@ -129,7 +135,7 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
         recorded_from: v.recorded_from,
         recorded_to: v.recorded_to,
         supersedes_version_id: v.supersedes_version_id,
-        confidence: v.confidence,
+        confidence: toApiNumber(v.confidence),
         resolver_version: v.resolver_version,
         source: v.observation_id
           ? {

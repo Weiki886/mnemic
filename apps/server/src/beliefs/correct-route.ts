@@ -7,6 +7,7 @@ import { beliefs, conversations, messages, resolutionTraces } from "../db/schema
 import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
+import { toApiNumber } from "./serialization.js";
 
 /** 人工修正入口（#17）：产生 USER_CORRECTION(70) 权威版本，provenance 锚到项目专用修正会话 */
 
@@ -33,11 +34,16 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
       .where(and(eq(beliefs.id, id), eq(beliefs.projectId, projectId)))
       .limit(1);
     if (!belief) return notFound(reply, request.id, id);
-    return db
+    const rows = await db
       .select()
       .from(resolutionTraces)
       .where(and(eq(resolutionTraces.beliefId, id), eq(resolutionTraces.projectId, projectId)))
       .orderBy(asc(resolutionTraces.createdAt));
+    return rows.map((row) => ({
+      ...row,
+      confidenceBefore: toApiNumber(row.confidenceBefore),
+      confidenceAfter: toApiNumber(row.confidenceAfter),
+    }));
   });
 
   app.post("/projects/:projectId/beliefs/:id/correct", async (request, reply) => {
