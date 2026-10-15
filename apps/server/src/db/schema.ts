@@ -32,6 +32,7 @@ import {
   vector,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const id = () => uuid("id").primaryKey();
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
@@ -85,16 +86,25 @@ export const projects = pgTable("projects", {
 });
 
 /** Evidence 层：原始会话，全量持久化（决策 1） */
-export const conversations = pgTable("conversations", {
-  id: id(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id),
-  title: text("title"),
-  startedAt: ts("started_at").notNull().defaultNow(),
-  endedAt: ts("ended_at"),
-  meta: jsonb("meta"),
-});
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    title: text("title"),
+    startedAt: ts("started_at").notNull().defaultNow(),
+    endedAt: ts("ended_at"),
+    meta: jsonb("meta"),
+  },
+  (table) => [
+    // 仅专用会话项目内唯一（#70）；SQL 字面量需与 CORRECTIONS_CONVERSATION_TITLE 同步。
+    uniqueIndex("conversations_manual_corrections_project_key")
+      .on(table.projectId)
+      .where(sql`${table.title} = 'manual-corrections'`),
+  ],
+);
 
 /** Evidence 层：消息是 Provenance 锚点（Observation.evidence_id → messages.id） */
 export const messages = pgTable("messages", {

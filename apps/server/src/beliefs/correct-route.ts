@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { uuidv7 } from "uuidv7";
@@ -6,6 +6,7 @@ import { z } from "zod";
 import { beliefs, conversations, messages, resolutionTraces } from "../db/schema.js";
 import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
+import { CORRECTIONS_CONVERSATION_TITLE } from "../chat/conversation-titles.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
 import { toApiNumber } from "./serialization.js";
 
@@ -13,7 +14,6 @@ import { toApiNumber } from "./serialization.js";
 
 const CorrectBody = z.object({ value: z.string().min(1) });
 const BeliefParams = z.object({ projectId: z.string().uuid(), id: z.string().uuid() });
-const CORRECTIONS_CONVERSATION_TITLE = "manual-corrections";
 
 export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
   // 消解历史查询（#18）：UI 版本时间线与实验分析消费
@@ -73,25 +73,34 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
       if (!belief) return { kind: "missing" as const };
       if (belief.status === "deleted") return { kind: "deleted" as const };
 
-      // provenance 锚点：项目专用修正会话（找不到则建）+ 一条 user 消息
-      const [existingConv] = await tx
-        .select({ id: conversations.id })
-        .from(conversations)
-        .where(
-          and(
-            eq(conversations.projectId, projectId),
-            eq(conversations.title, CORRECTIONS_CONVERSATION_TITLE),
-          ),
-        )
-        .limit(1);
-      const conversationId = existingConv?.id ?? uuidv7();
-      if (!existingConv) {
-        await tx.insert(conversations).values({
-          id: conversationId,
+      // #70：先尝试创建，唯一冲突后另发 SELECT（READ COMMITTED 下能看到对方已提交的行）。
+      const [created] = await tx
+        .insert(conversations)
+        .values({
+          id: uuidv7(),
           projectId,
           title: CORRECTIONS_CONVERSATION_TITLE,
-        });
-      }
+        })
+        .onConflictDoNothing({
+          target: conversations.projectId,
+          // 固定字面量与部分唯一索引匹配，不能用参数化谓词依赖执行计划推断。
+          where: sql`${conversations.title} = 'manual-corrections'`,
+        })
+        .returning({ id: conversations.id });
+      const [conversation] = created
+        ? [created]
+        : await tx
+            .select({ id: conversations.id })
+            .from(conversations)
+            .where(
+              and(
+                eq(conversations.projectId, projectId),
+                eq(conversations.title, CORRECTIONS_CONVERSATION_TITLE),
+              ),
+            )
+            .limit(1);
+      if (!conversation) throw new Error("专用修正会话不可用");
+      const conversationId = conversation.id;
       const messageId = uuidv7();
       await tx.insert(messages).values({
         id: messageId,
