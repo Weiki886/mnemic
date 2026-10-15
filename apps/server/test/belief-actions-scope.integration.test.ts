@@ -65,6 +65,107 @@ describe("项目范围内的信念修正与消解历史（#65）", () => {
   const path = (owner: string, beliefId: string, action: string) =>
     `/projects/${owner}/beliefs/${beliefId}/${action}`;
 
+  it("同项目不同信念并发首次修正只创建一条专用会话，各自出处独立（#70）", async () => {
+    const owner = uuidv7();
+    await t.sql`insert into projects (id, name) values (${owner}, 'parallel-corrections')`;
+    const first = await seedBelief(owner);
+    const second = await seedBelief(owner);
+    let pending: Promise<{ statusCode: number }[]> | undefined;
+    let responses: { statusCode: number }[] | undefined;
+    try {
+      await t.sql.begin(async (locked) => {
+        const [backend] = await locked`select pg_backend_pid() as pid`;
+        // 两条请求都能先 SELECT，但 INSERT 需等此锁释放，从而确定性复现先查再建竞态。
+        await locked`lock table conversations in share mode`;
+        pending = Promise.all(
+          [first, second].map(({ beliefId }) =>
+            app
+              .inject({
+                method: "POST",
+                url: path(owner, beliefId, "correct"),
+                payload: { value: "PostgreSQL" },
+              })
+              .then((res) => res),
+          ),
+        );
+        let waiting = 0;
+        const deadline = Date.now() + 5000;
+        while (waiting < 2 && Date.now() < deadline) {
+          const [state] = await t.sql`select count(*)::int as waiting from pg_stat_activity
+            where ${backend!.pid} = any(pg_blocking_pids(pid))`;
+          waiting = state!.waiting;
+          if (waiting < 2) await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(waiting).toBe(2);
+      });
+    } finally {
+      responses = await pending;
+    }
+    expect(responses?.map((res) => res.statusCode)).toEqual([200, 200]);
+    const dedicated =
+      await t.sql`select id from conversations where project_id = ${owner} and title = 'manual-corrections'`;
+    expect(dedicated).toHaveLength(1);
+    const sources =
+      await t.sql`select b.id, v.id as version_id, v.value, m.id as message_id, m.conversation_id
+      from beliefs b join belief_versions v on b.current_version_id = v.id
+      join observations o on v.source_observation_id = o.id join messages m on o.evidence_id = m.id
+      where b.project_id = ${owner} order by b.id`;
+    expect(sources).toHaveLength(2);
+    expect(new Set(sources.map((row) => row.message_id)).size).toBe(2);
+    expect(new Set(sources.map((row) => row.version_id)).size).toBe(2);
+    for (const source of sources) {
+      expect(source.conversation_id).toBe(dedicated[0]!.id);
+      expect(source.value).toBe("PostgreSQL");
+    }
+  }, 15_000);
+
+  it("数据库只限制项目专用会话，普通重名会话和不同项目不受影响（#70）", async () => {
+    const a = uuidv7();
+    const b = uuidv7();
+    await t.sql`insert into projects (id, name) values (${a}, 'unique-a'), (${b}, 'unique-b')`;
+    await t.sql`insert into conversations (id, project_id, title) values
+      (${uuidv7()}, ${a}, 'manual-corrections'), (${uuidv7()}, ${b}, 'manual-corrections'),
+      (${uuidv7()}, ${a}, 'same title'), (${uuidv7()}, ${a}, 'same title')`;
+    const normal =
+      await t.sql`select id from conversations where project_id = ${a} and title = 'same title'`;
+    expect(normal).toHaveLength(2);
+    await expect(t.sql`insert into conversations (id, project_id, title)
+      values (${uuidv7()}, ${a}, 'manual-corrections')`).rejects.toMatchObject({ code: "23505" });
+  });
+
+  it("不同项目并行修正各自复用已有专用会话（#70）", async () => {
+    const owners = [uuidv7(), uuidv7()];
+    const targets = [];
+    for (const owner of owners) {
+      await t.sql`insert into projects (id, name) values (${owner}, 'separate-corrections')`;
+      const conversationId = uuidv7();
+      await t.sql`insert into conversations (id, project_id, title)
+        values (${conversationId}, ${owner}, 'manual-corrections')`;
+      targets.push({ owner, conversationId, ...(await seedBelief(owner)) });
+    }
+    const results = await Promise.all(
+      targets.map((target) =>
+        app.inject({
+          method: "POST",
+          url: path(target.owner, target.beliefId, "correct"),
+          payload: { value: "SQLite" },
+        }),
+      ),
+    );
+    expect(results.map((res) => res.statusCode)).toEqual([200, 200]);
+    for (const target of targets) {
+      const [source] = await t.sql`select m.conversation_id, c.project_id from beliefs b
+        join belief_versions v on b.current_version_id = v.id
+        join observations o on v.source_observation_id = o.id
+        join messages m on o.evidence_id = m.id join conversations c on m.conversation_id = c.id
+        where b.id = ${target.beliefId}`;
+      expect(source).toEqual({ conversation_id: target.conversationId, project_id: target.owner });
+      const dedicated = await t.sql`select id from conversations
+        where project_id = ${target.owner} and title = 'manual-corrections'`;
+      expect(dedicated).toEqual([{ id: target.conversationId }]);
+    }
+  });
+
   it("已删除记忆修正 → 409 且无副作用，显式恢复后可修正", async () => {
     const { beliefId } = await seedBelief();
     const deleted = await app.inject({ method: "POST", url: path(projectId, beliefId, "delete") });

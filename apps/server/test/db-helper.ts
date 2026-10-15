@@ -40,7 +40,8 @@ async function tryLocal(): Promise<string | null> {
   }
 }
 
-export async function setupTestDb(): Promise<TestDb> {
+/** migrate=false 仅供隔离 schema 的迁移测试，避免先自动应用待测迁移。 */
+export async function setupTestDb(options: { migrate?: boolean } = {}): Promise<TestDb> {
   let url = await tryLocal();
   let stop: (() => Promise<void>) | undefined;
 
@@ -57,13 +58,15 @@ export async function setupTestDb(): Promise<TestDb> {
   // CREATE EXTENSION/TYPE 竞态导致 pg_namespace 唯一冲突——advisory lock 互斥。
   // advisory lock key 727272：任意固定常量即可（取 Mnemic 谐音 7 的重复），
   // 只需全仓库唯一使用、不与其他锁冲突。
-  const migSql = postgres(url, { max: 1 });
-  await migSql`select pg_advisory_lock(727272)`;
-  try {
-    await migrate(drizzle(migSql), { migrationsFolder: MIGRATIONS_FOLDER });
-  } finally {
-    await migSql`select pg_advisory_unlock(727272)`;
-    await migSql.end();
+  if (options.migrate !== false) {
+    const migSql = postgres(url, { max: 1 });
+    await migSql`select pg_advisory_lock(727272)`;
+    try {
+      await migrate(drizzle(migSql), { migrationsFolder: MIGRATIONS_FOLDER });
+    } finally {
+      await migSql`select pg_advisory_unlock(727272)`;
+      await migSql.end();
+    }
   }
 
   const sql = postgres(url, { max: 4 });

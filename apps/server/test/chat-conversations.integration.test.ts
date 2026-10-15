@@ -73,6 +73,44 @@ describe("对话闭环：会话创建与提交（#7 Task A）", () => {
     return id;
   };
 
+  it.each([false, true])("普通创建拒绝专用保留标题（已有专用会话：%s）", async (exists) => {
+    const projectId = await seedProject("reserved-title");
+    if (exists)
+      await t.sql`insert into conversations (id, project_id, title)
+      values (${uuidv7()}, ${projectId}, 'manual-corrections')`;
+    const before =
+      await t.sql`select * from conversations where project_id = ${projectId} order by id`;
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/conversations",
+      payload: { project_id: projectId, title: "manual-corrections" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.headers["content-type"]).toContain("application/problem+json");
+    expect(res.json()).toMatchObject({
+      code: "VALIDATION_FAILED",
+      errors: expect.arrayContaining([expect.objectContaining({ path: "title" })]),
+    });
+    expect(
+      await t.sql`select * from conversations where project_id = ${projectId} order by id`,
+    ).toEqual(before);
+  });
+
+  it("普通创建仍允许同项目同名会话", async () => {
+    const projectId = await seedProject("same-title");
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        app.inject({
+          method: "POST",
+          url: "/v1/conversations",
+          payload: { project_id: projectId, title: "日常讨论" },
+        }),
+      ),
+    );
+    expect(responses.map((res) => res.statusCode)).toEqual([200, 200]);
+    expect(new Set(responses.map((res) => res.json().id)).size).toBe(2);
+  });
+
   it("POST /v1/conversations：非法 project_id → 400 带结构化 errors", async () => {
     const res = await app.inject({
       method: "POST",

@@ -19,7 +19,12 @@ export interface ChatRouteDeps {
 
 const CreateConversation = z.object({
   project_id: z.string().uuid(),
-  title: z.string().min(1).max(200).optional(),
+  title: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine((title) => title !== "manual-corrections", "该标题为专用修正会话保留")
+    .optional(),
 });
 
 const PostMessage = z.object({

@@ -58,6 +58,13 @@ shared client 对应方法为 `correctBelief(projectId, beliefId, value)` 和
 例如数据库 `0.875` 返回数字 `0.875`，0 和 null 保持原值；正文及其他 JSON 内容不转换。
 数据库仍使用 numeric 存储，shared client 可直接使用数值方法。
 
+`manual-corrections` 为项目专用的保留会话标题，每个项目最多一条；普通会话仍可重名。
+普通创建接口 `POST /v1/conversations` 使用该保留标题时返回 400，并在 `errors` 中标明 `title` 字段。
+迁移 `0008` 保留最早的专用会话，将历史重复项改名为 `manual-corrections:legacy:<原ID>`；
+会话 ID、消息外键、时间和元数据不变，旧出处链接仍可访问。
+升级时先停旧服务，执行 `pnpm --filter @mnemic/server db:migrate`，再启动新版；
+迁移会短暂锁住会话表，旧代码不支持新的唯一冲突处理，不应与迁移并行运行或单独回退旧代码。
+
 ## 仓库结构
 
 ```text
