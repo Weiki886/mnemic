@@ -99,7 +99,7 @@ export const conversations = pgTable(
     meta: jsonb("meta"),
   },
   (table) => [
-    // 仅保留标题的专用会话项目内唯一，不限制普通会话重名（#70）。
+    // 仅专用会话项目内唯一（#70）；SQL 字面量需与 CORRECTIONS_CONVERSATION_TITLE 同步。
     uniqueIndex("conversations_manual_corrections_project_key")
       .on(table.projectId)
       .where(sql`${table.title} = 'manual-corrections'`),

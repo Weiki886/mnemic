@@ -5,6 +5,7 @@ import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import type { ProviderFactory } from "../providers/factory.js";
 import type { retrieve } from "../retrieval/search.js";
 import { trackJob } from "./jobs.js";
+import { CORRECTIONS_CONVERSATION_TITLE } from "./conversation-titles.js";
 import { respondToMessage } from "./respond.js";
 import { commitConversation, createConversation } from "./service.js";
 
@@ -23,7 +24,7 @@ const CreateConversation = z.object({
     .string()
     .min(1)
     .max(200)
-    .refine((title) => title !== "manual-corrections", "该标题为专用修正会话保留")
+    .refine((title) => title !== CORRECTIONS_CONVERSATION_TITLE, "该标题为专用修正会话保留")
     .optional(),
 });
 

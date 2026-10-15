@@ -6,6 +6,7 @@ import { z } from "zod";
 import { beliefs, conversations, messages, resolutionTraces } from "../db/schema.js";
 import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
+import { CORRECTIONS_CONVERSATION_TITLE } from "../chat/conversation-titles.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
 import { toApiNumber } from "./serialization.js";
 
@@ -13,7 +14,6 @@ import { toApiNumber } from "./serialization.js";
 
 const CorrectBody = z.object({ value: z.string().min(1) });
 const BeliefParams = z.object({ projectId: z.string().uuid(), id: z.string().uuid() });
-const CORRECTIONS_CONVERSATION_TITLE = "manual-corrections";
 
 export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
   // 消解历史查询（#18）：UI 版本时间线与实验分析消费
