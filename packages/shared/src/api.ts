@@ -5,6 +5,7 @@
 
 import type { ErrorCode, FieldError } from "./errors.js";
 import type { DoctorReport } from "./doctor.js";
+import type { ChatConversation, ChatCommit, ChatReply } from "./chat.js";
 
 /* ---------- 响应类型（与 apps/server 路由返回结构对齐） ---------- */
 // 评分的 HTTP 契约为 JSON number | null（#68）；数据库 numeric 字符串由 server 在返回层转换。
@@ -206,6 +207,15 @@ export function createApiClient(options: ApiClientOptions) {
     );
 
   return {
+    createConversation: (projectId: string, title?: string) =>
+      post<ChatConversation>("/v1/conversations", {
+        project_id: projectId,
+        ...(title !== undefined ? { title } : {}),
+      }),
+    sendMessage: (conversationId: string, text: string) =>
+      post<ChatReply>(`/v1/conversations/${conversationId}/messages`, { text }),
+    commitConversation: (conversationId: string) =>
+      post<ChatCommit>(`/v1/conversations/${conversationId}/commit`),
     health: () => request<{ status: string }>("/health"),
     doctor: (probe = false): Promise<DoctorReport> =>
       probe ? post<DoctorReport>("/v1/doctor/probe", {}) : request<DoctorReport>("/v1/doctor"),

@@ -9,6 +9,30 @@ function mockFetch(status: number, body: unknown) {
 }
 
 describe("API client（#8）", () => {
+  it("对话创建、发送、提交复用 HTTP API，Token 和 JSON 体不丢失", async () => {
+    const f = mockFetch(200, {});
+    const api = createApiClient({
+      baseUrl: "http://localhost:3000",
+      fetch: f,
+      token: "test-token",
+    });
+    await api.createConversation("p1", "新会话");
+    await api.sendMessage("c1", "我们使用 PostgreSQL");
+    await api.commitConversation("c1");
+    const calls = f.mock.calls as [string, RequestInit][];
+    expect(calls.map(([url]) => url)).toEqual([
+      "http://localhost:3000/v1/conversations",
+      "http://localhost:3000/v1/conversations/c1/messages",
+      "http://localhost:3000/v1/conversations/c1/commit",
+    ]);
+    expect(JSON.parse(calls[0]![1].body as string)).toEqual({ project_id: "p1", title: "新会话" });
+    expect(JSON.parse(calls[1]![1].body as string)).toEqual({ text: "我们使用 PostgreSQL" });
+    expect(calls[2]![1].body).toBeUndefined();
+    for (const [, init] of calls) {
+      expect(init.method).toBe("POST");
+      expect(new Headers(init.headers).get("authorization")).toBe("Bearer test-token");
+    }
+  });
   it("doctor 复用服务端配置，显式 probe；Bearer 与超时应用到所有请求且保留 JSON 头", async () => {
     const report = { ok: true, probe: false, configSource: "server", checks: [] };
     const f = mockFetch(200, report);
