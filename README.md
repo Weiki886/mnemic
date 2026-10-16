@@ -39,7 +39,9 @@ pnpm dev:web                      # http://localhost:5173，首次打开输入�
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
 
-## CLI 诊断（Issue #19，拆分 1/2）
+## CLI：诊断、对话与记忆查看（Issue #19）
+
+### 检查服务与模型配置
 
 服务启动后，构建并检查服务端连接与统一模型配置：
 
@@ -54,7 +56,7 @@ pnpm cli doctor --probe
 node apps/cli/dist/index.js doctor --json
 ```
 
-CLI 只通过 shared HTTP client 读取服务端配置，不直连数据库，不保存或读取本地模型 Key。
+CLI 只通过 shared HTTP client 调用服务端，不直连数据库，不保存或读取本地模型 Key。
 从 shell 环境读取 `MNEMIC_SERVER_URL` 和 `MNEMIC_AUTH_TOKEN`，默认不自动加载 `.env`；
 `--server` 优先于环境变量。只读诊断使用 `GET /v1/doctor`；计费探测使用
 `POST /v1/doctor/probe`，要求 `Content-Type: application/json` 和请求体 `{}`。
@@ -63,11 +65,31 @@ GET 不接受 `probe` 等查询参数；探测接口仅供 CLI，任何携带 `O
 
 默认仅读取数据库、向量列维度和加密的三槽位配置，模型可用性显示 `SKIP`；
 `--probe` 使用固定的诊断文本探测两个文本槽位和一个 embedding 槽位，关闭自动重试，
-每槽位 15 秒中止信号，CLI 每次 HTTP 请求 25 秒超时。探测不写入记忆、Evidence 或 Trace。
+每槽位 15 秒中止信号，doctor 每次 HTTP 请求 25 秒超时。探测不写入记忆、Evidence 或 Trace。
 服务端鉴权尚待 #20，当前 `authentication` 始终显示 `SKIP`，不能据此认为 Token 已受到验证。
 
 退出码：0 = 未检测到错误（仍可能有 `SKIP`），1 = 诊断或网络失败，2 = 参数错误。
-本 PR 阶段仅交付诊断，Ink 对话、记忆引用与记忆详情命令在 #19 拆分 2/2 实现。
+
+### 对话与查看引用记忆
+
+在交互终端中使用已有项目 UUID（替换下方尖括号占位）：
+
+```bash
+pnpm cli chat --project <项目UUID>
+# 退出对话后，用回答中的记忆 ID 查看当前值和版本出处（只读）
+pnpm cli memory <记忆ID> --project <项目UUID>
+# 供脚本读取的纯 JSON
+node apps/cli/dist/index.js memory <记忆ID> --project <项目UUID> --json
+```
+
+chat 使用服务端三槽位配置，输入会写入对话并触发后台记忆提取，调用模型可能计费。
+回答展示引用的记忆 ID、版本 ID 和摘要；无足够记忆时明确显示“不记得”。
+`/new` 提交旧会话后新建，`/exit` 或 Ctrl+C 等待进行中的请求结束并提交退出。
+提交不等于提取和索引已完成，新会话立即查询可能尚未召回刚告知的事实。
+
+回答是完整 HTTP 响应到达后的客户端分段展示，不是 SSE/token 流（#33）。
+chat 请求超时 120 秒，memory 25 秒；请求失败不自动重试，服务端可能已经收到消息。
+完整的“告知 → 新会话召回 → 更新 → 拒答”演示及排错见 [CLI 演示](docs/cli-demo.md)。
 
 ## 记忆修正与消解历史 API
 
@@ -99,7 +121,7 @@ shared client 对应方法为 `correctBelief(projectId, beliefId, value)` 和
 
 ```text
 apps/server        记忆服务（Fastify 5 + Drizzle + PostgreSQL/pgvector）
-apps/cli           CLI 客户端（doctor 已实现，Ink 对话归 Issue #19 后续拆分）
+apps/cli           CLI 客户端（doctor、Ink 对话、只读记忆详情）
 apps/web           Web 记忆中心（Vue 3 + Vite + Tailwind 4）
 packages/shared    类型 + API 客户端 + 统一错误模型
 scripts/spike      可行性验证脚本
