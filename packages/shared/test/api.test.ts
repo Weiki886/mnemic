@@ -9,6 +9,36 @@ function mockFetch(status: number, body: unknown) {
 }
 
 describe("API client（#8）", () => {
+  it("doctor 复用服务端配置，显式 probe；Bearer 与超时应用到所有请求且保留 JSON 头", async () => {
+    const report = { ok: true, probe: false, configSource: "server", checks: [] };
+    const f = mockFetch(200, report);
+    const api = createApiClient({
+      baseUrl: "http://localhost:3000/",
+      fetch: f,
+      token: "test-token",
+      timeoutMs: 1000,
+    });
+    await api.health();
+    await api.doctor();
+    await api.doctor(true);
+    await api.correctBelief("p1", "b1", "new");
+    const calls = f.mock.calls as [string, RequestInit][];
+    expect(calls.slice(0, 3).map(([url]) => url)).toEqual([
+      "http://localhost:3000/health",
+      "http://localhost:3000/v1/doctor",
+      "http://localhost:3000/v1/doctor/probe",
+    ]);
+    for (const [, init] of calls) {
+      expect(new Headers(init.headers).get("authorization")).toBe("Bearer test-token");
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    }
+    expect(new Headers(calls[3]![1].headers).get("content-type")).toBe("application/json");
+    expect(calls[1]![1].method).not.toBe("POST");
+    expect(calls[2]![1].method).toBe("POST");
+    expect(calls[2]![1].body).toBe("{}");
+    expect(new Headers(calls[2]![1].headers).get("content-type")).toBe("application/json");
+  });
+
   it("评分响应保留 JSON 小数、0 和 null，可直接使用数值方法", async () => {
     const f = mockFetch(200, [{ id: "b1", confidence: 0.875, salience: 0, importance: null }]);
     const api = createApiClient({ baseUrl: "http://localhost:3000", fetch: f });
@@ -67,7 +97,7 @@ describe("API client（#8）", () => {
     expect(url).toBe("http://localhost:3000/projects/p1/beliefs/b1/correct");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ value: "MySQL" });
-    expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
+    expect(new Headers(init.headers).get("content-type")).toBe("application/json");
   });
 
   it("listResolutions：消解历史（server 返回 camelCase 键）", async () => {

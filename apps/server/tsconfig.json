@@ -5,7 +5,8 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@mnemic/shared": ["../../packages/shared/src/index.ts"]
+      "@mnemic/shared": ["../../packages/shared/src/index.ts"],
+      "@mnemic/shared/doctor": ["../../packages/shared/src/doctor.ts"]
     }
   },
   "include": ["src", "test", "vitest.config.ts", "drizzle.config.ts"]

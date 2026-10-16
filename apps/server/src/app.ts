@@ -13,6 +13,7 @@ import { registerConversationReadRoutes } from "./chat/read-routes.js";
 import { waitForChatJobs } from "./chat/jobs.js";
 import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
+import { registerDoctorRoutes } from "./doctor/routes.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
 const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -95,6 +96,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   app.get("/health", async () => ({ status: "ok" }));
+  registerDoctorRoutes(app, {
+    db: options.db,
+    masterKey: options.masterKey,
+    factory: options.providerFactory,
+  });
 
   if (options.db && options.masterKey) {
     registerProviderRoutes(app, options.db, options.masterKey);
