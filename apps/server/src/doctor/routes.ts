@@ -14,7 +14,8 @@ interface DoctorOptions {
   factory?: ProviderFactory | undefined;
 }
 
-const Query = z.object({ probe: z.enum(["true", "false"]).default("false") });
+const Query = z.object({}).strict();
+const ProbeBody = z.object({}).strict();
 const SLOTS = ["chat", "extraction", "embedding"] as const;
 
 /** 诊断仅读取配置/数据库；显式 probe 才调用外部模型，不落 Evidence/Trace。 */
@@ -58,6 +59,18 @@ async function diagnose(options: DoctorOptions, probe: boolean): Promise<DoctorR
   let expected: number;
   try {
     expected = embeddingDimensionsFromEnv();
+  } catch {
+    checks.push({
+      name: "embedding_dimensions",
+      status: "error",
+      detail: "MNEMIC_EMBEDDING_DIMENSIONS 必须为正整数，请检查服务端环境配置",
+    });
+    checks.push({ name: "configuration", status: "error", detail: "部署配置检查未通过" });
+    for (const name of SLOTS)
+      checks.push({ name, status: "skipped", detail: "部署维度错误，未探测模型" });
+    return finish();
+  }
+  try {
     const rows = await db.execute<{ atttypmod: number }>(sql`
       select atttypmod from pg_attribute
       where attrelid = to_regclass('public.memory_embeddings') and attname = 'embedding'
@@ -170,12 +183,66 @@ export function registerDoctorRoutes(app: FastifyInstance, options: DoctorOption
           problem({
             status: 400,
             code: ErrorCode.VALIDATION_FAILED,
-            detail: "probe 必须为 true 或 false",
+            detail: "只读诊断不接受查询参数；模型探测需 POST /v1/doctor/probe",
             errors: zodIssues(parsed.error),
             requestId: request.id,
           }),
         );
     reply.header("cache-control", "no-store");
-    return diagnose(options, parsed.data.probe === "true");
+    return diagnose(options, false);
   });
+
+  app.post(
+    "/v1/doctor/probe",
+    {
+      onRequest: async (request, reply) => {
+        // CLI 专用：Origin 连允许的 Web 源也拒绝，不能仅靠 CORS 隐藏响应。
+        if (request.headers.origin !== undefined) {
+          return reply
+            .code(403)
+            .type("application/problem+json")
+            .send(
+              problem({
+                status: 403,
+                code: ErrorCode.FORBIDDEN,
+                requestId: request.id,
+                detail: "模型探测仅支持 CLI，不接受浏览器 Origin 请求",
+              }),
+            );
+        }
+        // 在解析请求体前拒绝简单表单/text/plain；JSON charset 参数仍可接受。
+        if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) {
+          return reply
+            .code(415)
+            .type("application/problem+json")
+            .send(
+              problem({
+                status: 415,
+                code: ErrorCode.VALIDATION_FAILED,
+                requestId: request.id,
+                detail: "模型探测要求 Content-Type: application/json",
+              }),
+            );
+        }
+      },
+    },
+    async (request, reply) => {
+      const parsed = ProbeBody.safeParse(request.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .type("application/problem+json")
+          .send(
+            problem({
+              status: 400,
+              code: ErrorCode.VALIDATION_FAILED,
+              requestId: request.id,
+              detail: "模型探测请求体必须为 JSON 空对象 {}",
+              errors: zodIssues(parsed.error),
+            }),
+          );
+      reply.header("cache-control", "no-store");
+      return diagnose(options, true);
+    },
+  );
 }

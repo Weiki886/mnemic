@@ -56,7 +56,10 @@ node apps/cli/dist/index.js doctor --json
 
 CLI 只通过 shared HTTP client 读取服务端配置，不直连数据库，不保存或读取本地模型 Key。
 从 shell 环境读取 `MNEMIC_SERVER_URL` 和 `MNEMIC_AUTH_TOKEN`，默认不自动加载 `.env`；
-`--server` 优先于环境变量。服务端接口为 `GET /v1/doctor?probe=false|true`。
+`--server` 优先于环境变量。只读诊断使用 `GET /v1/doctor`；计费探测使用
+`POST /v1/doctor/probe`，要求 `Content-Type: application/json` 和请求体 `{}`。
+GET 不接受 `probe` 等查询参数；探测接口仅供 CLI，任何携带 `Origin` 的浏览器请求均返回 403，
+无 Origin 但非 JSON 的请求返回 415。这是跨站触发防护，不替代 #20 的 Token 鉴权。
 
 默认仅读取数据库、向量列维度和加密的三槽位配置，模型可用性显示 `SKIP`；
 `--probe` 使用固定的诊断文本探测两个文本槽位和一个 embedding 槽位，关闭自动重试，

@@ -25,20 +25,20 @@ describe("API client（#8）", () => {
     const calls = f.mock.calls as [string, RequestInit][];
     expect(calls.slice(0, 3).map(([url]) => url)).toEqual([
       "http://localhost:3000/health",
-      "http://localhost:3000/v1/doctor?probe=false",
-      "http://localhost:3000/v1/doctor?probe=true",
+      "http://localhost:3000/v1/doctor",
+      "http://localhost:3000/v1/doctor/probe",
     ]);
     for (const [, init] of calls) {
       expect(new Headers(init.headers).get("authorization")).toBe("Bearer test-token");
       expect(init.signal).toBeInstanceOf(AbortSignal);
     }
     expect(new Headers(calls[3]![1].headers).get("content-type")).toBe("application/json");
+    expect(calls[1]![1].method).not.toBe("POST");
+    expect(calls[2]![1].method).toBe("POST");
+    expect(calls[2]![1].body).toBe("{}");
+    expect(new Headers(calls[2]![1].headers).get("content-type")).toBe("application/json");
   });
 
-  it("doctor 拒绝不符合诊断契约的响应", async () => {
-    const api = createApiClient({ baseUrl: "http://localhost:3000", fetch: mockFetch(200, {}) });
-    await expect(api.doctor()).rejects.toThrow();
-  });
   it("评分响应保留 JSON 小数、0 和 null，可直接使用数值方法", async () => {
     const f = mockFetch(200, [{ id: "b1", confidence: 0.875, salience: 0, importance: null }]);
     const api = createApiClient({ baseUrl: "http://localhost:3000", fetch: f });

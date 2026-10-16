@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { ApiError, createApiClient, type DoctorReport } from "@mnemic/shared";
+import { DoctorReportSchema } from "@mnemic/shared/doctor";
 
 const HELP = `mnemic doctor [--server URL] [--probe] [--json]
 
@@ -28,7 +29,7 @@ function requestFailure(error: unknown, stage: "连接" | "诊断"): string {
 
 // Provider 名称/诊断内容是服务端数据，不能让控制字符操作用户终端。
 function terminalText(text: string): string {
-  return text.replace(/\p{Cc}/gu, " ");
+  return text.replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, " ");
 }
 
 export async function runCli(args: string[], options: CliOptions = {}): Promise<number> {
@@ -41,6 +42,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   let server: string;
   let probe: boolean;
   let json: boolean;
+  let invalid: "arguments" | "command" | "server" = "arguments";
   try {
     const parsed = parseArgs({
       args,
@@ -56,8 +58,10 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       write(HELP);
       return 0;
     }
+    invalid = "command";
     if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "doctor")
       throw new Error("command");
+    invalid = "server";
     const url = new URL(parsed.values.server ?? env.MNEMIC_SERVER_URL ?? "http://localhost:3000");
     if (
       !["http:", "https:"].includes(url.protocol) ||
@@ -72,7 +76,12 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     probe = parsed.values.probe ?? false;
     json = parsed.values.json ?? false;
   } catch {
-    write("参数无效：服务地址须为不含凭据、查询或片段的 HTTP(S) URL。\n" + HELP);
+    const detail = {
+      arguments: "参数无效，请使用 --help 查看支持的选项。",
+      command: "命令无效，目前仅支持 doctor；请使用 --help 查看用法。",
+      server: "服务地址无效：须为不含凭据、查询或片段的 HTTP(S) URL。",
+    }[invalid];
+    write(detail + "\n" + HELP);
     return 2;
   }
   const api = createApiClient({
@@ -93,7 +102,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   }
   if (connectivity.status === "ok") {
     try {
-      diagnostics = await api.doctor(probe);
+      diagnostics = DoctorReportSchema.parse(await api.doctor(probe));
     } catch (cause) {
       error = requestFailure(cause, "诊断");
     }

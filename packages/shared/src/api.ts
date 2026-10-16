@@ -4,7 +4,7 @@
  *  - fetch 可注入（默认全局 fetch），便于单测与非浏览器环境。 */
 
 import type { ErrorCode, FieldError } from "./errors.js";
-import { DoctorReportSchema } from "./doctor.js";
+import type { DoctorReport } from "./doctor.js";
 
 /* ---------- 响应类型（与 apps/server 路由返回结构对齐） ---------- */
 // 评分的 HTTP 契约为 JSON number | null（#68）；数据库 numeric 字符串由 server 在返回层转换。
@@ -207,8 +207,8 @@ export function createApiClient(options: ApiClientOptions) {
 
   return {
     health: () => request<{ status: string }>("/health"),
-    doctor: async (probe = false) =>
-      DoctorReportSchema.parse(await request<unknown>(`/v1/doctor?probe=${probe}`)),
+    doctor: (probe = false): Promise<DoctorReport> =>
+      probe ? post<DoctorReport>("/v1/doctor/probe", {}) : request<DoctorReport>("/v1/doctor"),
     listBeliefs: (projectId: string, params: BeliefListParams = {}) =>
       request<BeliefListItem[]>(`/projects/${projectId}/beliefs${toQuery(params)}`),
     getBelief: (projectId: string, id: string) =>
