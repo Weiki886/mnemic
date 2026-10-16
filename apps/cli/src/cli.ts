@@ -1,10 +1,15 @@
 import { parseArgs } from "node:util";
-import { ApiError, createApiClient, type DoctorReport } from "@mnemic/shared";
+import { ApiError, createApiClient, type ApiClient, type DoctorReport } from "@mnemic/shared";
 import { DoctorReportSchema } from "@mnemic/shared/doctor";
+import { terminalText, formatMemory, chatFailure } from "./presentation.js";
 
 const HELP = `mnemic doctor [--server URL] [--probe] [--json]
+mnemic chat --project UUID [--server URL]
+mnemic memory ID --project UUID [--server URL] [--json]
 
 读取服务端配置并检查连接、鉴权状态、数据库和模型槽位。
+chat：Ink 对话；/new 提交后新建，/exit 提交退出。会调用模型，可能计费。
+memory：只读查看当前值与来源。
 --probe  实际调用三个模型槽位，可能计费；默认不调用模型。
 --json   输出 JSON 诊断报告。
 环境：MNEMIC_SERVER_URL（默认 http://localhost:3000）、MNEMIC_AUTH_TOKEN。
@@ -15,7 +20,11 @@ interface CliOptions {
   env?: Record<string, string | undefined>;
   fetch?: typeof globalThis.fetch;
   write?: (text: string) => void;
+  isTTY?: boolean;
+  startChat?: (api: ApiClient, projectId: string) => Promise<number>;
 }
+
+const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 /** 输出时不使用网络异常正文，避免把认证响应或上游密钥带到终端。 */
 function requestFailure(error: unknown, stage: "连接" | "诊断"): string {
@@ -25,11 +34,6 @@ function requestFailure(error: unknown, stage: "连接" | "诊断"): string {
   return stage === "连接"
     ? "健康检查失败、连接中断或超时，请检查服务端地址和进程"
     : "诊断请求失败、超时或响应不兼容，请检查服务端版本与配置";
-}
-
-// Provider 名称/诊断内容是服务端数据，不能让控制字符操作用户终端。
-function terminalText(text: string): string {
-  return text.replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, " ");
 }
 
 export async function runCli(args: string[], options: CliOptions = {}): Promise<number> {
@@ -42,7 +46,10 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   let server: string;
   let probe: boolean;
   let json: boolean;
-  let invalid: "arguments" | "command" | "server" = "arguments";
+  let command: "doctor" | "chat" | "memory";
+  let projectId: string | undefined;
+  let memoryId: string | undefined;
+  let invalid: "arguments" | "command" | "server" | "project" = "arguments";
   try {
     const parsed = parseArgs({
       args,
@@ -52,6 +59,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         probe: { type: "boolean" },
         json: { type: "boolean" },
         help: { type: "boolean", short: "h" },
+        project: { type: "string" },
       },
     });
     if (parsed.values.help || args.length === 0) {
@@ -59,8 +67,26 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       return 0;
     }
     invalid = "command";
-    if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "doctor")
-      throw new Error("command");
+    const action = parsed.positionals[0];
+    if (action !== "doctor" && action !== "chat" && action !== "memory") throw new Error("command");
+    command = action;
+    if (parsed.positionals.length !== (command === "memory" ? 2 : 1)) throw new Error("command");
+    invalid = "arguments";
+    if (
+      (command !== "doctor" && parsed.values.probe !== undefined) ||
+      (command === "chat" && parsed.values.json !== undefined) ||
+      (command === "doctor" && parsed.values.project !== undefined)
+    )
+      throw new Error("flags");
+    memoryId = parsed.positionals[1];
+    if (memoryId && !UUID.test(memoryId)) throw new Error("memory ID");
+    memoryId = memoryId?.toLowerCase();
+    if (command !== "doctor") {
+      invalid = "project";
+      projectId = parsed.values.project;
+      if (!projectId || !UUID.test(projectId)) throw new Error("project ID");
+      projectId = projectId.toLowerCase();
+    }
     invalid = "server";
     const url = new URL(parsed.values.server ?? env.MNEMIC_SERVER_URL ?? "http://localhost:3000");
     if (
@@ -78,18 +104,44 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   } catch {
     const detail = {
       arguments: "参数无效，请使用 --help 查看支持的选项。",
-      command: "命令无效，目前仅支持 doctor；请使用 --help 查看用法。",
+      command: "命令无效，请使用 doctor、chat 或 memory；使用 --help 查看用法。",
       server: "服务地址无效：须为不含凭据、查询或片段的 HTTP(S) URL。",
+      project: "项目参数无效：请提供 --project UUID，且项目须已存在。",
     }[invalid];
     write(detail + "\n" + HELP);
     return 2;
   }
   const api = createApiClient({
     baseUrl: server,
-    timeoutMs: 25_000,
+    timeoutMs: command === "chat" ? 120_000 : 25_000,
     ...(env.MNEMIC_AUTH_TOKEN ? { token: env.MNEMIC_AUTH_TOKEN } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
+  if (command === "chat") {
+    if (!(options.isTTY ?? process.stdin.isTTY)) {
+      write("chat 需要交互终端，请在终端直接运行。\n");
+      return 2;
+    }
+    try {
+      const start = options.startChat ?? (await import("./render-chat.js")).startChat;
+      return await start(api, projectId!);
+    } catch (error) {
+      write(chatFailure(error) + "\n");
+      return 1;
+    }
+  }
+  if (command === "memory") {
+    try {
+      const memory = await api.getBelief(projectId!, memoryId!);
+      if (memory.id !== memoryId || memory.project_id !== projectId)
+        throw new Error("memory scope");
+      write((json ? JSON.stringify(memory) : formatMemory(memory)) + "\n");
+      return 0;
+    } catch (error) {
+      write(chatFailure(error) + "\n");
+      return 1;
+    }
+  }
   let connectivity: { status: "ok" | "error"; detail: string };
   let diagnostics: DoctorReport | null = null;
   let error: string | null = null;
