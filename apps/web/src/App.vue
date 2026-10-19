@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { RouterLink, RouterView } from "vue-router";
-import { api } from "./api.js";
+import { createWebApi } from "./api.js";
 import { isProjectId, PROJECT_STORAGE_KEY } from "./lib/project.js";
 
 const links = [
@@ -16,7 +16,9 @@ const stored =
 const projectId = ref(isProjectId(stored) ? stored : "");
 const projectInput = ref(projectId.value);
 const projectError = ref("");
-const connected = computed(() => isProjectId(projectId.value));
+const tokenInput = ref("");
+const api = shallowRef<ReturnType<typeof createWebApi> | null>(null);
+const connected = computed(() => isProjectId(projectId.value) && api.value !== null);
 
 function connectProject() {
   const id = projectInput.value.trim();
@@ -24,12 +26,20 @@ function connectProject() {
     projectError.value = "请输入合法的 UUID";
     return;
   }
+  if (!tokenInput.value.trim()) {
+    projectError.value = "请输入服务端 Token";
+    return;
+  }
   projectError.value = "";
+  api.value = createWebApi(tokenInput.value);
+  tokenInput.value = "";
   projectId.value = id;
   globalThis.localStorage?.setItem(PROJECT_STORAGE_KEY, id);
 }
 
 function changeProject() {
+  api.value = null;
+  tokenInput.value = "";
   globalThis.localStorage?.removeItem(PROJECT_STORAGE_KEY);
   projectId.value = "";
   projectInput.value = "";
@@ -76,16 +86,27 @@ function changeProject() {
         </p>
         <h1 class="mt-2 text-2xl font-semibold tracking-tight">连接项目</h1>
         <p class="mt-2 text-sm leading-6 text-zinc-500">
-          输入当前演示项目的 UUID。所有记忆和对话都按项目隔离，页面不会跨项目读取数据。
+          输入项目 UUID 和服务端 Token。Token 只保留在当前页面内存中，刷新或更换后需重新输入。
+          单用户 Token 可访问服务端所有项目，UUID 仅限定本次查看范围。
         </p>
-        <form class="mt-6 flex gap-2" @submit.prevent="connectProject">
+        <form class="mt-6 flex flex-col gap-3" @submit.prevent="connectProject">
           <label class="sr-only" for="project-id">项目 UUID</label>
           <input
             id="project-id"
             v-model="projectInput"
             aria-label="项目 UUID"
-            class="h-10 min-w-0 flex-1 rounded-md border border-zinc-200 px-3 font-mono text-sm"
+            class="h-10 min-w-0 rounded-md border border-zinc-200 px-3 font-mono text-sm"
             placeholder="00000000-0000-7000-0000-000000000000"
+          />
+          <label class="sr-only" for="auth-token">服务端 Token</label>
+          <input
+            id="auth-token"
+            v-model="tokenInput"
+            type="password"
+            autocomplete="off"
+            aria-label="服务端 Token"
+            class="h-10 min-w-0 rounded-md border border-zinc-200 px-3 font-mono text-sm"
+            placeholder="服务端 Bearer Token"
           />
           <button
             type="submit"

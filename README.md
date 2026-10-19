@@ -28,16 +28,20 @@ pnpm -r run lint && pnpm -r run typecheck && pnpm -r run test && pnpm -r run bui
 pnpm --filter @mnemic/server db:migrate
 
 # 4. 启动记忆服务
+#    先复制并填写 .env；MNEMIC_AUTH_TOKEN 必填（生成：openssl rand -hex 32）
 pnpm dev:server
 
 # 5. 验证
 curl http://localhost:3000/health   # {"status":"ok"}
 
 # 6.（可选）启动 Web 记忆中心
-pnpm dev:web                      # http://localhost:5173，首次打开输入项目 UUID
+pnpm dev:web                      # http://localhost:5173，输入项目 UUID 和服务端 Token
 ```
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
+服务端 Token 必须为 32–256 位 Bearer 字符，旧示例 `change-me` 或空值会拒绝启动。
+单用户 Token 可操作所有项目；默认只监听环回，公网 HTTPS 部署仍归 #20 后续拆分。
+配置、轮换和日志边界见 [鉴权说明](docs/authentication.md)。
 
 ## CLI：诊断、对话与记忆查看（Issue #19）
 
@@ -47,6 +51,7 @@ pnpm dev:web                      # http://localhost:5173，首次打开输入�
 
 ```bash
 pnpm build
+# CLI 不自动加载 .env，需先在 shell 导出与服务端一致的 MNEMIC_AUTH_TOKEN
 pnpm cli doctor
 # 服务不在本机默认端口时
 pnpm cli doctor --server http://127.0.0.1:3000
@@ -60,13 +65,14 @@ CLI 只通过 shared HTTP client 调用服务端，不直连数据库，不保�
 从 shell 环境读取 `MNEMIC_SERVER_URL` 和 `MNEMIC_AUTH_TOKEN`，默认不自动加载 `.env`；
 `--server` 优先于环境变量。只读诊断使用 `GET /v1/doctor`；计费探测使用
 `POST /v1/doctor/probe`，要求 `Content-Type: application/json` 和请求体 `{}`。
-GET 不接受 `probe` 等查询参数；探测接口仅供 CLI，任何携带 `Origin` 的浏览器请求均返回 403，
-无 Origin 但非 JSON 的请求返回 415。这是跨站触发防护，不替代 #20 的 Token 鉴权。
+GET 不接受 `probe` 等查询参数；通过鉴权后，探测接口仍仅供 CLI：携带 `Origin` 的请求返回 403，
+无 Origin 但非 JSON 的请求返回 415。这是额外的跨站触发防护，不替代 Token 鉴权。
 
 默认仅读取数据库、向量列维度和加密的三槽位配置，模型可用性显示 `SKIP`；
 `--probe` 使用固定的诊断文本探测两个文本槽位和一个 embedding 槽位，关闭自动重试，
 每槽位 15 秒中止信号，doctor 每次 HTTP 请求 25 秒超时。探测不写入记忆、Evidence 或 Trace。
-服务端鉴权尚待 #20，当前 `authentication` 始终显示 `SKIP`，不能据此认为 Token 已受到验证。
+除健康检查外接口均需 Bearer Token。doctor 的 `authentication: OK` 表示当前请求已验证；
+缺失或错误 Token 返回 401，模型检查仍独立报告 SKIP/OK/ERROR。
 
 退出码：0 = 未检测到错误（仍可能有 `SKIP`），1 = 诊断或网络失败，2 = 参数错误。
 
@@ -90,6 +96,7 @@ chat 使用服务端三槽位配置，输入会写入对话并触发后台记忆
 回答是完整 HTTP 响应到达后的客户端分段展示，不是 SSE/token 流（#33）。
 chat 请求超时 120 秒，memory 25 秒；请求失败不自动重试，服务端可能已经收到消息。
 完整的“告知 → 新会话召回 → 更新 → 拒答”演示及排错见 [CLI 演示](docs/cli-demo.md)。
+Web 连接表单也需输入服务端 Token；只在本页内存中保留，刷新或更换后需重新输入。
 
 ## 记忆修正与消解历史 API
 
@@ -103,7 +110,7 @@ shared client 对应方法为 `correctBelief(projectId, beliefId, value)` 和
 
 已软删除的记忆修正返回 409，需先显式恢复；已撤回（retracted）的记忆仍可通过人工修正恢复生效。
 修正的状态检查与写入共享数据库事务和行锁，避免并发删除被修正覆盖。
-项目参数只限定数据范围，不代表用户权限；token 鉴权归 Issue #20。
+项目参数只限定数据范围，不代表用户权限；当前单用户 Bearer Token 可访问全部项目。
 
 评分字段统一返回 JSON `number | null`：记忆列表/详情的 `confidence`、`salience`、`importance`，
 版本的 `confidence`，以及消解历史的 `confidenceBefore`、`confidenceAfter`。

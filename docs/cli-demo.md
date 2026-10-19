@@ -16,7 +16,8 @@ pnpm cli chat --project <项目UUID>
 
 在交互终端运行，尖括号占位需替换。`--server http://127.0.0.1:3000` 可指定地址；
 也可从 shell 读取 `MNEMIC_SERVER_URL`。CLI 不自动读取 `.env`，不保存模型 Key、不直连数据库。
-`MNEMIC_AUTH_TOKEN` 经 shared client 传为 Bearer；鉴权尚待 #20，doctor 显示 `SKIP`，不是鉴权通过。
+需先在 shell 导出与服务端一致的 `MNEMIC_AUTH_TOKEN`，经 shared client 传为 Bearer；
+doctor 的 `authentication: OK` 才表示当前 Token 通过鉴权，缺失或错误则返回 401。
 
 ## 告知 → 新会话召回 → 更新
 
