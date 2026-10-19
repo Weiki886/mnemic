@@ -30,7 +30,7 @@ describe("人工修正入口 API（#17）", () => {
     await t.sql`insert into belief_versions (id, belief_id, value, valid_from, recorded_from, source_observation_id)
       values (${versionId}, ${beliefId}, ${JSON.stringify("MySQL")}, '2026-09-01', now(), ${obsId})`;
     await t.sql`update beliefs set current_version_id = ${versionId} where id = ${beliefId}`;
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
   afterAll(async () => {
     await app.close();

@@ -3,7 +3,7 @@ import { buildApp } from "../src/app.js";
 
 describe("GET /health", () => {
   it("返回 200 与 ok 状态", async () => {
-    const app = buildApp();
+    const app = buildApp({ auth: false });
     const res = await app.inject({ method: "GET", url: "/health" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: "ok" });

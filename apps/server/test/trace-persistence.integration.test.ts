@@ -154,7 +154,7 @@ describe("resolution_traces 落库（#18，决策 11）", () => {
   });
 
   it("GET /projects/:projectId/beliefs/:id/resolutions → 按时间升序返回消解历史；belief 不存在 → 404", async () => {
-    const app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    const app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
     const subject = `tr-api-${uuidv7().slice(0, 8)}`;
     const first = await ingestCandidate(
       t.db,

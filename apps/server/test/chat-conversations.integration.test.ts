@@ -60,7 +60,12 @@ describe("对话闭环：会话创建与提交（#7 Task A）", () => {
       languageModel: () => extractionModel as unknown as LanguageModel,
       embeddingModel: (cfg, id) => bagEmbeddingFactory.embeddingModel(cfg, id) as EmbeddingModel,
     };
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY, providerFactory: fakeFactory });
+    app = buildApp({
+      auth: false,
+      db: t.db,
+      masterKey: TEST_MASTER_KEY,
+      providerFactory: fakeFactory,
+    });
   }, 180_000);
   afterAll(async () => {
     await app.close();

@@ -86,7 +86,7 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
       apiKey: dashscopeKey!,
       models: { embedding: "text-embedding-v4" },
     });
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
   afterAll(async () => {
     await app.close();

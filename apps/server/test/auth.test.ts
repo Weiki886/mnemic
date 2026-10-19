@@ -14,6 +14,30 @@ afterEach(async () => {
 });
 
 describe("#20 最小 Bearer 鉴权", () => {
+  it("工厂默认拒绝遗漏或 undefined Token，不能静默关闭鉴权", () => {
+    expect(() => buildApp()).toThrow(/MNEMIC_AUTH_TOKEN/);
+    expect(() => buildApp({ authToken: undefined })).toThrow(/MNEMIC_AUTH_TOKEN/);
+  });
+
+  it("只有显式 auth:false 的测试夹具可不鉴权，doctor 不假报通过", async () => {
+    const app = buildApp({ auth: false });
+    apps.push(app);
+    const res = await app.inject({ url: "/v1/doctor" });
+    expect(res.statusCode).toBe(200);
+    expect(
+      res.json().checks.find((c: { name: string }) => c.name === "authentication").status,
+    ).toBe("skipped");
+  });
+
+  it("显式关闭鉴权时，即使误传 Token，doctor 也必须报告未验证", async () => {
+    const app = fixture({ auth: false });
+    const res = await app.inject({ url: "/v1/doctor" });
+    expect(res.statusCode).toBe(200);
+    expect(
+      res.json().checks.find((c: { name: string }) => c.name === "authentication").status,
+    ).toBe("skipped");
+  });
+
   it("仅健康检查公开；路径前缀/编码/业务/未知路由均不能绕过", async () => {
     const app = fixture();
     expect((await app.inject({ url: "/health" })).statusCode).toBe(200);
