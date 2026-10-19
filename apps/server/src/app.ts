@@ -14,6 +14,7 @@ import { waitForChatJobs } from "./chat/jobs.js";
 import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 import { registerDoctorRoutes } from "./doctor/routes.js";
+import { registerBearerAuth } from "./auth.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
 const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -25,6 +26,8 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 };
 
 export interface BuildAppOptions {
+  /** index.ts 必须注入已校验的环境 Token；未注入仅用于不监听公网的独立测试夹具。 */
+  authToken?: string | undefined;
   /** 测试用：自定义日志输出流 */
   logStream?: { write: (chunk: string) => void };
   /** 配置后注册 Providers 配置 API（#14）；二者缺一不注册 */
@@ -49,7 +52,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       level: process.env.LOG_LEVEL ?? "info",
       // Fastify 默认 req 序列化不含 headers，redact 会落空；显式带上 headers，让脱敏真实生效
       serializers: {
-        req: (req): Record<string, unknown> => ({ ...stdSerializers.req(req.raw) }),
+        req: (req): Record<string, unknown> => ({
+          ...stdSerializers.req(req.raw),
+          // 不记录任何查询值，避免误放进 URL 的 Token/凭据进入访问日志。
+          url: req.raw.url?.split("?")[0],
+        }),
       },
       // res 只序列化 statusCode，配 res.headers.* 永远匹配不到，不放摆设条目（#62）
       redact: {
@@ -67,8 +74,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
   });
 
+  if (options.authToken !== undefined)
+    registerBearerAuth(app, options.authToken, options.corsOrigin);
   if (options.corsOrigin) {
-    app.register(cors, { origin: options.corsOrigin });
+    app.register(cors, {
+      origin: options.corsOrigin,
+      methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["authorization", "content-type"],
+    });
   }
 
   app.addHook("onSend", async (request, reply) => {
@@ -97,6 +110,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/health", async () => ({ status: "ok" }));
   registerDoctorRoutes(app, {
+    authenticated: options.authToken !== undefined,
     db: options.db,
     masterKey: options.masterKey,
     factory: options.providerFactory,
@@ -126,7 +140,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         problem({
           status: 404,
           code: ErrorCode.NOT_FOUND,
-          detail: `路由不存在：${request.method} ${request.url}`,
+          detail: `路由不存在：${request.method} ${request.url.split("?")[0]}`,
           requestId: request.id,
         }),
       );
