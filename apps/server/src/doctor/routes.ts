@@ -9,6 +9,7 @@ import type { ProviderFactory } from "../providers/factory.js";
 import { assertDimensionMatch, embeddingDimensionsFromEnv } from "../providers/dimension-guard.js";
 
 interface DoctorOptions {
+  authenticated?: boolean | undefined;
   db?: PostgresJsDatabase | undefined;
   masterKey?: Buffer | undefined;
   factory?: ProviderFactory | undefined;
@@ -23,8 +24,10 @@ async function diagnose(options: DoctorOptions, probe: boolean): Promise<DoctorR
   const checks: DoctorCheck[] = [
     {
       name: "authentication",
-      status: "skipped",
-      detail: "服务端尚未启用鉴权，不能验证 Token（#20）",
+      status: options.authenticated ? "ok" : "skipped",
+      detail: options.authenticated
+        ? "当前请求的 Bearer Token 已验证"
+        : "测试夹具未启用鉴权，不能验证 Token",
     },
   ];
   const finish = (): DoctorReport => ({
