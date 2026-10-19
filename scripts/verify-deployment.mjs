@@ -14,6 +14,7 @@ import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
+import { summarizeOutput } from "./deployment-output.mjs";
 
 const exec = promisify(execFile);
 const cwd = fileURLToPath(new URL("../", import.meta.url));
@@ -255,11 +256,13 @@ try {
     );
   } else {
     console.error(`Deployment smoke failed during ${phase}.`);
-    const output = `${(error.stdout ?? "").slice(-6000)}\n${(error.stderr ?? "").slice(-2500)}`;
     console.error(
-      [password, token, masterKey, providerKey]
-        .reduce((text, value) => text.replaceAll(value, "[REDACTED]"), output)
-        .slice(-8000),
+      summarizeOutput(error.stdout ?? "", error.stderr ?? "", [
+        password,
+        token,
+        masterKey,
+        providerKey,
+      ]),
     );
   }
 } finally {
