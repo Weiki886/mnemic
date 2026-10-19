@@ -39,6 +39,29 @@ const fixture = () => ({
 afterEach(cleanup);
 
 describe("Ink 对话交互", () => {
+  it.each(["", "   "])("空白输入 %j 回车不留下用户块，也不发请求", async (text) => {
+    const api = fixture();
+    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+    if (text) {
+      // Ink 裁掉帧末尾空格；先加可见字符再退格，确认空格确实进入 TextInput。
+      view.stdin.write(text + "x");
+      await vi.waitFor(() => expect(view.lastFrame()).toContain("> " + text + "x"));
+      view.stdin.write("\u007f");
+      await vi.waitFor(() => expect(view.lastFrame()).not.toContain("> " + text + "x"));
+    }
+    view.stdin.write("\r");
+    // 随后的有效输入作为事件处理屏障，避免对尚未处理的空回车做瞬时断言。
+    view.stdin.write("有效消息");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("有效消息"));
+    const frames = view.frames.join("\n");
+    expect(frames).not.toMatch(/(?:^|\n)你(?:\n|$)/);
+    expect(frames).not.toContain("消息不能为空");
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+  });
+
   it("Enter 发送、显示引用，新会话提交再创建，退出提交", async () => {
     const api = fixture();
     const done = vi.fn();

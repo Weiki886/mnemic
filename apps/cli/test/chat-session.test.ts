@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ChatSession } from "../src/chat-session.js";
 import { formatReply, formatMemory, renderAnswerChunks } from "../src/presentation.js";
-import type { BeliefDetail } from "@mnemic/shared";
+import { ApiError, type BeliefDetail } from "@mnemic/shared";
 
 const project = "01920000-0000-7000-8000-000000000001";
 const c1 = "01920000-0000-7000-8000-000000000002";
@@ -70,6 +70,69 @@ describe("CLI 对话会话（#19 2/2）", () => {
     await session.send("database？");
     expect(api.commitConversation).toHaveBeenCalledTimes(2);
     expect(api.sendMessage).toHaveBeenCalledWith(c2, "database？");
+  });
+
+  it("提交响应丢失后，用户再次新建收到 409 仍能进入新会话", async () => {
+    const api = fixture();
+    const session = new ChatSession(api, project);
+    await session.start();
+    api.commitConversation.mockRejectedValueOnce(new Error("lost response"));
+    await expect(session.newConversation()).rejects.toThrow("lost response");
+    expect(session.id).toBe(c1);
+    expect(api.createConversation).toHaveBeenCalledOnce();
+    api.commitConversation.mockRejectedValueOnce(new ApiError(409, "CONFLICT", "已提交"));
+    api.createConversation.mockResolvedValueOnce(conversation(c2));
+    await expect(session.newConversation()).resolves.toMatchObject({ id: c2 });
+    await session.send("新会话消息");
+    expect(api.sendMessage).toHaveBeenCalledWith(c2, "新会话消息");
+    expect(api.createConversation).toHaveBeenCalledTimes(2);
+    expect(api.commitConversation).toHaveBeenCalledTimes(2);
+  });
+
+  it("退出收到已提交 409 也成功，重复退出不重复提交", async () => {
+    const api = fixture();
+    const session = new ChatSession(api, project);
+    await session.start();
+    api.commitConversation.mockRejectedValueOnce(new ApiError(409, "CONFLICT", "已提交"));
+    await expect(session.close()).resolves.toBeUndefined();
+    await expect(session.close()).resolves.toBeUndefined();
+    expect(api.commitConversation).toHaveBeenCalledOnce();
+    await expect(session.send("退出后")).rejects.toThrow();
+  });
+
+  it.each([404, 500])("提交 %i 不视为已结束，也不创建新会话", async (status) => {
+    const api = fixture();
+    const session = new ChatSession(api, project);
+    await session.start();
+    const error = new ApiError(status, null, "failure");
+    api.commitConversation.mockRejectedValueOnce(error);
+    await expect(session.newConversation()).rejects.toBe(error);
+    expect(session.id).toBe(c1);
+    expect(api.createConversation).toHaveBeenCalledOnce();
+  });
+
+  it("提交响应为 null 时仍拒绝，不把畸形响应当作已提交", async () => {
+    const api = fixture();
+    const session = new ChatSession(api, project);
+    await session.start();
+    api.commitConversation.mockResolvedValueOnce(
+      null as unknown as Awaited<ReturnType<typeof api.commitConversation>>,
+    );
+    await expect(session.newConversation()).rejects.toThrow();
+    expect(session.id).toBe(c1);
+    expect(api.createConversation).toHaveBeenCalledOnce();
+  });
+
+  it("发消息收到 409 仍失败，不自动提交或新建", async () => {
+    const api = fixture();
+    const session = new ChatSession(api, project);
+    await session.start();
+    const error = new ApiError(409, "CONFLICT", "已提交");
+    api.sendMessage.mockRejectedValueOnce(error);
+    await expect(session.send("hello")).rejects.toBe(error);
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    expect(api.commitConversation).not.toHaveBeenCalled();
+    expect(api.createConversation).toHaveBeenCalledOnce();
   });
 
   it("并发 Enter 不会重复发消息，退出等待进行中请求并只提交一次", async () => {

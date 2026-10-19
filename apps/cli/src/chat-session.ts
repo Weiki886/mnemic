@@ -1,4 +1,4 @@
-import type { ApiClient, ChatConversation, ChatReply } from "@mnemic/shared";
+import { ApiError, type ApiClient, type ChatConversation, type ChatReply } from "@mnemic/shared";
 import { ChatConversationSchema, ChatReplySchema, ChatCommitSchema } from "@mnemic/shared/chat";
 
 type ChatApi = Pick<ApiClient, "createConversation" | "sendMessage" | "commitConversation">;
@@ -43,9 +43,15 @@ export class ChatSession {
   }
   private async commit(): Promise<void> {
     if (!this.conversation) return;
-    const row = ChatCommitSchema.parse(await this.api.commitConversation(this.conversation.id));
-    if (row.id !== this.conversation.id || row.project_id !== this.projectId || !row.ended_at) {
-      throw new SessionError("服务端未确认当前会话提交");
+    try {
+      const row = ChatCommitSchema.parse(await this.api.commitConversation(this.conversation.id));
+      if (row.id !== this.conversation.id || row.project_id !== this.projectId || !row.ended_at) {
+        throw new SessionError("服务端未确认当前会话提交");
+      }
+    } catch (error) {
+      // 此接口的 409 仅表示已结束；上次提交响应丢失时，显式重试可继续 /new 或退出。
+      if (error instanceof ApiError && error.status === 409) return;
+      throw error;
     }
   }
   start(): Promise<ChatConversation> {

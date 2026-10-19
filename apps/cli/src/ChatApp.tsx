@@ -77,6 +77,7 @@ export function ChatApp({
 
   const submit = async (text: string) => {
     if (busyRef.current || closingRef.current) return;
+    if (!text.trim()) return;
     if (text.trim() === "/exit") {
       await finish();
       return;
