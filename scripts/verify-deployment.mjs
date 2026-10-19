@@ -1,5 +1,7 @@
 // Disposable stack only: no real .env, model calls, host DB or global CA installation.
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import console from "node:console";
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -8,7 +10,8 @@ import https from "node:https";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import process from "node:process";
+import { fileURLToPath, URL } from "node:url";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -252,7 +255,7 @@ try {
     );
   } else {
     console.error(`Deployment smoke failed during ${phase}.`);
-    const output = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+    const output = `${(error.stdout ?? "").slice(-6000)}\n${(error.stderr ?? "").slice(-2500)}`;
     console.error(
       [password, token, masterKey, providerKey]
         .reduce((text, value) => text.replaceAll(value, "[REDACTED]"), output)

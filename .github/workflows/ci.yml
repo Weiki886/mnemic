@@ -25,7 +25,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: pnpm -r run lint
+        run: pnpm -r run lint && pnpm exec eslint scripts/verify-deployment.mjs
 
       - name: Format check
         run: pnpm run format:check
