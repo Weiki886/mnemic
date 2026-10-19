@@ -3,9 +3,11 @@
   "compilerOptions": {
     "noEmit": true,
     "types": ["node"],
+    "jsx": "react-jsx",
     "paths": {
       "@mnemic/shared": ["../../packages/shared/src/index.ts"],
-      "@mnemic/shared/doctor": ["../../packages/shared/src/doctor.ts"]
+      "@mnemic/shared/doctor": ["../../packages/shared/src/doctor.ts"],
+      "@mnemic/shared/chat": ["../../packages/shared/src/chat.ts"]
     }
   },
   "include": ["src", "test", "vitest.config.ts"]
