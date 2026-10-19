@@ -38,3 +38,14 @@ jobs:
 
       - name: Build
         run: pnpm -r run build
+
+  deployment-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build and verify isolated HTTPS deployment
+        run: node scripts/verify-deployment.mjs

@@ -17,8 +17,8 @@ psql -d mnemic -c "CREATE EXTENSION IF NOT EXISTS vector;"
 #    集成测试独立库（#3 起；不碰开发库数据）：
 createdb mnemic_test -O mnemic
 psql -d mnemic_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
-#    等价容器环境（CI / 部署使用）：
-#    docker compose up -d
+#    仅本地 PG 的等价容器环境（不要与已占用 5432 的原生 PG 同时运行）：
+#    docker compose -f docker-compose.dev.yml up -d
 
 # 2. 安装与全量校验
 pnpm install
@@ -40,8 +40,10 @@ pnpm dev:web                      # http://localhost:5173，输入项目 UUID �
 
 环境变量见 `.env.example`（复制为 `.env` 后填写，**真实凭据不入库**）。
 服务端 Token 必须为 32–256 位 Bearer 字符，旧示例 `change-me` 或空值会拒绝启动。
-单用户 Token 可操作所有项目；默认只监听环回，公网 HTTPS 部署仍归 #20 后续拆分。
+单用户 Token 可操作所有项目；原生启动默认只监听环回。
 配置、轮换和日志边界见 [鉴权说明](docs/authentication.md)。
+全栈 Compose、Caddy HTTPS、VPS 操作和备份升级见 [部署指南](docs/deployment.md)，使用独立的 `deploy/.env`；
+真实 VPS 与公共证书签发/续期仍待环境验收，不等于已验证公网部署。
 
 ## CLI：诊断、对话与记忆查看（Issue #19）
 
