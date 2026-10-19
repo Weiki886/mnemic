@@ -31,7 +31,7 @@ function connectProject() {
     return;
   }
   projectError.value = "";
-  api.value = createWebApi(tokenInput.value);
+  api.value = createWebApi(tokenInput.value.trim());
   tokenInput.value = "";
   projectId.value = id;
   globalThis.localStorage?.setItem(PROJECT_STORAGE_KEY, id);

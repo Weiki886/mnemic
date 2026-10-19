@@ -77,6 +77,24 @@ describe("AppShell project gate", () => {
     expect(wrapper.html()).not.toContain(token);
   });
 
+  it.each([" " + token, token + " ", "  " + token + "  "])(
+    "trims pasted Token boundaries before creating the API client (%#)",
+    async (pasted) => {
+      const wrapper = mount(App, { global: { plugins: [router] } });
+      await wrapper.find("input[aria-label='项目 UUID']").setValue(projectId);
+      await wrapper.find("input[aria-label='服务端 Token']").setValue(pasted);
+      await wrapper.find("form").trigger("submit.prevent");
+      await flushPromises();
+      const calls = vi.mocked(fetch).mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      expect(new Headers(calls[0]![1]?.headers).get("authorization")).toBe("Bearer " + token);
+      expect(localStorage.length).toBe(1);
+      expect(localStorage.getItem(PROJECT_STORAGE_KEY)).toBe(projectId);
+      expect(wrapper.html()).not.toContain(token);
+      wrapper.unmount();
+    },
+  );
+
   it("prefills a previously selected project but requires Token again on reload", async () => {
     localStorage.setItem(PROJECT_STORAGE_KEY, projectId);
     const wrapper = mount(App, { global: { plugins: [router] } });
