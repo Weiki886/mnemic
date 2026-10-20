@@ -5,7 +5,8 @@
 
 import type { ErrorCode, FieldError } from "./errors.js";
 import type { DoctorReport } from "./doctor.js";
-import type { ChatConversation, ChatCommit, ChatReply } from "./chat.js";
+import type { ChatConversation, ChatCommit, ChatReply, ConversationListItem } from "./chat.js";
+export type { ConversationListItem } from "./chat.js";
 
 /* ---------- 响应类型（与 apps/server 路由返回结构对齐） ---------- */
 // 评分的 HTTP 契约为 JSON number | null（#68）；数据库 numeric 字符串由 server 在返回层转换。
@@ -51,14 +52,6 @@ export interface BeliefDetail {
   created_at: string;
   current_value: unknown;
   versions: BeliefVersionItem[];
-}
-
-export interface ConversationListItem {
-  id: string;
-  title: string | null;
-  started_at: string;
-  ended_at: string | null;
-  message_count: number;
 }
 
 export interface CitedMemory {

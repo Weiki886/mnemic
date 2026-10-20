@@ -10,6 +10,12 @@ const session = {
 };
 
 describe("会话列表响应契约（#31）", () => {
+  it("列表复用导出的单条 schema，单条格式不变", () => {
+    expect(schemas.ConversationListItemSchema).toBeDefined();
+    expect(schemas.ConversationListSchema.element).toBe(schemas.ConversationListItemSchema);
+    expect(schemas.ConversationListItemSchema.parse(session)).toEqual(session);
+  });
+
   it.each(
     [[], [session], [{ ...session, title: null, ended_at: session.started_at }]].map((rows) => ({
       rows,

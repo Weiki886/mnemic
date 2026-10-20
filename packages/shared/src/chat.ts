@@ -8,13 +8,11 @@ export const ChatConversationSchema = z.object({
   ended_at: z.string().datetime({ offset: true }).nullable(),
 });
 /** 项目会话列表（#8/#31）：沿用会话字段，增加消息数；单页最多 1000 条。 */
-export const ConversationListSchema = z
-  .array(
-    ChatConversationSchema.omit({ project_id: true }).extend({
-      message_count: z.number().int().nonnegative(),
-    }),
-  )
-  .max(1000);
+export const ConversationListItemSchema = ChatConversationSchema.omit({ project_id: true }).extend({
+  message_count: z.number().int().nonnegative(),
+});
+export const ConversationListSchema = z.array(ConversationListItemSchema).max(1000);
+export type ConversationListItem = z.infer<typeof ConversationListItemSchema>;
 export const ChatCommitSchema = ChatConversationSchema.extend({
   extraction_triggered: z.boolean(),
 });
