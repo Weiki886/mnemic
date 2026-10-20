@@ -53,6 +53,34 @@ node apps/cli/dist/index.js memory <记忆ID> --project <项目UUID> --json
 消息或提交超时后 CLI 不自动重试：服务端可能已经持久化请求。
 先核对 Web 对话和记忆状态；不要把通信错误当成“没有写入”。关闭进程不会撤销已提交的消息。
 
+## 查看服务端会话（#31 拆分 1/2）
+
+无需交互终端或模型配置，即可按项目查看同一服务端上的历史会话：
+
+```bash
+pnpm cli sessions --project <项目UUID>
+pnpm cli sessions --project <项目UUID> --limit 20 --offset 20
+# 脚本读取：直接执行构建产物，避免 pnpm 自身日志影响 JSON
+node apps/cli/dist/index.js sessions --project <项目UUID> --json
+```
+
+沿用 `--server`、`MNEMIC_SERVER_URL` 和 `MNEMIC_AUTH_TOKEN`；项目 UUID 必填，大小写均接受。
+只发送一次项目范围内的 GET，不创建/提交会话，不读取消息正文、不调用模型，也不保存本地会话文件。
+不同客户端请求同一服务端、同一项目即可看到相同记录（拉取式，不是实时推送）。
+
+文本显示完整会话 ID、项目 UUID、标题、开始/结束时间、消息数和进行中/已提交状态。
+时间保留服务端 ISO 格式，不按本地时区转换；终端展示过滤控制字符。
+`--json` 成功时输出 `{ "project_id": "…", "limit": 50, "offset": 0, "sessions": [...] }`，
+会话字段为 `id/title/started_at/ended_at/message_count`；原始字段内容保留供 JSON 解析器使用，不应直接打印不可信 JSON。
+
+列表沿用服务端开始时间升序。`--limit` 默认 50、范围 1–1000；`--offset` 默认 0，须为非负安全整数。
+两者只接受十进制整数字符串，不接受空值、小数或科学计数法；翻页通过调整 offset，不会自动拉取全项目。
+本页为空会明确提示；空页不证明项目存在或整个项目没有会话。
+成功退出 0，读取/鉴权/响应不兼容退出 1，参数错误退出 2；不回显原始上游错误，也不自动重试。
+
+这只是 #31 的只读列表拆分：**尚未实现 `resume`、切换或归档**。“已提交”仅表示现有 `ended_at` 非空，
+不代表可直接续聊；目前 `/exit` 仍会提交会话。恢复完整上下文和跨重启续聊留在 #31 后续 PR 验收。
+
 ## 边界与验证
 
 - 当前 API 返回完整 JSON，CLI 收到后按 Unicode 字符分段显示；不是 SSE/token 流。
