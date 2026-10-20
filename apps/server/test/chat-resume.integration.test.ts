@@ -218,6 +218,32 @@ describe("会话续聊与历史上下文（#31）", () => {
     await t.sql`update conversations set title = 'manual-corrections' where id = ${s.c}`;
     expect((await resume(s.p, s.c)).statusCode).toBe(409);
   });
+  it.each([false, true])(
+    "HTTP恢复接受合法大写UUID，source/current异大小写按同一ID处理：%s",
+    async (withCurrent) => {
+      const s = await seed(true);
+      const r = await resume(
+        s.p.toUpperCase(),
+        s.c.toUpperCase(),
+        withCurrent ? { current_conversation_id: s.c } : {},
+      );
+      expect(r.statusCode).toBe(201);
+      expect(r.json().project_id).toBe(s.p);
+      expect(r.json().resumed_from).toBe(s.c);
+    },
+  );
+  it("JSON历史消息和记忆版本的大写UUID同样规范化，不丢失合法历史", async () => {
+    const s = await seed(true);
+    const { v } = await cite(s, "UPPER-HISTORY");
+    const meta = {
+      resume: { version: 1, from: s.c.toUpperCase(), message_ids: [s.u.toUpperCase()] },
+    };
+    await t.sql`update conversations set meta = ${JSON.stringify(meta)}::jsonb where id = ${s.c}`;
+    await t.sql`update messages set memories = ${JSON.stringify([v.toUpperCase()])}::jsonb where id = ${s.a}`;
+    const r = await resume(s.p, s.c);
+    expect(r.statusCode).toBe(201);
+    expect(r.json().messages[1].memories[0].value).toBe("UPPER-HISTORY");
+  });
   it("新增恢复入口在鉴权前不读写项目", async () => {
     const s = await seed(true);
     const guarded = buildApp({

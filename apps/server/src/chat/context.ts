@@ -7,10 +7,11 @@ import { beliefVersions, beliefs, conversations, messages } from "../db/schema.j
 type Reader = Pick<PostgresJsDatabase, "select">;
 type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+const UUID = z.string().uuid().toLowerCase();
 const ResumeMeta = z.object({
   version: z.literal(1),
-  from: z.string().uuid(),
-  message_ids: z.array(z.string().uuid()),
+  from: UUID,
+  message_ids: z.array(UUID),
 });
 export class ConversationContextError extends Error {}
 
@@ -52,7 +53,10 @@ export async function messageViews(
 ) {
   const refs = (m: Message): string[] =>
     Array.isArray(m.memories)
-      ? m.memories.filter((id): id is string => z.string().uuid().safeParse(id).success)
+      ? m.memories.flatMap((id) => {
+          const parsed = UUID.safeParse(id);
+          return parsed.success ? [parsed.data] : [];
+        })
       : [];
   const ids = [...new Set(msgs.flatMap(refs))];
   const cited = ids.length

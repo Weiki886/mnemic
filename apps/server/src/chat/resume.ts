@@ -14,6 +14,10 @@ export async function resumeConversation(
   currentId: string | undefined,
   options: Parameters<typeof scheduleConversationWriteback>[4],
 ) {
+  // PostgreSQL UUID equality is case-insensitive; canonicalize before JS Set/find comparisons as well.
+  projectId = projectId.toLowerCase();
+  sourceId = sourceId.toLowerCase();
+  currentId = currentId?.toLowerCase();
   const result = await db.transaction(async (tx) => {
     const ids = [...new Set([sourceId, ...(currentId ? [currentId] : [])])];
     // Consistent row-lock order for simultaneous A→B / B→A switches.
