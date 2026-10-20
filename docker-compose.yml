@@ -76,6 +76,13 @@ services:
       timeout: 3s
       retries: 12
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /data:uid=1000,gid=1000,mode=0700
+      - /config:uid=1000,gid=1000,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 
   caddy:
     image: caddy:2-alpine
@@ -95,6 +102,7 @@ services:
       web:
         condition: service_healthy
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
 
 volumes:
   mnemic-pgdata:

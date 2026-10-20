@@ -4,6 +4,10 @@
 仅 Caddy 发布主机端口；数据库、server:3000、web:8080 不直接对外。
 这是单用户部署：持有 Bearer Token 的人可操作所有项目和模型配置，不提供账号/RBAC。
 
+静态 Web 容器以 UID1000、只读根文件系统运行，撤销全部 capabilities 并禁止提权；
+仅 `/tmp`、`/data`、`/config` 可临时写入（后两处 tmpfs 显式设置 UID/GID，挂载会覆盖镜像中的目录权限，见 [Docker tmpfs 说明](https://docs.docker.com/engine/storage/tmpfs/)）。
+公网 Caddy 也禁止提权，但保留原有低端口能力和证书持久卷；不把其 `/data`、`/config` 改为 tmpfs。
+
 本轮交付部署配置、隔离容器冒烟和操作步骤。**真实 VPS、公共 CA 签发/续期、CLI/Web 公网连通待提供环境验收，#20 保持打开。**
 本地 `localhost` 测试使用 Caddy 内部 CA，不等于公共 HTTPS 验收。
 
@@ -143,6 +147,7 @@ node scripts/verify-deployment.mjs
 
 脚本自建随机项目名、临时密钥、环回高端口和独立数据卷，构建镜像后验证迁移重跑、HTTPS、SPA、401/有效 Token、
 离线假 Provider 的加密配置，以及健康/上游停机错误路径日志均不含本轮密钥。
+另验证 Web 的 UID、只读静态目录、可写临时目录、零 capabilities 和禁止提权；代理重启后证书 CA 不变且 HTTPS 仍可访问。
 Caddy 不启用访问日志，代理错误用通用状态响应收口；不要打开 debug 或自定义请求日志而不重新审查脱敏。
 它提取测试栈内部 CA，仅交给本次 HTTPS 客户端验证，不写系统信任库。
 不发送 chat 或 probe，不消耗模型费用；结束只清理该随机项目和测试卷，不操作你的原生 PG 或现有服务。

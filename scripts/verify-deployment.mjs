@@ -218,6 +218,48 @@ try {
     200,
   );
   await compose("run", "--rm", "--no-deps", "migrate");
+  assert.equal((await compose("exec", "-T", "web", "id", "-u")).stdout.trim(), "1000");
+  await compose(
+    "exec",
+    "-T",
+    "web",
+    "sh",
+    "-ec",
+    [
+      "grep -Eq '^NoNewPrivs:[[:space:]]+1$' /proc/1/status",
+      "grep -Eq '^CapEff:[[:space:]]+0+$' /proc/1/status",
+      "grep -Eq '^CapBnd:[[:space:]]+0+$' /proc/1/status",
+      "if touch /srv/.hardening-smoke 2>/dev/null; then rm /srv/.hardening-smoke; exit 1; fi",
+      'for dir in /tmp /data /config; do touch "$dir/.hardening-smoke"; rm "$dir/.hardening-smoke"; done',
+    ].join("; "),
+  );
+  await compose(
+    "exec",
+    "-T",
+    "caddy",
+    "sh",
+    "-ec",
+    "grep -Eq '^NoNewPrivs:[[:space:]]+1$' /proc/1/status",
+  );
+  // Only restart this disposable proxy: its CA must survive in the persistent certificate volume.
+  await compose("restart", "caddy");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      assert.equal((await request("/api/health")).status, 200);
+      break;
+    } catch (error) {
+      if (attempt === 19) throw error;
+      await delay(1000);
+    }
+  }
+  const persistedCA = await compose(
+    "exec",
+    "-T",
+    "caddy",
+    "cat",
+    "/data/caddy/pki/authorities/local/root.crt",
+  );
+  assert.equal(persistedCA.stdout, ca.toString("utf8"));
   assert.equal((await compose("exec", "-T", "server", "id", "-u")).stdout.trim(), "1000");
   await compose(
     "exec",
@@ -240,7 +282,7 @@ try {
     assert.ok(!(logs.stdout + logs.stderr).includes(value), "Secret found in container logs");
   }
   console.info(
-    "PASS: migrations, trusted local HTTPS, SPA, authentication, encrypted config and API; no model calls.",
+    "PASS: migrations, trusted local HTTPS, persistent CA, hardened Web/proxy, SPA, authentication, encrypted config and API; no model calls.",
   );
 } catch (error) {
   failed = true;

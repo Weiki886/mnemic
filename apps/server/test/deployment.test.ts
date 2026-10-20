@@ -11,6 +11,27 @@ function source(path: string): string {
 }
 // 配置是运行时的公开契约；容器实际运行另由独立 deployment-smoke CI 验证。
 describe("#20 全栈部署契约", () => {
+  it("静态 Web 只读根文件系统、撤销 capabilities，仅临时目录允许 UID1000 写入", () => {
+    const { web } = parse(source("docker-compose.yml")).services;
+    expect(web.read_only).toBe(true);
+    expect(web.cap_drop).toEqual(["ALL"]);
+    expect(web.security_opt).toContain("no-new-privileges:true");
+    expect(web.tmpfs).toEqual([
+      "/tmp",
+      "/data:uid=1000,gid=1000,mode=0700",
+      "/config:uid=1000,gid=1000,mode=0700",
+    ]);
+  });
+
+  it("公网 Caddy 禁止提权但仍保留证书持久卷和原有低端口能力", () => {
+    const { caddy } = parse(source("docker-compose.yml")).services;
+    expect(caddy.security_opt).toEqual(["no-new-privileges:true"]);
+    expect(caddy.volumes).toContain("mnemic-caddy-data:/data");
+    expect(caddy.volumes).toContain("mnemic-caddy-config:/config");
+    expect(caddy.tmpfs).toBeUndefined();
+    expect(caddy.cap_drop).toBeUndefined();
+  });
+
   it("CI 实际构建并通过 HTTPS 验证隔离测试栈，而非只检查模板", () => {
     const ci = parse(source(".github/workflows/ci.yml"));
     expect(ci.jobs["deployment-smoke"]).toBeDefined();
