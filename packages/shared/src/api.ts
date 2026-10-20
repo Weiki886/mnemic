@@ -5,8 +5,15 @@
 
 import type { ErrorCode, FieldError } from "./errors.js";
 import type { DoctorReport } from "./doctor.js";
-import type { ChatConversation, ChatCommit, ChatReply, ConversationListItem } from "./chat.js";
-export type { ConversationListItem } from "./chat.js";
+import type {
+  ChatConversation,
+  ChatCommit,
+  ChatReply,
+  ChatResume,
+  ConversationListItem,
+  ConversationMessage,
+} from "./chat.js";
+export type { ConversationListItem, CitedMemory, ConversationMessage } from "./chat.js";
 
 /* ---------- 响应类型（与 apps/server 路由返回结构对齐） ---------- */
 // 评分的 HTTP 契约为 JSON number | null（#68）；数据库 numeric 字符串由 server 在返回层转换。
@@ -52,22 +59,6 @@ export interface BeliefDetail {
   created_at: string;
   current_value: unknown;
   versions: BeliefVersionItem[];
-}
-
-export interface CitedMemory {
-  belief_version_id: string;
-  belief_id: string;
-  subject: string;
-  attribute: string;
-  value: unknown;
-}
-
-export interface ConversationMessage {
-  id: string;
-  speaker: string;
-  raw_text: string;
-  msg_time: string;
-  memories: CitedMemory[] | null;
 }
 
 export interface ConversationDetail {
@@ -209,6 +200,17 @@ export function createApiClient(options: ApiClientOptions) {
       post<ChatReply>(`/v1/conversations/${conversationId}/messages`, { text }),
     commitConversation: (conversationId: string) =>
       post<ChatCommit>(`/v1/conversations/${conversationId}/commit`),
+    resumeConversation: (
+      projectId: string,
+      conversationId: string,
+      currentConversationId?: string,
+    ) =>
+      post<ChatResume>(
+        `/projects/${projectId}/conversations/${conversationId}/resume`,
+        currentConversationId === undefined
+          ? {}
+          : { current_conversation_id: currentConversationId },
+      ),
     health: () => request<{ status: string }>("/health"),
     doctor: (probe = false): Promise<DoctorReport> =>
       probe ? post<DoctorReport>("/v1/doctor/probe", {}) : request<DoctorReport>("/v1/doctor"),

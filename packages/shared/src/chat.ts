@@ -20,6 +20,7 @@ export const ChatReplySchema = z.object({
   message_id: z.string().uuid(),
   answer: z.string(),
   abstained: z.boolean(),
+  history_included: z.boolean().optional(),
   memories: z.array(
     z.object({
       belief_id: z.string().uuid(),
@@ -30,6 +31,20 @@ export const ChatReplySchema = z.object({
     }),
   ),
 });
+export const ConversationMessageSchema = z.object({
+  id: z.string().uuid(),
+  speaker: z.enum(["user", "assistant", "tool"]),
+  raw_text: z.string(),
+  msg_time: z.string().datetime({ offset: true }),
+  memories: ChatReplySchema.shape.memories.nullable(),
+});
+export const ChatResumeSchema = ChatConversationSchema.extend({
+  resumed_from: z.string().uuid(),
+  messages: z.array(ConversationMessageSchema),
+});
+export type CitedMemory = z.infer<typeof ChatReplySchema>["memories"][number];
+export type ConversationMessage = z.infer<typeof ConversationMessageSchema>;
+export type ChatResume = z.infer<typeof ChatResumeSchema>;
 export type ChatConversation = z.infer<typeof ChatConversationSchema>;
 export type ChatCommit = z.infer<typeof ChatCommitSchema>;
 export type ChatReply = z.infer<typeof ChatReplySchema>;
