@@ -1,0 +1,15 @@
+.git
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+.env
+.env.*
+**/.npmrc
+.npmrc
+**/*.log
+**/*.dump
+**/*.sql.gz
+**/backups
+.DS_Store

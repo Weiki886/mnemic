@@ -15,6 +15,7 @@ import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 import { registerDoctorRoutes } from "./doctor/routes.js";
 import { registerBearerAuth } from "./auth.js";
+import { resolveAuthToken } from "./config.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
 const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -26,8 +27,9 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 };
 
 export interface BuildAppOptions {
-  /** index.ts 必须注入已校验的环境 Token；未注入仅用于不监听公网的独立测试夹具。 */
+  /** 默认必须提供 Token；仅隔离测试夹具可显式 auth:false。正式入口没有关闭开关。 */
   authToken?: string | undefined;
+  auth?: boolean | undefined;
   /** 测试用：自定义日志输出流 */
   logStream?: { write: (chunk: string) => void };
   /** 配置后注册 Providers 配置 API（#14）；二者缺一不注册 */
@@ -47,6 +49,7 @@ export interface BuildAppOptions {
 const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
+  const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
@@ -74,8 +77,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
   });
 
-  if (options.authToken !== undefined)
-    registerBearerAuth(app, options.authToken, options.corsOrigin);
+  if (authToken !== undefined) registerBearerAuth(app, authToken, options.corsOrigin);
   if (options.corsOrigin) {
     app.register(cors, {
       origin: options.corsOrigin,
@@ -110,7 +112,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/health", async () => ({ status: "ok" }));
   registerDoctorRoutes(app, {
-    authenticated: options.authToken !== undefined,
+    authenticated: authToken !== undefined,
     db: options.db,
     masterKey: options.masterKey,
     factory: options.providerFactory,

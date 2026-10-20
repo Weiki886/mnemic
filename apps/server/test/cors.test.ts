@@ -5,7 +5,7 @@ import { buildApp } from "../src/app.js";
  *  origin 经 buildApp 注入，index.ts 从 CORS_ORIGIN 解析，默认 http://localhost:5173。 */
 describe("CORS", () => {
   it("带 Origin 的请求获得对应 allow-origin 响应头", async () => {
-    const app = buildApp({ corsOrigin: "http://localhost:5173" });
+    const app = buildApp({ auth: false, corsOrigin: "http://localhost:5173" });
     const res = await app.inject({
       method: "GET",
       url: "/health",
@@ -17,7 +17,7 @@ describe("CORS", () => {
   });
 
   it("预检 OPTIONS 返回 204 与 allow-methods", async () => {
-    const app = buildApp({ corsOrigin: "http://localhost:5173" });
+    const app = buildApp({ auth: false, corsOrigin: "http://localhost:5173" });
     const res = await app.inject({
       method: "OPTIONS",
       url: "/projects/p1/beliefs",
@@ -32,7 +32,7 @@ describe("CORS", () => {
   });
 
   it("未配置 corsOrigin 时不输出 CORS 响应头", async () => {
-    const app = buildApp();
+    const app = buildApp({ auth: false });
     const res = await app.inject({
       method: "GET",
       url: "/health",

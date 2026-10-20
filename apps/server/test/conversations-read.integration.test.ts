@@ -52,7 +52,7 @@ describe("对话只读 API（#8）", () => {
     // 无消息会话也应在列表中可读
     await t.sql`insert into conversations (id, project_id, title) values (${uuidv7()}, ${projectId}, 'empty-conv')`;
 
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
   afterAll(async () => {
     await app.close();

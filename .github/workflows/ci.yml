@@ -25,7 +25,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: pnpm -r run lint
+        run: pnpm -r run lint && pnpm exec eslint scripts/*.mjs
 
       - name: Format check
         run: pnpm run format:check
@@ -34,7 +34,18 @@ jobs:
         run: pnpm -r run typecheck
 
       - name: Test
-        run: pnpm -r run test
+        run: pnpm -r run test && node --test scripts/deployment-output.test.mjs
 
       - name: Build
         run: pnpm -r run build
+
+  deployment-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build and verify isolated HTTPS deployment
+        run: node scripts/verify-deployment.mjs

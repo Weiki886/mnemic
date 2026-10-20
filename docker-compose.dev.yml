@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: mnemic
+      POSTGRES_PASSWORD: mnemic
+      POSTGRES_DB: mnemic
+    ports:
+      - "127.0.0.1:${MNEMIC_DEV_PG_PORT:-5432}:5432"
+    volumes:
+      - mnemic-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mnemic -d mnemic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mnemic-pgdata:

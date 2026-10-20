@@ -25,6 +25,7 @@ describe("doctor：服务端统一配置诊断（#19 1/2）", () => {
   beforeAll(async () => {
     t = await setupTestDb();
     app = buildApp({
+      auth: false,
       db: t.db,
       masterKey: TEST_MASTER_KEY,
       logStream: { write: (s) => logs.push(s) },
@@ -134,7 +135,7 @@ describe("doctor：服务端统一配置诊断（#19 1/2）", () => {
   });
 
   it("未配置数据库的服务仍有诊断入口", async () => {
-    const bare = buildApp({ logStream: { write: () => {} } });
+    const bare = buildApp({ auth: false, logStream: { write: () => {} } });
     try {
       const res = await bare.inject({ method: "GET", url: "/v1/doctor" });
       expect(res.statusCode).toBe(200);

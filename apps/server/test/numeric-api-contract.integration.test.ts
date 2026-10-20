@@ -46,7 +46,7 @@ describe("numeric HTTP 响应契约（#68）", () => {
       values (${uuidv7()}, ${projectId}, ${beliefId}, ${oid}, 0.125, 0.875, ${JSON.stringify(metadata)}, ${JSON.stringify(metadata)}, 'test', '2026-09-01'),
         (${uuidv7()}, ${projectId}, ${beliefId}, ${oid}, 0, 1, '{}', null, 'test', '2026-09-02'),
         (${uuidv7()}, ${projectId}, ${beliefId}, ${oid}, null, null, '{}', null, 'test', '2026-09-03')`;
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
 
   afterAll(async () => {
