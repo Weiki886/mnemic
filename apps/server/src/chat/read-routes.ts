@@ -74,11 +74,14 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
       .offset(offset);
     if (convs.length === 0) return [];
     const refsBy = new Map<string, string[]>();
-    try {
-      for (const c of convs) refsBy.set(c.id, inheritedMessageIds(c.meta));
-    } catch (error) {
-      if (!(error instanceof ConversationContextError)) throw error;
-      return unavailable(reply, request.id);
+    const unavailableIds = new Set<string>();
+    for (const c of convs) {
+      try {
+        refsBy.set(c.id, inheritedMessageIds(c.meta));
+      } catch (error) {
+        if (!(error instanceof ConversationContextError)) throw error;
+        unavailableIds.add(c.id);
+      }
     }
     const referenceIds = [...new Set([...refsBy.values()].flat())];
     const counts = await db
@@ -98,9 +101,12 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
         ),
       );
     const found = new Set(counts.map((m) => m.id));
-    if (referenceIds.some((id) => !found.has(id))) return unavailable(reply, request.id);
     return convs.map(({ meta: _meta, ...c }) => {
       const refs = new Set(refsBy.get(c.id));
+      // 不丢弃坏行：保持分页基数，且不把无法验证的历史误报为零消息。
+      if (unavailableIds.has(c.id) || [...refs].some((id) => !found.has(id))) {
+        return { ...c, message_count: null, history_error: "unavailable" as const };
+      }
       return {
         ...c,
         message_count: counts.filter((m) => m.conversationId === c.id || refs.has(m.id)).length,

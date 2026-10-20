@@ -30,6 +30,21 @@ function fixture(body: unknown = [session], status = 200) {
 }
 
 describe("CLI sessions（#31 拆分 1/2）", () => {
+  it("单条历史不可用时仍显示正常会话，不把未知消息数显示为零", async () => {
+    const f = fixture([
+      session,
+      {
+        ...session,
+        id: "01920000-0000-7000-8000-000000000003",
+        message_count: null,
+        history_error: "unavailable",
+      },
+    ]);
+    expect(await runCli(["sessions", "--project", project], f.options)).toBe(0);
+    expect(f.output()).toContain("2 条消息");
+    expect(f.output()).toContain("历史不可用 · 消息数未知");
+    expect(f.output()).not.toContain("null 条消息");
+  });
   it("经 shared client 单次只读请求，带项目分页、Bearer 和超时，非 TTY 可用", async () => {
     const f = fixture();
     expect(await runCli(["sessions", "--project", project.toUpperCase()], f.options)).toBe(0);

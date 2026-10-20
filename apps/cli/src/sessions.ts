@@ -30,7 +30,7 @@ export async function runSessions(
         lines.push(
           `${session.id} [${session.ended_at ? "已提交" : "进行中"}]`,
           "  标题：" + terminalText(session.title ?? "（无标题）"),
-          `  开始：${session.started_at} · 结束：${session.ended_at ?? "—"} · ${session.message_count} 条消息`,
+          `  开始：${session.started_at} · 结束：${session.ended_at ?? "—"} · ${session.history_error ? "历史不可用 · 消息数未知" : `${session.message_count} 条消息`}`,
         );
       }
       lines.push("按开始时间升序；翻页请调整 --limit / --offset。本命令不会恢复会话。");

@@ -58,6 +58,22 @@ const routerStub = {
 };
 
 describe("ConversationList", () => {
+  it("keeps a broken history row visible without hiding pagination", async () => {
+    const rows = Array.from({ length: 50 }, (_, i) => ({ ...listItem, id: `conversation-${i}` }));
+    const listConversations = vi
+      .fn()
+      .mockResolvedValue([
+        ...rows.slice(0, 49),
+        { ...listItem, message_count: null, history_error: "unavailable" },
+      ]);
+    const wrapper = mount(ConversationListView, {
+      props: { projectId, api: { listConversations } as unknown as ApiClient },
+      global: routerStub,
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain("历史不可用 · 消息数未知");
+    expect(wrapper.get("button[aria-label='下一页']").attributes("disabled")).toBeUndefined();
+  });
   it("paginates forward and backward without hiding conversations beyond the first 50", async () => {
     const page = Array.from({ length: 50 }, (_, i) => ({ ...listItem, id: `conversation-${i}` }));
     const listConversations = vi
