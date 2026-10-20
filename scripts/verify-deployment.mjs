@@ -307,6 +307,19 @@ try {
       ]),
     );
   }
+  try {
+    const diagnostics = await compose("logs", "--no-color", "--tail", "30", "web", "caddy");
+    console.error(
+      summarizeOutput(diagnostics.stdout, diagnostics.stderr, [
+        password,
+        token,
+        masterKey,
+        providerKey,
+      ]),
+    );
+  } catch {
+    console.error("Disposable proxy startup logs unavailable.");
+  }
 } finally {
   try {
     assert.match(project, /^mnemic-smoke-[a-f0-9-]{36}$/);
