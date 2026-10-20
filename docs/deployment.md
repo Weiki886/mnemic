@@ -5,6 +5,7 @@
 这是单用户部署：持有 Bearer Token 的人可操作所有项目和模型配置，不提供账号/RBAC。
 
 静态 Web 容器以 UID1000、只读根文件系统运行，撤销全部 capabilities 并禁止提权；
+其 Caddy 二进制也移除低端口文件 capability，静态服务只监听 8080，不需要该权限。
 仅 `/tmp`、`/data`、`/config` 可临时写入（后两处 tmpfs 显式设置 UID/GID，挂载会覆盖镜像中的目录权限，见 [Docker tmpfs 说明](https://docs.docker.com/engine/storage/tmpfs/)）。
 公网 Caddy 也禁止提权，但保留原有低端口能力和证书持久卷；不把其 `/data`、`/config` 改为 tmpfs。
 

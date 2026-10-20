@@ -98,6 +98,7 @@ describe("#20 全栈部署契约", () => {
     expect(server).toContain("/workspace/packages/shared/dist");
     const web = source("apps/web/Dockerfile");
     expect(web).toContain("VITE_API_BASE_URL=/api");
+    expect(web).toContain("setcap -r /usr/bin/caddy");
     expect(web).not.toMatch(/VITE_.*TOKEN/);
   });
 

@@ -219,6 +219,7 @@ try {
   );
   await compose("run", "--rm", "--no-deps", "migrate");
   assert.equal((await compose("exec", "-T", "web", "id", "-u")).stdout.trim(), "1000");
+  assert.equal((await compose("exec", "-T", "web", "getcap", "/usr/bin/caddy")).stdout.trim(), "");
   await compose(
     "exec",
     "-T",
