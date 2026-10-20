@@ -1,7 +1,21 @@
-import { ApiError, type ApiClient, type ChatConversation, type ChatReply } from "@mnemic/shared";
-import { ChatConversationSchema, ChatReplySchema, ChatCommitSchema } from "@mnemic/shared/chat";
+import {
+  ApiError,
+  type ApiClient,
+  type ChatConversation,
+  type ChatReply,
+  type ConversationMessage,
+} from "@mnemic/shared";
+import {
+  ChatConversationSchema,
+  ChatReplySchema,
+  ChatCommitSchema,
+  ChatResumeSchema,
+} from "@mnemic/shared/chat";
 
-type ChatApi = Pick<ApiClient, "createConversation" | "sendMessage" | "commitConversation">;
+type ChatApi = Pick<
+  ApiClient,
+  "createConversation" | "sendMessage" | "commitConversation" | "resumeConversation"
+>;
 export class SessionError extends Error {}
 
 /** 只控制 HTTP 会话生命周期；失败不重试，防止一次输入重复写入 Evidence。 */
@@ -10,6 +24,7 @@ export class ChatSession {
   private pending: Promise<unknown> | undefined;
   private closing: Promise<void> | undefined;
   private closed = false;
+  private inherited: ConversationMessage[] = [];
 
   constructor(
     private readonly api: ChatApi,
@@ -19,6 +34,9 @@ export class ChatSession {
   }
   get id(): string | null {
     return this.conversation?.id ?? null;
+  }
+  get history(): readonly ConversationMessage[] {
+    return this.inherited;
   }
 
   private async run<T>(job: () => Promise<T>): Promise<T> {
@@ -57,6 +75,27 @@ export class ChatSession {
   start(): Promise<ChatConversation> {
     return this.run(() => this.ensureConversation());
   }
+  resume(sourceId: string): Promise<ChatConversation> {
+    const parsed = ChatConversationSchema.shape.id.safeParse(sourceId);
+    if (!parsed.success) return Promise.reject(new SessionError("恢复参数非法：请提供会话 UUID"));
+    const id = parsed.data.toLowerCase();
+    return this.run(async () => {
+      const row = ChatResumeSchema.parse(
+        await this.api.resumeConversation(this.projectId, id, this.conversation?.id),
+      );
+      if (
+        row.project_id !== this.projectId ||
+        row.resumed_from !== id ||
+        row.ended_at !== null ||
+        row.id === id ||
+        row.id === this.id
+      )
+        throw new SessionError("服务端未确认项目内的新续聊会话");
+      this.conversation = row;
+      this.inherited = row.messages;
+      return row;
+    });
+  }
   async send(text: string): Promise<ChatReply> {
     if (!text.trim() || text.length > 8000) throw new SessionError("消息不能为空或超过 8000 字符");
     return this.run(async () => {
@@ -68,6 +107,7 @@ export class ChatSession {
     return this.run(async () => {
       await this.commit();
       this.conversation = undefined;
+      this.inherited = [];
       return this.ensureConversation();
     });
   }

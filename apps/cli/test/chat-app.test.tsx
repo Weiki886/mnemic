@@ -28,6 +28,7 @@ const reply = {
   ],
 };
 const fixture = () => ({
+  resumeConversation: vi.fn(async () => ({ ...row, resumed_from: belief, messages: [] })),
   createConversation: vi.fn(async () => row),
   sendMessage: vi.fn(async () => reply),
   commitConversation: vi.fn(async () => ({
@@ -39,6 +40,43 @@ const fixture = () => ({
 afterEach(cleanup);
 
 describe("Ink 对话交互", () => {
+  it("/resume 切换并展示净化的历史与引用，不作为用户消息发送", async () => {
+    const target = "01920000-0000-7000-8000-000000000006";
+    const fork = "01920000-0000-7000-8000-000000000007";
+    const api = {
+      ...fixture(),
+      resumeConversation: vi.fn(async () => ({
+        ...row,
+        id: fork,
+        resumed_from: target,
+        messages: [
+          {
+            id: target,
+            speaker: "assistant" as const,
+            raw_text: "昨日回答\u001b[2J\u202e",
+            msg_time: row.started_at,
+            memories: reply.memories,
+          },
+        ],
+      })),
+    };
+    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+    view.stdin.write(`/resume ${target}`);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(`/resume ${target}`));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(api.resumeConversation).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(view.frames.join("\n")).toContain("昨日回答"));
+    const text = view.frames.join("\n");
+    expect(text).toContain(belief);
+    expect(text).not.toContain("\u001b[2J");
+    expect(text).not.toContain("\u202e");
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(api.commitConversation).not.toHaveBeenCalled();
+    expect(api.resumeConversation).toHaveBeenCalledWith(project, target, conv);
+    expect(view.lastFrame()).toContain(fork);
+  });
+
   it.each(["", "   "])("空白输入 %j 回车不留下用户块，也不发请求", async (text) => {
     const api = fixture();
     const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);

@@ -12,7 +12,14 @@ function valueText(value: unknown): string {
 }
 
 export function formatReply(reply: ChatReply, answer = reply.answer): string {
-  const lines = [reply.abstained ? "不记得：没有足够的相关记忆。" : "", terminalText(answer, true)];
+  const lines = [
+    reply.abstained
+      ? reply.history_included
+        ? "未召回跨会话记忆；已提供会话历史。"
+        : "不记得：没有足够的相关记忆。"
+      : "",
+    terminalText(answer, true),
+  ];
   for (const memory of reply.memories) {
     lines.push(terminalText(`引用 ${memory.belief_id} / 版本 ${memory.belief_version_id}`));
     lines.push(
@@ -50,7 +57,7 @@ export function chatFailure(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401 || error.status === 403) return "鉴权被拒绝，请检查 MNEMIC_AUTH_TOKEN";
     if (error.status === 404) return "项目、会话或记忆不存在，请核对 ID";
-    if (error.status === 409) return "会话已提交，不能继续发送，请新建会话";
+    if (error.status === 409) return "会话已归档或状态冲突，请核对历史引用后使用 resume 或新建会话";
   }
   return "请求失败、超时或响应不兼容；服务端可能已收到消息，不会自动重试";
 }

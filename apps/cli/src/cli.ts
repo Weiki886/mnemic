@@ -6,11 +6,13 @@ import { runSessions } from "./sessions.js";
 
 const HELP = `mnemic doctor [--server URL] [--probe] [--json]
 mnemic chat --project UUID [--server URL]
+mnemic resume ID --project UUID [--server URL]
 mnemic memory ID --project UUID [--server URL] [--json]
 mnemic sessions --project UUID [--limit N] [--offset N] [--server URL] [--json]
 
 读取服务端配置并检查连接、鉴权状态、数据库和模型槽位。
 chat：Ink 对话；/new 提交后新建，/exit 提交退出。会调用模型，可能计费。
+resume：创建续聊会话、引用历史，旧会话归档只读；/resume UUID 可切换。归档可能触发待处理消息提取，可能计费。
 memory：只读查看当前值与来源。
 sessions：只读当前项目的会话列表，不恢复会话、不调用模型；默认 limit=50、offset=0。
 --probe  实际调用三个模型槽位，可能计费；默认不调用模型。
@@ -24,7 +26,7 @@ interface CliOptions {
   fetch?: typeof globalThis.fetch;
   write?: (text: string) => void;
   isTTY?: boolean;
-  startChat?: (api: ApiClient, projectId: string) => Promise<number>;
+  startChat?: (api: ApiClient, projectId: string, resumeId?: string) => Promise<number>;
 }
 
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -57,11 +59,11 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   let server: string;
   let probe: boolean;
   let json: boolean;
-  let command: "doctor" | "chat" | "memory" | "sessions";
+  let command: "doctor" | "chat" | "resume" | "memory" | "sessions";
   let limit = 50;
   let offset = 0;
   let projectId: string | undefined;
-  let memoryId: string | undefined;
+  let resourceId: string | undefined;
   let invalid: "arguments" | "command" | "server" | "project" | "limit" | "offset" = "arguments";
   try {
     const parsed = parseArgs({
@@ -83,14 +85,21 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     }
     invalid = "command";
     const action = parsed.positionals[0];
-    if (action !== "doctor" && action !== "chat" && action !== "memory" && action !== "sessions")
+    if (
+      action !== "doctor" &&
+      action !== "chat" &&
+      action !== "resume" &&
+      action !== "memory" &&
+      action !== "sessions"
+    )
       throw new Error("command");
     command = action;
-    if (parsed.positionals.length !== (command === "memory" ? 2 : 1)) throw new Error("command");
+    if (parsed.positionals.length !== (command === "memory" || command === "resume" ? 2 : 1))
+      throw new Error("command");
     invalid = "arguments";
     if (
       (command !== "doctor" && parsed.values.probe !== undefined) ||
-      (command === "chat" && parsed.values.json !== undefined) ||
+      ((command === "chat" || command === "resume") && parsed.values.json !== undefined) ||
       (command === "doctor" && parsed.values.project !== undefined) ||
       (command !== "sessions" &&
         (parsed.values.limit !== undefined || parsed.values.offset !== undefined))
@@ -103,9 +112,9 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       offset = pageNumber(parsed.values.offset, 0, 0, Number.MAX_SAFE_INTEGER);
       invalid = "arguments";
     }
-    memoryId = parsed.positionals[1];
-    if (memoryId && !UUID.test(memoryId)) throw new Error("memory ID");
-    memoryId = memoryId?.toLowerCase();
+    resourceId = parsed.positionals[1];
+    if (resourceId && !UUID.test(resourceId)) throw new Error("resource ID");
+    resourceId = resourceId?.toLowerCase();
     if (command !== "doctor") {
       invalid = "project";
       projectId = parsed.values.project;
@@ -138,7 +147,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     }
     const detail = {
       arguments: "参数无效，请使用 --help 查看支持的选项。",
-      command: "命令无效，请使用 doctor、chat、memory 或 sessions；使用 --help 查看用法。",
+      command: "命令无效，请使用 doctor、chat、resume、memory 或 sessions；使用 --help 查看用法。",
       server: "服务地址无效：须为不含凭据、查询或片段的 HTTP(S) URL。",
       project: "项目参数无效：请提供 --project UUID，且项目须已存在。",
       limit: "--limit 必须为 1–1000 的整数。",
@@ -149,19 +158,21 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   }
   const api = createApiClient({
     baseUrl: server,
-    timeoutMs: command === "chat" ? 120_000 : 25_000,
+    timeoutMs: command === "chat" || command === "resume" ? 120_000 : 25_000,
     ...(env.MNEMIC_AUTH_TOKEN ? { token: env.MNEMIC_AUTH_TOKEN } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   if (command === "sessions") return runSessions(api, projectId!, { limit, offset, json }, write);
-  if (command === "chat") {
+  if (command === "chat" || command === "resume") {
     if (!(options.isTTY ?? process.stdin.isTTY)) {
-      write("chat 需要交互终端，请在终端直接运行。\n");
+      write("chat / resume 需要交互终端，请在终端直接运行。\n");
       return 2;
     }
     try {
       const start = options.startChat ?? (await import("./render-chat.js")).startChat;
-      return await start(api, projectId!);
+      return command === "resume"
+        ? await start(api, projectId!, resourceId!)
+        : await start(api, projectId!);
     } catch (error) {
       write(chatFailure(error) + "\n");
       return 1;
@@ -169,8 +180,8 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   }
   if (command === "memory") {
     try {
-      const memory = await api.getBelief(projectId!, memoryId!);
-      if (memory.id !== memoryId || memory.project_id !== projectId)
+      const memory = await api.getBelief(projectId!, resourceId!);
+      if (memory.id !== resourceId || memory.project_id !== projectId)
         throw new Error("memory scope");
       write((json ? JSON.stringify(memory) : formatMemory(memory)) + "\n");
       return 0;
