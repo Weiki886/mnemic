@@ -10,6 +10,17 @@ const session = {
 };
 
 describe("会话列表响应契约（#31）", () => {
+  it("异常历史必须显式标记且不能伪造消息数", () => {
+    const broken = { ...session, message_count: null, history_error: "unavailable" };
+    expect(schemas.ConversationListItemSchema.parse(broken)).toEqual(broken);
+    expect(
+      schemas.ConversationListItemSchema.safeParse({ ...session, message_count: null }).success,
+    ).toBe(false);
+    expect(
+      schemas.ConversationListItemSchema.safeParse({ ...session, history_error: "unavailable" })
+        .success,
+    ).toBe(false);
+  });
   it("列表复用导出的单条 schema，单条格式不变", () => {
     expect(schemas.ConversationListItemSchema).toBeDefined();
     expect(schemas.ConversationListSchema.element).toBe(schemas.ConversationListItemSchema);

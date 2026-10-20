@@ -7,6 +7,7 @@ import { resolveModel, type ResolveOptions } from "../providers/slots.js";
 import { retrieve, type RetrievalCandidate } from "../retrieval/search.js";
 import { buildChatSystemPrompt } from "./prompt.js";
 import { claimMessageForExtraction, runExtractionWriteback } from "./writeback.js";
+import { ConversationContextError, loadConversationMessages, modelHistory } from "./context.js";
 
 /** 消息应答编排（#7）：存消息 → 检索注入 → 模型回答 → 存回答 → 异步写记忆 */
 
@@ -21,12 +22,14 @@ export interface MemoryRef {
 export type RespondResult =
   | { kind: "not_found" }
   | { kind: "ended" }
+  | { kind: "context_invalid" }
   | {
       kind: "answered";
       messageId: string;
       answer: string;
       memories: MemoryRef[];
       abstained: boolean;
+      historyIncluded: boolean;
     };
 
 export interface RespondOptions extends ResolveOptions {
@@ -65,6 +68,13 @@ export async function respondToMessage(
       .limit(1);
     if (!conv) return { kind: "not_found" } as const;
     if (conv.endedAt) return { kind: "ended" } as const;
+    let history;
+    try {
+      history = await loadConversationMessages(tx, conv);
+    } catch (error) {
+      if (!(error instanceof ConversationContextError)) throw error;
+      return { kind: "context_invalid" } as const;
+    }
     await tx.insert(messages).values({
       id: userMessageId,
       conversationId,
@@ -72,7 +82,7 @@ export async function respondToMessage(
       rawText: text,
       msgTime: new Date(),
     });
-    return { kind: "ok" as const, projectId: conv.projectId };
+    return { kind: "ok" as const, projectId: conv.projectId, history };
   });
   if (entered.kind !== "ok") return { kind: entered.kind };
 
@@ -94,22 +104,35 @@ export async function respondToMessage(
   }
 
   const { model } = await resolveModel(db, masterKey, "chat", options);
+  const history = await modelHistory(db, entered.projectId, entered.history);
   const { text: answer } = await generateText({
     model,
-    system: buildChatSystemPrompt(candidates),
-    prompt: text,
+    system: buildChatSystemPrompt(candidates, history.length > 0),
+    messages: [...history, { role: "user", content: text }],
   });
 
   const assistantMessageId = uuidv7();
-  await db.insert(messages).values({
-    id: assistantMessageId,
-    conversationId,
-    speaker: "assistant",
-    rawText: answer,
-    msgTime: new Date(),
-    // 引用留痕（#8）：只存版本 ID，内容读出时现查（决策 8 引用不复制）
-    memories: candidates.length > 0 ? candidates.map((c) => c.beliefVersionId) : null,
+  const saved = await db.transaction(async (tx) => {
+    const [conv] = await tx
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update")
+      .limit(1);
+    // Another client may have archived/resumed while generation was in flight. Never append to the archived source.
+    if (!conv || conv.endedAt) return false;
+    await tx.insert(messages).values({
+      id: assistantMessageId,
+      conversationId,
+      speaker: "assistant",
+      rawText: answer,
+      msgTime: new Date(),
+      // 引用留痕（#8）：只存版本 ID，内容读出时现查（决策 8 引用不复制）
+      memories: candidates.length > 0 ? candidates.map((c) => c.beliefVersionId) : null,
+    });
+    return true;
   });
+  if (!saved) return { kind: "ended" };
 
   // 异步写记忆：先认领再提取（认领失败 = 并发 commit 已接管，无需重复提取）
   const projectId = entered.projectId;
@@ -130,5 +153,6 @@ export async function respondToMessage(
     answer,
     memories: candidates.map(toMemoryRef),
     abstained,
+    historyIncluded: history.length > 0,
   };
 }

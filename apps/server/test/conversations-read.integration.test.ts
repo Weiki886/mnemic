@@ -158,6 +158,61 @@ describe("对话只读 API（#8）", () => {
     expect(tooBig.statusCode).toBe(400);
   });
 
+  it("坏历史只标记本行，保留分页和正常会话；详情与恢复仍拒绝", async () => {
+    const project = uuidv7();
+    await t.sql`insert into projects (id, name) values (${project}, 'broken-history-list')`;
+    const good = uuidv7();
+    const malformed = uuidv7();
+    const missing = uuidv7();
+    const foreign = uuidv7();
+    const foreignMessage = uuidv7();
+    const [foreignConv] =
+      await t.sql`select id from conversations where project_id = ${otherProject} limit 1`;
+    await t.sql`insert into messages (id, conversation_id, speaker, raw_text, msg_time) values (${foreignMessage}, ${foreignConv!.id}, 'user', 'private', now())`;
+    const rows = [
+      { id: good, meta: {} },
+      { id: malformed, meta: { resume: { version: 99 } } },
+      { id: missing, meta: { resume: { version: 1, from: good, message_ids: [uuidv7()] } } },
+      { id: foreign, meta: { resume: { version: 1, from: good, message_ids: [foreignMessage] } } },
+    ];
+    for (const row of rows) {
+      await t.sql`insert into conversations (id, project_id, meta) values (${row.id}, ${project}, ${JSON.stringify(row.meta)}::jsonb)`;
+    }
+    const res = await app.inject({
+      method: "GET",
+      url: `/projects/${project}/conversations?limit=4`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toHaveLength(4);
+    expect(res.json().find((row: { id: string }) => row.id === good)).toMatchObject({
+      message_count: 0,
+    });
+    for (const id of [malformed, missing, foreign]) {
+      expect(res.json().find((row: { id: string }) => row.id === id)).toMatchObject({
+        message_count: null,
+        history_error: "unavailable",
+      });
+      expect(
+        (await app.inject({ method: "GET", url: `/projects/${project}/conversations/${id}` }))
+          .statusCode,
+      ).toBe(409);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: `/projects/${project}/conversations/${id}/resume`,
+            payload: {},
+          })
+        ).statusCode,
+      ).toBe(409);
+    }
+    const next = await app.inject({
+      method: "GET",
+      url: `/projects/${project}/conversations?limit=2&offset=2`,
+    });
+    expect(next.json()).toEqual(res.json().slice(2));
+  });
+
   it("会话详情：不存在 → 404 problem+json", async () => {
     const res = await app.inject({
       method: "GET",

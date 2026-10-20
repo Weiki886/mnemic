@@ -76,6 +76,27 @@ export async function commitConversation(
     .returning();
   if (!updated) return { kind: "already_ended", conversation: toApi(row) };
 
+  const extractionTriggered = await scheduleConversationWriteback(
+    db,
+    masterKey,
+    conversationId,
+    row.projectId,
+    options,
+  );
+  return { kind: "committed", conversation: toApi(updated!), extractionTriggered };
+}
+
+/** Schedule only physical user messages owned by this conversation, never inherited references. */
+export async function scheduleConversationWriteback(
+  db: PostgresJsDatabase,
+  masterKey: Buffer,
+  conversationId: string,
+  projectId: string,
+  options: ResolveOptions & {
+    onJob: (job: () => Promise<void>) => void;
+    logger?: { error: (obj: object, msg: string) => void };
+  },
+): Promise<boolean> {
   // 只提取"未被提取过的 user 消息"（决策 6：同一句话不重复计数佐证；
   // 助手回答不参与提取——模型自述不能成为事实来源）
   const pendingMsgs = await db
@@ -92,7 +113,6 @@ export async function commitConversation(
 
   const extractionTriggered = pendingMsgs.length > 0;
   if (extractionTriggered) {
-    const projectId = row.projectId;
     options.onJob(async () => {
       for (const msg of pendingMsgs) {
         // 先认领再提取：与并发单条路径互斥，认领失败者已被对方提取
@@ -112,5 +132,5 @@ export async function commitConversation(
       }
     });
   }
-  return { kind: "committed", conversation: toApi(updated!), extractionTriggered };
+  return extractionTriggered;
 }

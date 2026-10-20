@@ -92,7 +92,8 @@ onMounted(load);
             </p>
           </div>
           <span class="rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-600">
-            {{ conversation.message_count }} 条消息
+            <template v-if="conversation.history_error">历史不可用 · 消息数未知</template>
+            <template v-else>{{ conversation.message_count }} 条消息</template>
           </span>
         </RouterLink>
       </li>
