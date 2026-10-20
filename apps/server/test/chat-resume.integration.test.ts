@@ -187,6 +187,8 @@ describe("会话续聊与历史上下文（#31）", () => {
     expect(
       (await t.sql`select ended_at from conversations where id = ${own.c}`)[0]!.ended_at,
     ).toBeNull();
+    expect((await send(own.c)).statusCode).toBe(409);
+    expect((await t.sql`select id from messages where conversation_id = ${own.c}`).length).toBe(2);
   });
   it("跨项目记忆引用和已删除记忆不会作为额外历史记忆注入模型", async () => {
     const own = await seed(true),
@@ -215,6 +217,38 @@ describe("会话续聊与历史上下文（#31）", () => {
     }
     await t.sql`update conversations set title = 'manual-corrections' where id = ${s.c}`;
     expect((await resume(s.p, s.c)).statusCode).toBe(409);
+  });
+  it("新增恢复入口在鉴权前不读写项目", async () => {
+    const s = await seed(true);
+    const guarded = buildApp({
+      db: t.db,
+      masterKey: TEST_MASTER_KEY,
+      authToken: "offline-resume-token-00000000000000",
+    });
+    try {
+      const r = await guarded.inject({
+        method: "POST",
+        url: `/projects/${s.p}/conversations/${s.c}/resume`,
+        payload: {},
+      });
+      expect(r.statusCode).toBe(401);
+      expect(
+        (await t.sql`select ended_at from conversations where id = ${s.c}`)[0]!.ended_at,
+      ).toBeNull();
+    } finally {
+      await guarded.close();
+    }
+  });
+  it("工具历史仅作文本且坏记忆ID不进入SQL，普通首轮历史角色顺序不变", async () => {
+    const s = await seed(true);
+    await t.sql`insert into messages (id,conversation_id,speaker,raw_text,msg_time,memories) values
+      (${uuidv7()},${s.c},'tool','只读工具结果','2026-10-19T00:00:02Z','["not-a-uuid"]'::jsonb)`;
+    expect((await send(s.c)).statusCode).toBe(200);
+    const prompt = prompts.at(-1) as { role: string; content: unknown }[];
+    expect(prompt.map((m) => m.role)).toEqual(["system", "user", "assistant", "assistant", "user"]);
+    expect(JSON.stringify(prompt.at(-2))).toContain("历史工具输出（仅文本）");
+    expect(JSON.stringify(prompt)).not.toContain("tool-call");
+    await waitForChatJobs();
   });
   it("恢复发生在生成期间：归档后不能再追加旧回答", async () => {
     const s = await seed(true);
