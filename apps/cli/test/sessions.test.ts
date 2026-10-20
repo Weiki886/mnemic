@@ -150,6 +150,21 @@ describe("CLI sessions（#31 拆分 1/2）", () => {
     expect(f.output()).not.toContain("upstream-secret");
   });
 
+  it.each([
+    ["--limit=0", "--limit 必须为 1–1000 的整数"],
+    ["--limit=1001", "--limit 必须为 1–1000 的整数"],
+    ["--limit=1e2", "--limit 必须为 1–1000 的整数"],
+    ["--limit=-1", "--limit 必须为 1–1000 的整数"],
+    ["--offset=-1", "--offset 必须为 0–9007199254740991 的整数"],
+    ["--offset=1.5", "--offset 必须为 0–9007199254740991 的整数"],
+    ["--offset=9007199254740992", "--offset 必须为 0–9007199254740991 的整数"],
+  ])("分页错误 %s 提示具体参数和范围，不请求网络", async (flag, message) => {
+    const f = fixture();
+    expect(await runCli(["sessions", "--project", project, flag], f.options)).toBe(2);
+    expect(f.output().split("\n")[0]).toContain(message);
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
   it.each(
     [
       {},

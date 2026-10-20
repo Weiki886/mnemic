@@ -62,7 +62,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   let offset = 0;
   let projectId: string | undefined;
   let memoryId: string | undefined;
-  let invalid: "arguments" | "command" | "server" | "project" = "arguments";
+  let invalid: "arguments" | "command" | "server" | "project" | "limit" | "offset" = "arguments";
   try {
     const parsed = parseArgs({
       args,
@@ -97,8 +97,11 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     )
       throw new Error("flags");
     if (command === "sessions") {
+      invalid = "limit";
       limit = pageNumber(parsed.values.limit, 50, 1, 1000);
+      invalid = "offset";
       offset = pageNumber(parsed.values.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+      invalid = "arguments";
     }
     memoryId = parsed.positionals[1];
     if (memoryId && !UUID.test(memoryId)) throw new Error("memory ID");
@@ -129,6 +132,8 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       command: "命令无效，请使用 doctor、chat、memory 或 sessions；使用 --help 查看用法。",
       server: "服务地址无效：须为不含凭据、查询或片段的 HTTP(S) URL。",
       project: "项目参数无效：请提供 --project UUID，且项目须已存在。",
+      limit: "--limit 必须为 1–1000 的整数。",
+      offset: "--offset 必须为 0–9007199254740991 的整数。",
     }[invalid];
     write(detail + "\n" + HELP);
     return 2;
