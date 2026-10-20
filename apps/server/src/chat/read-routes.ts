@@ -1,9 +1,15 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
-import { beliefVersions, beliefs, conversations, messages } from "../db/schema.js";
+import { conversations, messages } from "../db/schema.js";
+import {
+  ConversationContextError,
+  inheritedMessageIds,
+  loadConversationMessages,
+  messageViews,
+} from "./context.js";
 
 /** 对话只读视图 API（#8）：交互式对话不做，仅会话列表 + 消息时间线 + 引用记忆现查解析。
  *  messages.memories 只存 belief_version_id（决策 8），读出时 join 现查内容。 */
@@ -15,6 +21,15 @@ const ListQuery = z.object({
 
 const ProjectParams = z.object({ projectId: z.string().uuid() });
 const ConvParams = ProjectParams.extend({ id: z.string().uuid() });
+
+function unavailable(reply: FastifyReply, requestId: string) {
+  return reply
+    .code(409)
+    .type("application/problem+json")
+    .send(
+      problem({ status: 409, code: ErrorCode.CONFLICT, detail: "会话历史引用不可用", requestId }),
+    );
+}
 
 function badRequest(reply: FastifyReply, requestId: string, detail: string, error: z.ZodError) {
   return reply
@@ -50,27 +65,47 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
         title: conversations.title,
         started_at: conversations.startedAt,
         ended_at: conversations.endedAt,
+        meta: conversations.meta,
       })
       .from(conversations)
       .where(eq(conversations.projectId, projectId))
-      .orderBy(asc(conversations.startedAt))
+      .orderBy(asc(conversations.startedAt), asc(conversations.id))
       .limit(limit)
       .offset(offset);
     if (convs.length === 0) return [];
+    const refsBy = new Map<string, string[]>();
+    try {
+      for (const c of convs) refsBy.set(c.id, inheritedMessageIds(c.meta));
+    } catch (error) {
+      if (!(error instanceof ConversationContextError)) throw error;
+      return unavailable(reply, request.id);
+    }
+    const referenceIds = [...new Set([...refsBy.values()].flat())];
     const counts = await db
-      .select({ conversationId: messages.conversationId })
+      .select({ id: messages.id, conversationId: messages.conversationId })
       .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
       .where(
-        inArray(
-          messages.conversationId,
-          convs.map((c) => c.id),
+        and(
+          eq(conversations.projectId, projectId),
+          or(
+            inArray(
+              messages.conversationId,
+              convs.map((c) => c.id),
+            ),
+            referenceIds.length ? inArray(messages.id, referenceIds) : undefined,
+          ),
         ),
       );
-    const countBy = new Map<string, number>();
-    for (const row of counts) {
-      countBy.set(row.conversationId, (countBy.get(row.conversationId) ?? 0) + 1);
-    }
-    return convs.map((c) => ({ ...c, message_count: countBy.get(c.id) ?? 0 }));
+    const found = new Set(counts.map((m) => m.id));
+    if (referenceIds.some((id) => !found.has(id))) return unavailable(reply, request.id);
+    return convs.map(({ meta: _meta, ...c }) => {
+      const refs = new Set(refsBy.get(c.id));
+      return {
+        ...c,
+        message_count: counts.filter((m) => m.conversationId === c.id || refs.has(m.id)).length,
+      };
+    });
   });
 
   // 会话详情：消息时间线 + 引用记忆（版本 ID → 现查 subject/attribute/value）。
@@ -99,61 +134,20 @@ export function registerConversationReadRoutes(app: FastifyInstance, db: Postgre
           }),
         );
     }
-    const msgs = await db
-      .select()
-      .from(messages)
-      .where(eq(messages.conversationId, id))
-      .orderBy(asc(messages.msgTime));
-    // 汇总全部引用版本 ID，一次 join 现查
-    const versionIds = [
-      ...new Set(msgs.flatMap((m) => (Array.isArray(m.memories) ? (m.memories as string[]) : []))),
-    ];
-    const cited =
-      versionIds.length > 0
-        ? await db
-            .select({
-              versionId: beliefVersions.id,
-              beliefId: beliefs.id,
-              subject: beliefs.subject,
-              attribute: beliefs.attribute,
-              value: beliefVersions.value,
-            })
-            .from(beliefVersions)
-            .innerJoin(beliefs, eq(beliefVersions.beliefId, beliefs.id))
-            // 不信任 jsonb 内容：join 时重新断言项目边界，跨项目引用静默过滤
-            .where(
-              and(inArray(beliefVersions.id, versionIds), eq(beliefs.projectId, conv.projectId)),
-            )
-        : [];
-    const citedBy = new Map(cited.map((c) => [c.versionId, c]));
+    let views;
+    try {
+      views = await messageViews(db, projectId, await loadConversationMessages(db, conv));
+    } catch (error) {
+      if (!(error instanceof ConversationContextError)) throw error;
+      return unavailable(reply, request.id);
+    }
     return {
       id: conv.id,
       project_id: conv.projectId,
       title: conv.title,
       started_at: conv.startedAt,
       ended_at: conv.endedAt,
-      messages: msgs.map((m) => ({
-        id: m.id,
-        speaker: m.speaker,
-        raw_text: m.rawText,
-        msg_time: m.msgTime,
-        memories: Array.isArray(m.memories)
-          ? (m.memories as string[]).flatMap((vid) => {
-              const c = citedBy.get(vid);
-              return c
-                ? [
-                    {
-                      belief_version_id: c.versionId,
-                      belief_id: c.beliefId,
-                      subject: c.subject,
-                      attribute: c.attribute,
-                      value: c.value,
-                    },
-                  ]
-                : [];
-            })
-          : null,
-      })),
+      messages: views,
     };
   });
 }

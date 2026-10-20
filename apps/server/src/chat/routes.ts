@@ -8,6 +8,8 @@ import { trackJob } from "./jobs.js";
 import { CORRECTIONS_CONVERSATION_TITLE } from "./conversation-titles.js";
 import { respondToMessage } from "./respond.js";
 import { commitConversation, createConversation } from "./service.js";
+import { resumeConversation } from "./resume.js";
+import { ConversationContextError } from "./context.js";
 
 /** 对话闭环 API（#7）：会话创建/提交/消息应答 */
 
@@ -39,6 +41,72 @@ export function registerChatRoutes(
   deps: ChatRouteDeps = {},
 ): void {
   const modelOpts = deps.factory ? { factory: deps.factory } : {};
+
+  app.post("/projects/:projectId/conversations/:id/resume", async (request, reply) => {
+    const params = z
+      .object({ projectId: z.string().uuid(), id: z.string().uuid() })
+      .safeParse(request.params);
+    const body = z
+      .object({ current_conversation_id: z.string().uuid().optional() })
+      .strict()
+      .safeParse(request.body);
+    const invalid = (error: z.ZodError) =>
+      reply
+        .code(400)
+        .type("application/problem+json")
+        .send(
+          problem({
+            status: 400,
+            code: ErrorCode.VALIDATION_FAILED,
+            detail: "恢复参数非法",
+            requestId: request.id,
+            errors: zodIssues(error),
+          }),
+        );
+    if (!params.success) return invalid(params.error);
+    if (!body.success) return invalid(body.error);
+    try {
+      const result = await resumeConversation(
+        db,
+        masterKey,
+        params.data.projectId,
+        params.data.id,
+        body.data.current_conversation_id,
+        {
+          ...modelOpts,
+          onJob: (job) =>
+            trackJob(job, (err) => request.log.error({ err }, "resume writeback failed")),
+          logger: { error: (obj, msg) => request.log.error(obj, msg) },
+        },
+      );
+      if (result.kind === "resumed") return reply.code(201).send(result.conversation);
+      const status = result.kind === "not_found" ? 404 : 409;
+      return reply
+        .code(status)
+        .type("application/problem+json")
+        .send(
+          problem({
+            status,
+            code: status === 404 ? ErrorCode.NOT_FOUND : ErrorCode.CONFLICT,
+            detail: status === 404 ? "会话不存在" : "专用修正会话不能恢复",
+            requestId: request.id,
+          }),
+        );
+    } catch (error) {
+      if (!(error instanceof ConversationContextError)) throw error;
+      return reply
+        .code(409)
+        .type("application/problem+json")
+        .send(
+          problem({
+            status: 409,
+            code: ErrorCode.CONFLICT,
+            detail: "会话历史引用不可用",
+            requestId: request.id,
+          }),
+        );
+    }
+  });
 
   app.post("/v1/conversations", async (request, reply) => {
     const parsed = CreateConversation.safeParse(request.body);
@@ -157,7 +225,7 @@ export function registerChatRoutes(
           }),
         );
     }
-    if (result.kind === "ended") {
+    if (result.kind === "ended" || result.kind === "context_invalid") {
       return reply
         .code(409)
         .header("content-type", "application/problem+json")
@@ -165,7 +233,10 @@ export function registerChatRoutes(
           problem({
             status: 409,
             code: ErrorCode.CONFLICT,
-            detail: `会话已提交，不能再发消息：${id}`,
+            detail:
+              result.kind === "context_invalid"
+                ? "会话历史引用不可用"
+                : `会话已提交，不能再发消息：${id}`,
             requestId: request.id,
           }),
         );
@@ -175,6 +246,7 @@ export function registerChatRoutes(
       answer: result.answer,
       memories: result.memories,
       abstained: result.abstained,
+      history_included: result.historyIncluded,
     };
   });
 }
