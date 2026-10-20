@@ -3,7 +3,7 @@ import { buildApp } from "../src/app.js";
 
 describe("统一错误模型（problem+json）", () => {
   it("未知路由返回 404 problem+json 且含错误码与 requestId", async () => {
-    const app = buildApp();
+    const app = buildApp({ auth: false });
     const res = await app.inject({ method: "GET", url: "/no-such-route" });
     expect(res.statusCode).toBe(404);
     expect(res.headers["content-type"]).toContain("application/problem+json");
@@ -19,7 +19,7 @@ describe("统一错误模型（problem+json）", () => {
   });
 
   it("路由抛错返回 500 problem+json 且不泄露内部堆栈", async () => {
-    const app = buildApp();
+    const app = buildApp({ auth: false });
     app.get("/boom", () => {
       throw new Error("secret internals");
     });
@@ -32,7 +32,7 @@ describe("统一错误模型（problem+json）", () => {
   });
 
   it("不支持的媒体类型返回 415，错误码为客户端类而非 INTERNAL_ERROR", async () => {
-    const app = buildApp();
+    const app = buildApp({ auth: false });
     app.post("/echo", async () => ({ ok: true }));
     const res = await app.inject({
       method: "POST",

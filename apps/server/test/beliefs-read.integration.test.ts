@@ -100,7 +100,7 @@ describe("记忆只读 API 与软删除（#8）", () => {
     ).id;
     await seedBelief({ subject: "other", attribute: "x", value: "y", project: otherProjectId });
 
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
   afterAll(async () => {
     await app.close();

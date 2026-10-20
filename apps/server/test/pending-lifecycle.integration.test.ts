@@ -47,7 +47,7 @@ describe("PENDING 四态生命周期（#15）", () => {
       insert into messages (id, conversation_id, speaker, raw_text, msg_time)
       values (${messageId}, ${cid}, 'user', '原始文本', now())
     `;
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
   afterAll(async () => {
     await app.close();

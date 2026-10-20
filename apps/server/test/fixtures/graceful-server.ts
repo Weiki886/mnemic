@@ -1,7 +1,7 @@
 import { buildApp } from "../../src/app.js";
 import { listenWithGracefulShutdown } from "../../src/server.js";
 
-const app = buildApp();
+const app = buildApp({ auth: false });
 
 app.get("/slow", async () => {
   // 就绪信号：测试等这行再发 SIGTERM，替代固定的 sleep 等待（#62）

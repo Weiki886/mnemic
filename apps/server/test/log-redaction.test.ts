@@ -11,6 +11,7 @@ describe("日志脱敏", () => {
     it(`${header} 头在日志中被替换为 [REDACTED]，原始值不出现`, async () => {
       const lines: string[] = [];
       const app = buildApp({
+        auth: false,
         logStream: {
           write: (chunk: string) => {
             lines.push(chunk);

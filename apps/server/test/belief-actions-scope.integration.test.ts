@@ -16,7 +16,7 @@ describe("项目范围内的信念修正与消解历史（#65）", () => {
     otherProjectId = uuidv7();
     await t.sql`insert into projects (id, name) values
       (${projectId}, 'belief-actions-scope'), (${otherProjectId}, 'other-scope')`;
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
 
   afterAll(async () => {

@@ -90,6 +90,7 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
       embeddingModel: (cfg, id) => bagEmbeddingFactory.embeddingModel(cfg, id) as EmbeddingModel,
     };
     app = buildApp({
+      auth: false,
       db: t.db,
       masterKey: TEST_MASTER_KEY,
       providerFactory: fakeFactory,
@@ -237,6 +238,7 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
 
   it("检索失败降级：不阻塞对话，记警告日志", async () => {
     const degraded = buildApp({
+      auth: false,
       db: t.db,
       masterKey: TEST_MASTER_KEY,
       providerFactory: fakeFactory,

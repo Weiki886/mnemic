@@ -10,7 +10,7 @@ describe("Providers 配置 API（#14）", () => {
     t = await setupTestDb();
     // 测试库跨运行持久：清理本文件用例行，保证重跑幂等
     await t.sql`delete from provider_configs where name in ('api-deepseek', 'x1', 'x2')`;
-    app = buildApp({ db: t.db, masterKey: TEST_MASTER_KEY });
+    app = buildApp({ auth: false, db: t.db, masterKey: TEST_MASTER_KEY });
   }, 180_000);
   afterAll(async () => {
     await app.close();
@@ -76,7 +76,7 @@ describe("Providers 配置 API（#14）", () => {
   });
 
   it("未配置 DB/主密钥时路由不注册（404）", async () => {
-    const bare = buildApp();
+    const bare = buildApp({ auth: false });
     const res = await bare.inject({ method: "GET", url: "/providers" });
     expect(res.statusCode).toBe(404);
     await bare.close();

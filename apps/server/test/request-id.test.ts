@@ -3,7 +3,7 @@ import { buildApp } from "../src/app.js";
 
 describe("请求 ID 贯穿", () => {
   it("响应携带 x-request-id；上游传入时透传同一值", async () => {
-    const app = buildApp();
+    const app = buildApp({ auth: false });
 
     const generated = await app.inject({ method: "GET", url: "/health" });
     const generatedId = generated.headers["x-request-id"];
@@ -22,6 +22,7 @@ describe("请求 ID 贯穿", () => {
   it("日志为结构化 JSON 且包含请求 ID", async () => {
     const lines: string[] = [];
     const app = buildApp({
+      auth: false,
       logStream: {
         write: (chunk: string) => {
           lines.push(chunk);
@@ -44,7 +45,7 @@ describe("请求 ID 贯穿", () => {
   });
 
   it("非法 x-request-id（超长/含特殊字符）不透传，降级为新生成的 UUID", async () => {
-    const app = buildApp();
+    const app = buildApp({ auth: false });
 
     const tooLong = await app.inject({
       method: "GET",
