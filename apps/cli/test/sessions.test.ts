@@ -151,16 +151,21 @@ describe("CLI sessions（#31 拆分 1/2）", () => {
   });
 
   it.each([
-    ["--limit=0", "--limit 必须为 1–1000 的整数"],
-    ["--limit=1001", "--limit 必须为 1–1000 的整数"],
-    ["--limit=1e2", "--limit 必须为 1–1000 的整数"],
-    ["--limit=-1", "--limit 必须为 1–1000 的整数"],
-    ["--offset=-1", "--offset 必须为 0–9007199254740991 的整数"],
-    ["--offset=1.5", "--offset 必须为 0–9007199254740991 的整数"],
-    ["--offset=9007199254740992", "--offset 必须为 0–9007199254740991 的整数"],
-  ])("分页错误 %s 提示具体参数和范围，不请求网络", async (flag, message) => {
+    [["--limit=0"], "--limit 必须为 1–1000 的整数"],
+    [["--limit=1001"], "--limit 必须为 1–1000 的整数"],
+    [["--limit=1e2"], "--limit 必须为 1–1000 的整数"],
+    [["--limit=-1"], "--limit 必须为 1–1000 的整数"],
+    [["--offset=-1"], "--offset 必须为 0–9007199254740991 的整数"],
+    [["--offset=1.5"], "--offset 必须为 0–9007199254740991 的整数"],
+    [["--offset=9007199254740992"], "--offset 必须为 0–9007199254740991 的整数"],
+    [["--limit", "-1"], "--limit 必须为 1–1000 的整数"],
+    [["--offset", "-1"], "--offset 必须为 0–9007199254740991 的整数"],
+    [["--limit"], "--limit 必须为 1–1000 的整数"],
+    [["--offset"], "--offset 必须为 0–9007199254740991 的整数"],
+    [["--limit", "--json"], "--limit 必须为 1–1000 的整数"],
+  ] as const)("分页错误 %j 提示具体参数和范围，不请求网络", async (flags, message) => {
     const f = fixture();
-    expect(await runCli(["sessions", "--project", project, flag], f.options)).toBe(2);
+    expect(await runCli(["sessions", "--project", project, ...flags], f.options)).toBe(2);
     expect(f.output().split("\n")[0]).toContain(message);
     expect(f.fetch).not.toHaveBeenCalled();
   });

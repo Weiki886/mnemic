@@ -126,7 +126,16 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     server = url.toString().replace(/\/+$/, "");
     probe = parsed.values.probe ?? false;
     json = parsed.values.json ?? false;
-  } catch {
+  } catch (error) {
+    // parseArgs rejects missing or dash-prefixed values before pageNumber runs.
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ERR_PARSE_ARGS_INVALID_OPTION_VALUE"
+    ) {
+      const flag = /^Option '--(limit|offset)(?: <value>)?'/.exec(error.message)?.[1];
+      if (flag === "limit" || flag === "offset") invalid = flag;
+    }
     const detail = {
       arguments: "参数无效，请使用 --help 查看支持的选项。",
       command: "命令无效，请使用 doctor、chat、memory 或 sessions；使用 --help 查看用法。",
