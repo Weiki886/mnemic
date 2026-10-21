@@ -85,7 +85,17 @@ node apps/cli/dist/index.js sessions --project <项目UUID> --json
 对话中输入 `/help` 查看当前已实现命令。`/he` + Tab 补全为 `/help `，回车才执行；
 `/` + Tab 只展示候选。未知命令、`/new extra` 等非法参数只报错，不误发给模型。
 已有 `/new`、`/resume UUID`、`/exit` 和 Ctrl+C 保持原有会话语义。
-记忆操作、召回及配置命令仍待后续 PR；范围与边界见 [斜杠命令](slash-commands.md)。
+对话中可直接管理项目记忆（#32 拆分 2/3）：
+
+```text
+/memory --type decision --limit 10 database
+/forget 记忆UUID
+/memory --status deleted
+```
+
+列表搜索 subject/attribute，默认只读 active 记忆；删除复用 Web 的软删除 API，不产生聊天 Evidence。
+可在 Web 恢复后再次 `/memory` 查看。类型来自当前版本来源 Observation，未记录类型不参与筛选。
+召回及配置命令仍待拆分 3/3；用法、分页、计费和失败边界见 [斜杠命令](slash-commands.md)。
 
 ## 恢复与切换会话（#31）
 

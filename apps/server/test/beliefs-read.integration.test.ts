@@ -241,6 +241,9 @@ describe("记忆只读 API 与软删除（#8）", () => {
     });
     const [source] =
       await t.sql`select source_observation_id from belief_versions where id = ${foreign.vid}`;
+    await t.sql`update belief_versions set source_observation_id = null where id = ${target.vid}`;
+    const noSource = await app.inject({ method: "GET", url: `/projects/${project}/beliefs` });
+    expect(noSource.json()[0]).toMatchObject({ type: null, current_value: "own" });
     await t.sql`update belief_versions set source_observation_id = ${source!.source_observation_id} where id = ${target.vid}`;
     const get = async () => app.inject({ method: "GET", url: `/projects/${project}/beliefs` });
     expect((await get()).json()[0]).toMatchObject({ type: null, current_value: "own" });

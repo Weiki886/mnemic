@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as shared from "../src/index.js";
+import * as shared from "../src/memory.js";
 
 const id = "01920000-0000-7000-8000-000000000001";
 const row = {

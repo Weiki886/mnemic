@@ -5,6 +5,7 @@ import type { ChatReply } from "@mnemic/shared";
 import type { ChatSession } from "./chat-session.js";
 import { chatFailure, formatReply, renderAnswerChunks, terminalText } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
+import { runMemoryCommand, type MemoryApi } from "./memory-commands.js";
 
 interface Block {
   id: number;
@@ -15,9 +16,11 @@ interface Block {
 
 export function ChatApp({
   session,
+  memoryApi,
   onDone,
 }: {
   session: ChatSession;
+  memoryApi: MemoryApi;
   onDone: (code: number) => void;
 }) {
   const { exit } = useApp();
@@ -34,6 +37,7 @@ export function ChatApp({
   const closingRef = useRef(false);
   const mounted = useRef(true);
   const sequence = useRef(0);
+  const pendingMemory = useRef<Promise<string> | undefined>(undefined);
   const append = (label: string, text: string, color: Block["color"]) => {
     if (mounted.current) {
       const block = { id: sequence.current++, label, text: terminalText(text, true), color };
@@ -79,6 +83,8 @@ export function ChatApp({
     setClosing(true);
     let code = 0;
     try {
+      // /forget 也可能已有写副作用；退出要先等待确认，不丢弃或重发请求。
+      await pendingMemory.current?.catch(() => {});
       await session.close();
       append("会话已提交", "记忆提取在后台完成，提交不等于已完成索引。", "gray");
     } catch (error) {
@@ -139,6 +145,13 @@ export function ChatApp({
         if (mounted.current) setId(row.id);
         append("续聊会话", "已引用目标会话历史；原会话与切换前会话保持只读。", "gray");
         appendHistory();
+      } else if (
+        parsed.kind === "command" &&
+        (parsed.name === "memory" || parsed.name === "forget")
+      ) {
+        const job = runMemoryCommand(memoryApi, session.projectId, parsed);
+        pendingMemory.current = job;
+        append("记忆", await job, "gray");
       } else if (parsed.kind === "message") {
         append("你", text, "cyan");
         const reply = await session.send(text);
@@ -153,6 +166,7 @@ export function ChatApp({
     } catch (error) {
       append("错误", chatFailure(error), "red");
     } finally {
+      pendingMemory.current = undefined;
       busyRef.current = false;
       if (mounted.current) {
         setBusy(false);

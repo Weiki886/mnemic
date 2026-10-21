@@ -2,7 +2,7 @@ import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { MemoryListQuerySchema } from "@mnemic/shared";
+import { MemoryListQuerySchema } from "@mnemic/shared/memory";
 import { beliefs, beliefVersions, messages, observations } from "../db/schema.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
 import { toApiNumber } from "./serialization.js";

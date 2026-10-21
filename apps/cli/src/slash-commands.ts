@@ -1,4 +1,6 @@
 import { ChatConversationSchema } from "@mnemic/shared/chat";
+import { MemoryListQuerySchema, type MemoryListQuery } from "@mnemic/shared/memory";
+import { parseArgs } from "node:util";
 
 /** 只注册已经实现的命令；解析、帮助与补全共用，不从网络或历史加载命令。 */
 export const SLASH_COMMANDS = [
@@ -10,14 +12,29 @@ export const SLASH_COMMANDS = [
     description: "引用目标历史创建续聊会话；归档可能触发计费提取",
   },
   { name: "exit", usage: "/exit", description: "等待当前请求后提交退出；后台提取可能计费" },
+  {
+    name: "memory",
+    usage: "/memory [--type TYPE] [--status STATUS] [--limit N] [--offset N] [搜索词...]",
+    description:
+      "查看当前项目记忆；类型 fact/preference/decision/progress，状态 active/deleted/retracted/all，默认 active、20 条",
+  },
+  {
+    name: "forget",
+    usage: "/forget UUID",
+    description: "软删除当前项目的 active 记忆，可在 Web 恢复；不调用模型",
+  },
 ] as const;
 
 type CommandName = (typeof SLASH_COMMANDS)[number]["name"];
+export type MemoryCommand =
+  | { kind: "command"; name: "memory"; query: MemoryListQuery }
+  | { kind: "command"; name: "forget"; argument: string };
 type ChatInput =
   | { kind: "empty" }
   | { kind: "message"; text: string }
-  | { kind: "command"; name: Exclude<CommandName, "resume"> }
+  | { kind: "command"; name: Exclude<CommandName, "resume" | "memory" | "forget"> }
   | { kind: "command"; name: "resume"; argument: string }
+  | MemoryCommand
   | { kind: "error"; message: string };
 
 export function parseChatInput(text: string): ChatInput {
@@ -27,7 +44,39 @@ export function parseChatInput(text: string): ChatInput {
   const [token, ...args] = trimmed.split(/\s+/);
   const command = SLASH_COMMANDS.find((entry) => `/${entry.name}` === token);
   if (!command) return { kind: "error", message: "未知斜杠命令；输入 /help 查看已支持命令。" };
-  if (command.name === "resume") {
+  if (command.name === "memory") {
+    try {
+      const parsed = parseArgs({
+        args,
+        allowPositionals: true,
+        tokens: true,
+        options: {
+          type: { type: "string" },
+          status: { type: "string" },
+          limit: { type: "string" },
+          offset: { type: "string" },
+        },
+      });
+      const seen = new Set<string>();
+      for (const token of parsed.tokens) {
+        if (token.kind !== "option") continue;
+        if (seen.has(token.name)) throw new Error("duplicate option");
+        seen.add(token.name);
+      }
+      for (const raw of [parsed.values.limit, parsed.values.offset]) {
+        if (raw !== undefined && !/^\d+$/.test(raw)) throw new Error("integer required");
+      }
+      const q = parsed.positionals.join(" ");
+      const query = MemoryListQuerySchema.parse({ ...parsed.values, ...(q ? { q } : {}) });
+      return { kind: "command", name: "memory", query };
+    } catch {
+      return {
+        kind: "error",
+        message: `用法：${command.usage}；limit 1–1000，offset 为非负安全整数，搜索词最多 200 字符。`,
+      };
+    }
+  }
+  if (command.name === "resume" || command.name === "forget") {
     const id = ChatConversationSchema.shape.id.safeParse(args[0]);
     if (args.length !== 1 || !id.success)
       return { kind: "error", message: `用法：${command.usage}` };

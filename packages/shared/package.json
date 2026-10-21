@@ -15,6 +15,10 @@
     "./chat": {
       "types": "./dist/chat.d.ts",
       "import": "./dist/chat.js"
+    },
+    "./memory": {
+      "types": "./dist/memory.d.ts",
+      "import": "./dist/memory.js"
     }
   },
   "scripts": {

@@ -7,7 +7,7 @@ export function terminalText(text: string, multiline = false): string {
     multiline && char === "\n" ? "\n" : " ",
   );
 }
-function valueText(value: unknown): string {
+export function valueText(value: unknown): string {
   return typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "未提供");
 }
 

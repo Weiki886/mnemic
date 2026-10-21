@@ -5,7 +5,7 @@
 
 import type { ErrorCode, FieldError } from "./errors.js";
 import type { DoctorReport } from "./doctor.js";
-import type { BeliefListItem, MemoryType } from "./memory.js";
+import type { BeliefListItem, MemoryListQuery } from "./memory.js";
 export type { BeliefListItem } from "./memory.js";
 import type {
   ChatConversation,
@@ -81,14 +81,7 @@ export interface CorrectResult {
   relation: string | null;
 }
 
-export interface BeliefListParams {
-  type?: MemoryType;
-  status?: "active" | "deleted" | "retracted" | "all";
-  profile?: "true" | "false";
-  q?: string;
-  limit?: number;
-  offset?: number;
-}
+export type BeliefListParams = Partial<MemoryListQuery>;
 
 export interface ListParams {
   limit?: number;
