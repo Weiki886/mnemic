@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Static, Text, useApp, useInput } from "ink";
-import TextInput from "ink-text-input";
 import type { ChatReply } from "@mnemic/shared";
 import type { ChatSession } from "./chat-session.js";
 import { chatFailure, formatReply, renderAnswerChunks, terminalText } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
 import { runMemoryCommand, type MemoryApi } from "./memory-commands.js";
+import { editLine, type LineState } from "./line-input.js";
 
 interface Block {
   id: number;
@@ -25,8 +25,15 @@ export function ChatApp({
 }) {
   const { exit } = useApp();
   const [blocks, setBlocks] = useState<Block[]>([]);
-  const [input, setInput] = useState("");
-  const [inputVersion, setInputVersion] = useState(0);
+  const [line, setLine] = useState<LineState>({ text: "", cursor: 0 });
+  const lineRef = useRef(line);
+  const updateLine = (next: LineState) => {
+    lineRef.current = next;
+    setLine(next);
+  };
+  const setInput = (value: string) => {
+    updateLine({ text: value, cursor: Array.from(value).length });
+  };
   const [candidates, setCandidates] = useState<string[]>([]);
   const [id, setId] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
@@ -95,21 +102,22 @@ export function ChatApp({
     exit();
   };
   useInput((value, key) => {
-    if (key.ctrl && value === "c") void finish();
-    else if (
-      key.tab &&
-      !key.shift &&
-      !key.ctrl &&
-      !key.meta &&
-      !busyRef.current &&
-      !closingRef.current
-    ) {
-      const completion = completeSlash(input);
+    if (key.ctrl && value === "c") {
+      void finish();
+      return;
+    }
+    if (busyRef.current || closingRef.current) return;
+    if (key.tab && !key.shift && !key.ctrl && !key.meta) {
+      const completion = completeSlash(lineRef.current.text);
       setCandidates(completion.candidates.length > 1 ? completion.candidates : []);
-      if (completion.value !== input) {
-        setInput(completion.value);
-        // TextInput 没有受控光标 API；补全后重建，把光标放到新增参数空格之后。
-        setInputVersion((version) => version + 1);
+      if (completion.value !== lineRef.current.text) setInput(completion.value);
+    } else if (key.return) {
+      void submit(lineRef.current.text);
+    } else {
+      const next = editLine(lineRef.current, terminalText(value), key);
+      if (next !== lineRef.current) {
+        setCandidates([]);
+        updateLine(next);
       }
     }
   });
@@ -176,6 +184,7 @@ export function ChatApp({
     }
   };
 
+  const chars = Array.from(line.text);
   return (
     <Box flexDirection="column">
       <Static items={blocks}>
@@ -204,18 +213,15 @@ export function ChatApp({
       )}
       <Box>
         <Text color="cyan">{"> "}</Text>
-        <TextInput
-          key={inputVersion}
-          value={input}
-          focus={!busy && !closing}
-          onChange={(value) => {
-            setCandidates([]);
-            setInput(terminalText(value));
-          }}
-          onSubmit={(value) => {
-            void submit(value);
-          }}
-        />
+        <Text>
+          {chars.slice(0, line.cursor).join("")}
+          {!busy && !closing ? (
+            <Text inverse>{chars[line.cursor] ?? " "}</Text>
+          ) : (
+            (chars[line.cursor] ?? "")
+          )}
+          {chars.slice(line.cursor + 1).join("")}
+        </Text>
       </Box>
     </Box>
   );

@@ -59,6 +59,63 @@ function fixture() {
 afterEach(cleanup);
 
 describe("memory slash commands in Ink (#32)", () => {
+  it("cursor movement and argument edits do not depend on a render between keys", async () => {
+    const f = fixture();
+    await vi.waitFor(() => expect(f.view.lastFrame()).toContain(conversation));
+    await vi.waitFor(() => expect(f.view.lastFrame()).not.toContain("处理中"));
+    f.view.stdin.write("/memory db");
+    f.view.stdin.write("\u001b[D");
+    f.view.stdin.write("a");
+    f.view.stdin.write("\u001b[F");
+    f.view.stdin.write("\u007f");
+    f.view.stdin.write("\r");
+    await vi.waitFor(() =>
+      expect(f.api.listBeliefs).toHaveBeenCalledWith(project, {
+        status: "active",
+        limit: 20,
+        offset: 0,
+        q: "da",
+      }),
+    );
+    expect(f.api.sendMessage).not.toHaveBeenCalled();
+  });
+  it("completion followed immediately by arguments cannot become a paid chat message", async () => {
+    const f = fixture();
+    await vi.waitFor(() => expect(f.view.lastFrame()).toContain(conversation));
+    await vi.waitFor(() => expect(f.view.lastFrame()).not.toContain("处理中"));
+    f.view.stdin.write("/m");
+    f.view.stdin.write("\t");
+    f.view.stdin.write("database");
+    f.view.stdin.write("\r");
+    await vi.waitFor(() =>
+      expect(f.api.listBeliefs).toHaveBeenCalledWith(project, {
+        status: "active",
+        limit: 20,
+        offset: 0,
+        q: "database",
+      }),
+    );
+    expect(f.api.sendMessage).not.toHaveBeenCalled();
+  });
+  it("Enter submits latest controlled input before the text input rerenders", async () => {
+    const f = fixture();
+    await vi.waitFor(() => expect(f.view.lastFrame()).toContain(conversation));
+    await vi.waitFor(() => expect(f.view.lastFrame()).not.toContain("处理中"));
+    f.view.stdin.write("/memory");
+    f.view.stdin.write("\r");
+    await vi.waitFor(() => expect(f.api.listBeliefs).toHaveBeenCalledOnce());
+    expect(f.api.sendMessage).not.toHaveBeenCalled();
+  });
+  it("Tab reads latest input even before the preceding key causes a render", async () => {
+    const f = fixture();
+    await vi.waitFor(() => expect(f.view.lastFrame()).toContain(conversation));
+    await vi.waitFor(() => expect(f.view.lastFrame()).not.toContain("处理中"));
+    f.view.stdin.write("/m");
+    f.view.stdin.write("\t");
+    await vi.waitFor(() => expect(f.view.lastFrame()).toContain("> /memory"));
+    expect(f.api.listBeliefs).not.toHaveBeenCalled();
+    expect(f.api.sendMessage).not.toHaveBeenCalled();
+  });
   it("Tab memory -> list -> forget -> list, without sending messages or changing sessions", async () => {
     const f = fixture();
     await vi.waitFor(() => expect(f.view.lastFrame()).toContain(conversation));
