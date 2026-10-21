@@ -5,6 +5,8 @@
 
 import type { ErrorCode, FieldError } from "./errors.js";
 import type { DoctorReport } from "./doctor.js";
+import type { BeliefListItem, MemoryType } from "./memory.js";
+export type { BeliefListItem } from "./memory.js";
 import type {
   ChatConversation,
   ChatCommit,
@@ -17,20 +19,6 @@ export type { ConversationListItem, CitedMemory, ConversationMessage } from "./c
 
 /* ---------- 响应类型（与 apps/server 路由返回结构对齐） ---------- */
 // 评分的 HTTP 契约为 JSON number | null（#68）；数据库 numeric 字符串由 server 在返回层转换。
-
-export interface BeliefListItem {
-  id: string;
-  subject: string;
-  attribute: string;
-  status: string;
-  is_profile: boolean;
-  confidence: number | null;
-  salience: number | null;
-  importance: number | null;
-  evidence_count: number | null;
-  created_at: string;
-  current_value: unknown;
-}
 
 export interface BeliefVersionItem {
   id: string;
@@ -94,6 +82,7 @@ export interface CorrectResult {
 }
 
 export interface BeliefListParams {
+  type?: MemoryType;
   status?: "active" | "deleted" | "retracted" | "all";
   profile?: "true" | "false";
   q?: string;

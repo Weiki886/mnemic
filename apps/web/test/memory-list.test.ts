@@ -6,6 +6,7 @@ import MemoryList from "../src/memories/MemoryList.vue";
 const projectId = "0192af7d-b792-7a41-90f8-9f0b2d6c6d8a";
 
 const row = (overrides: Partial<BeliefListItem> = {}): BeliefListItem => ({
+  type: "fact",
   id: "0192af90-0000-7000-8000-000000000001",
   subject: "my-project",
   attribute: "database",
