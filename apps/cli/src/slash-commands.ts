@@ -39,11 +39,14 @@ export function parseChatInput(text: string): ChatInput {
 
 /** 仅补全整个命令名；候选不执行，也不推测 UUID/文件路径/参数。 */
 export function completeSlash(text: string): { value: string; candidates: string[] } {
-  if (!text.startsWith("/") || /[^a-z]/.test(text.slice(1))) return { value: text, candidates: [] };
+  const command = text.trimStart();
+  if (!command.startsWith("/") || /[^a-z]/.test(command.slice(1)))
+    return { value: text, candidates: [] };
+  const prefix = text.slice(0, text.length - command.length);
   const candidates = SLASH_COMMANDS.map((entry) => `/${entry.name}`).filter((name) =>
-    name.startsWith(text),
+    name.startsWith(command),
   );
-  return { value: candidates.length === 1 ? `${candidates[0]} ` : text, candidates };
+  return { value: candidates.length === 1 ? `${prefix}${candidates[0]} ` : text, candidates };
 }
 
 export function slashHelp(): string {

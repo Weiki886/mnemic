@@ -114,7 +114,6 @@ export function ChatApp({
     if (parsed.kind === "empty") return;
     setCandidates([]);
     if (parsed.kind === "error") {
-      setInput("");
       append("命令无效", parsed.message, "red");
       return;
     }

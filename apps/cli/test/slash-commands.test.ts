@@ -66,15 +66,22 @@ describe("local slash command registry (#32, 1/3)", () => {
       value: "/",
       candidates: ["/help", "/new", "/resume", "/exit"],
     });
-    for (const text of [
-      "plain",
-      "/unknown",
-      "/resume ",
-      `/resume ${id}`,
-      " /he",
-      "/he extra",
-      "/he\n",
-    ]) {
+    for (const text of ["plain", "/unknown", "/resume ", `/resume ${id}`, "/he extra", "/he\n"]) {
+      expect(completeSlash(text)).toEqual({ value: text, candidates: [] });
+    }
+  });
+
+  it.each(["  ", "\u3000", "\t"])("preserves leading whitespace %j when completing", (prefix) => {
+    expect(completeSlash(`${prefix}/he`)).toEqual({
+      value: `${prefix}/help `,
+      candidates: ["/help"],
+    });
+    expect(completeSlash(`${prefix}/`)).toEqual({
+      value: `${prefix}/`,
+      candidates: ["/help", "/new", "/resume", "/exit"],
+    });
+    for (const suffix of ["/unknown", "/resume ", "/he extra", "normal text"]) {
+      const text = prefix + suffix;
       expect(completeSlash(text)).toEqual({ value: text, candidates: [] });
     }
   });
