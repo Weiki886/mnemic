@@ -80,6 +80,13 @@ node apps/cli/dist/index.js sessions --project <项目UUID> --json
 
 “已提交”表示现有 `ended_at` 非空，旧 ID 不能直接再发消息；使用下述 `resume` 创建续聊会话。
 
+## 本地命令帮助与补全（#32，拆分 1/3）
+
+对话中输入 `/help` 查看当前已实现命令。`/he` + Tab 补全为 `/help `，回车才执行；
+`/` + Tab 只展示候选。未知命令、`/new extra` 等非法参数只报错，不误发给模型。
+已有 `/new`、`/resume UUID`、`/exit` 和 Ctrl+C 保持原有会话语义。
+记忆操作、召回及配置命令仍待后续 PR；范围与边界见 [斜杠命令](slash-commands.md)。
+
 ## 恢复与切换会话（#31）
 
 ```bash

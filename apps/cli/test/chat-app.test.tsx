@@ -40,6 +40,153 @@ const fixture = () => ({
 afterEach(cleanup);
 
 describe("Ink 对话交互", () => {
+  it("请求处理和退出期间 Tab 不接受新命令或产生第二次操作", async () => {
+    const api = fixture();
+    let answer!: (value: typeof reply) => void;
+    let committed!: (value: Awaited<ReturnType<typeof api.commitConversation>>) => void;
+    api.sendMessage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    api.commitConversation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        committed = resolve;
+      }),
+    );
+    const done = vi.fn();
+    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={done} />);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+    view.stdin.write("question");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> question"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    view.stdin.write("/");
+    view.stdin.write("\t");
+    view.stdin.write("\r");
+    answer(reply);
+    await vi.waitFor(() => expect(view.lastFrame()).not.toContain("处理中"));
+    expect(view.lastFrame()).not.toContain("候选：");
+    expect(view.lastFrame()).not.toContain("> /");
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    view.stdin.write("/exit");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> /exit"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(api.commitConversation).toHaveBeenCalledOnce());
+    view.stdin.write("\t");
+    view.stdin.write("/help");
+    view.stdin.write("\r");
+    committed({ ...row, ended_at: "2026-10-16T00:01:00Z", extraction_triggered: true });
+    await vi.waitFor(() => expect(done).toHaveBeenCalledWith(0));
+    expect(api.commitConversation).toHaveBeenCalledOnce();
+    expect(api.resumeConversation).not.toHaveBeenCalled();
+    expect(view.frames.join("\n")).not.toContain("本地命令帮助");
+  });
+  it("Tab 补全 /help 并显示本地帮助，不发送或提交", async () => {
+    const api = fixture();
+    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+    view.stdin.write("/he");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> /he"));
+    view.stdin.write("\t");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> /help"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.frames.join("\n")).toContain("本地命令帮助"));
+    expect(view.frames.join("\n")).toContain("/resume UUID");
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(api.commitConversation).not.toHaveBeenCalled();
+    expect(api.resumeConversation).not.toHaveBeenCalled();
+    expect(api.createConversation).toHaveBeenCalledOnce();
+  });
+
+  it("歧义 Tab 只展示候选，不自动执行；普通文本 Tab 保持不变", async () => {
+    const api = fixture();
+    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+    view.stdin.write("/");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> /"));
+    view.stdin.write("\t");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("候选：/help /new /resume /exit"));
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(api.commitConversation).not.toHaveBeenCalled();
+    view.stdin.write("\u007f");
+    await vi.waitFor(() => expect(view.lastFrame()).not.toContain("> /"));
+    view.stdin.write("ordinary text");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> ordinary text"));
+    expect(view.lastFrame()).not.toContain("候选：");
+    view.stdin.write("\t");
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(conv, "ordinary text"));
+  });
+
+  it("补全后光标在结尾，非法参数和未知命令均不误发模型或退出", async () => {
+    const api = fixture();
+    const done = vi.fn();
+    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={done} />);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+    view.stdin.write("/ne");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> /ne"));
+    view.stdin.write("\t");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> /new"));
+    view.stdin.write("extra");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> /new extra"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.frames.join("\n")).toContain("用法：/new"));
+    expect(view.lastFrame()).toContain("> /new extra");
+    // 只删去多余参数，修正为有效 /new，再验证普通消息发送不受影响。
+    for (let remaining = "/new extra"; remaining.length > "/new ".length;) {
+      view.stdin.write("\u007f");
+      remaining = remaining.slice(0, -1);
+      await vi.waitFor(() =>
+        expect(view.lastFrame()?.split("> ").at(-1)?.trimEnd()).toBe(remaining.trimEnd()),
+      );
+    }
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(api.commitConversation).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(api.createConversation).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(view.lastFrame()).not.toContain("处理中"));
+    view.stdin.write("still usable");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("> still usable"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(conv, "still usable"));
+  });
+
+  it.each(["/exit now", "/unknown", "/usr/bin/env node with a long explanation"])(
+    "错误输入保留供修改：%s",
+    async (text) => {
+      const api = fixture();
+      const done = vi.fn();
+      const view = render(<ChatApp session={new ChatSession(api, project)} onDone={done} />);
+      await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+      view.stdin.write(text);
+      await vi.waitFor(() => expect(view.lastFrame()).toContain(`> ${text}`));
+      view.stdin.write("\r");
+      await vi.waitFor(() => expect(view.frames.join("\n")).toContain("命令无效"));
+      expect(view.lastFrame()).toContain(`> ${text}`);
+      expect(api.sendMessage).not.toHaveBeenCalled();
+      expect(api.commitConversation).not.toHaveBeenCalled();
+      expect(done).not.toHaveBeenCalled();
+    },
+  );
+
+  it("错误命令可退格修改后直接执行", async () => {
+    const api = fixture();
+    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
+    view.stdin.write("  /help x");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(">   /help x"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.frames.join("\n")).toContain("用法：/help"));
+    expect(view.lastFrame()).toContain(">   /help x");
+    view.stdin.write("\u007f");
+    await vi.waitFor(() => expect(view.lastFrame()).not.toContain(">   /help x"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.frames.join("\n")).toContain("本地命令帮助"));
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(api.commitConversation).not.toHaveBeenCalled();
+  });
   it("/resume 切换并展示净化的历史与引用，不作为用户消息发送", async () => {
     const target = "01920000-0000-7000-8000-000000000006";
     const fork = "01920000-0000-7000-8000-000000000007";
