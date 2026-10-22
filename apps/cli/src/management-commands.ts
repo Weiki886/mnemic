@@ -14,16 +14,26 @@ function slotsText(slots: ServerConfig["slots"]): string {
   return (["chat", "extraction", "embedding"] as const)
     .map((name) => {
       const s = slots[name];
-      return `${name}: ${s ? `${s.provider_name} (${s.provider_id}) / ${s.model}` : "未配置"}`;
+      if (!s) return `${name}: 未配置`;
+      return "invalid" in s
+        ? `${name}: 配置异常 · ${s.provider_name} (${s.provider_id})，未确认生效模型`
+        : `${name}: ${s.provider_name} (${s.provider_id}) / ${s.model}`;
     })
     .join("\n");
+}
+function invalidProvidersText(ids: string[] | undefined): string {
+  return ids?.length
+    ? `\n配置异常 Provider：${ids.join(", ")}；损坏字段未展示，请通过服务端配置流程修复。`
+    : "";
 }
 export async function runManagementCommand(
   api: ManagementApi,
   projectId: string,
-  conversationId: string,
+  conversationId: string | null,
   command: ManagementCommand,
 ): Promise<string> {
+  if (command.name === "status" && !conversationId)
+    throw new SessionError("会话尚未创建，请先使用 /new 创建会话");
   try {
     if (command.name === "status") {
       const project = ForgetResultSchema.shape.id.parse(projectId),
@@ -36,7 +46,9 @@ export async function runManagementCommand(
           status.counts,
         )
           .map(([k, v]) => `${k}=${v}`)
-          .join(" ")}\n生效配置（不等于模型已连通）：\n${slotsText(status.slots)}`,
+          .join(
+            " ",
+          )}\n生效配置（不等于模型已连通）：\n${slotsText(status.slots)}${invalidProvidersText(status.invalid_provider_ids)}`,
         true,
       );
     }
@@ -51,7 +63,7 @@ export async function runManagementCommand(
             .join(" ")}`,
       );
       return terminalText(
-        `全局服务端配置（非项目配置）；当前优先级为最早创建的已配置槽位 Provider，时间相同按 ID。\n${slotsText(config.slots)}\n${providers.length ? providers.join("\n") : "暂无 Provider"}\n不显示密钥、不探测模型；修改影响全局后续请求，embedding 切换需 REEMBED。`,
+        `全局服务端配置（非项目配置）；当前优先级为最早创建的已配置槽位 Provider，时间相同按 ID。\n${slotsText(config.slots)}\n${providers.length ? providers.join("\n") : config.invalid_provider_ids?.length ? "暂无可显示的有效 Provider" : "暂无 Provider"}${invalidProvidersText(config.invalid_provider_ids)}\n不显示密钥、不探测模型；修改影响全局后续请求，embedding 切换需 REEMBED。`,
         true,
       );
     }

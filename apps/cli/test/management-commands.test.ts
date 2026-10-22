@@ -32,6 +32,30 @@ const run = (api: unknown, command: unknown) => {
   ).runManagementCommand(api, id, conversation, command);
 };
 describe("management CLI runner", () => {
+  it.each(["config", "status"] as const)(
+    "shows invalid config explicitly in /%s without a fake fallback",
+    async (name) => {
+      const invalid = {
+        invalid_provider_ids: [id],
+        slots: {
+          ...slots,
+          chat: { provider_id: id, provider_name: "broken", model: null, invalid: true },
+        },
+      };
+      const text = await run(
+        {
+          getConfig: async () => ({ ...config, providers: [], ...invalid }),
+          getProjectStatus: async () => ({ ...status, ...invalid }),
+        },
+        name === "status" ? { name } : { name, action: "show" },
+      );
+      expect(text).toContain("配置异常");
+      expect(text).toContain(id);
+      expect(text).toContain("chat: 配置异常");
+      expect(text).not.toContain("/ null");
+      expect(text).not.toContain("暂无 Provider");
+    },
+  );
   it("shows scoped exact counts/current session and effective models", async () => {
     const getProjectStatus = vi.fn(async () => status);
     const text = await run({ getProjectStatus }, { name: "status" });

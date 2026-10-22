@@ -50,14 +50,15 @@ function publicRow(row: {
   models: unknown;
   createdAt: Date;
 }) {
-  return ProviderConfigSchema.parse({
+  return {
     id: row.id,
     name: row.name,
     protocol: row.protocol,
     base_url: safeUrl(row.baseUrl),
     models: row.models,
-    created_at: row.createdAt.toISOString(),
-  });
+    // Invalid dates become null and fail this row's schema instead of throwing before safeParse.
+    created_at: row.createdAt.toJSON(),
+  };
 }
 /** 不解密、不构造 SDK，不返回任何密钥（包括掩码）。 */
 async function snapshot(db: Db) {
@@ -74,15 +75,30 @@ async function snapshot(db: Db) {
     .orderBy(asc(providerConfigs.createdAt), asc(providerConfigs.id))
     .limit(1001);
   if (rows.length > 1000) throw new Error("too many providers");
+  const checked = rows.map((row) => ({
+    row,
+    parsed: ProviderConfigSchema.safeParse(publicRow(row)),
+  }));
+  const invalidIds = checked.filter((p) => !p.parsed.success).map((p) => p.row.id);
   const slot = (name: keyof ModelSlots) => {
-    const p = selectSlotProvider(rows, name);
-    return p
-      ? { provider_id: p.id, provider_name: p.name, model: (p.models as ModelSlots)[name] }
-      : null;
+    for (const { row, parsed } of checked) {
+      const invalid = { provider_id: row.id, provider_name: row.name, model: null, invalid: true };
+      try {
+        if (!selectSlotProvider([row], name)) continue;
+      } catch {
+        // A malformed row would also stop real SDK resolution; do not invent a fallback.
+        return invalid;
+      }
+      return parsed.success
+        ? { provider_id: row.id, provider_name: row.name, model: parsed.data.models[name] }
+        : invalid;
+    }
+    return null;
   };
   return ConfigSchema.parse({
     config_source: "server",
-    providers: rows.map(publicRow),
+    providers: checked.flatMap((p) => (p.parsed.success ? [p.parsed.data] : [])),
+    ...(invalidIds.length ? { invalid_provider_ids: invalidIds } : {}),
     slots: { chat: slot("chat"), extraction: slot("extraction"), embedding: slot("embedding") },
   });
 }
@@ -141,6 +157,7 @@ export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
       counts[g.status] = Number(g.n);
       counts.total += Number(g.n);
     }
+    const config = await snapshot(db);
     return ProjectStatusSchema.parse({
       project: row.project,
       conversation: {
@@ -148,7 +165,8 @@ export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
         ended_at: row.conversation.endedAt?.toISOString() ?? null,
       },
       counts,
-      slots: (await snapshot(db)).slots,
+      slots: config.slots,
+      ...(config.invalid_provider_ids ? { invalid_provider_ids: config.invalid_provider_ids } : {}),
     });
   });
   app.patch("/providers/:id", async (request, reply) => {
@@ -191,7 +209,7 @@ export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
           })
           .where(eq(providerConfigs.id, params.data.id))
           .returning();
-        return { kind: "ok", value: publicRow(updated!) } as const;
+        return { kind: "ok", value: ProviderConfigSchema.parse(publicRow(updated!)) } as const;
       });
       if (result.kind === "missing")
         return fail(reply, request.id, 404, ErrorCode.NOT_FOUND, "Provider 不存在");

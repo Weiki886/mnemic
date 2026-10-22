@@ -47,6 +47,16 @@ export const ProviderConfigSchema = z
 const slot = z
   .object({ provider_id: z.string().uuid(), provider_name: readText, model: readText })
   .strict()
+  .or(
+    z
+      .object({
+        provider_id: z.string().uuid(),
+        provider_name: readText,
+        model: z.null(),
+        invalid: z.literal(true),
+      })
+      .strict(),
+  )
   .nullable();
 export const SlotSnapshotSchema = z
   .object({ chat: slot, extraction: slot, embedding: slot })
@@ -55,6 +65,7 @@ export const ConfigSchema = z
   .object({
     config_source: z.literal("server"),
     providers: z.array(ProviderConfigSchema).max(1000),
+    invalid_provider_ids: z.array(z.string().uuid()).max(1000).optional(),
     slots: SlotSnapshotSchema,
   })
   .strict();
@@ -75,6 +86,7 @@ export const ProjectStatusSchema = z
       })
       .strict(),
     slots: SlotSnapshotSchema,
+    invalid_provider_ids: z.array(z.string().uuid()).max(1000).optional(),
   })
   .strict()
   .refine(

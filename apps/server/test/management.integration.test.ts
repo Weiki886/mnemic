@@ -281,4 +281,62 @@ describe("status/config share server single source (#32)", () => {
     expect(resolved.modelId).toBe(row.models.chat);
     expect(resolved.providerName).toBe(row.name);
   });
+  it("isolates malformed provider rows in config/status and marks blocked slots without fallback", async () => {
+    const healthyIds = (await api.getConfig()).providers.map((p) => p.id);
+    const broken = await createProvider(t.db, TEST_MASTER_KEY, {
+      name: "broken-read-fixture",
+      protocol: "openai-compatible",
+      baseUrl: "https://broken.invalid",
+      apiKey: "fake-broken-key-1234",
+      models: {},
+    });
+    const [before] =
+      await t.sql`select api_key_encrypted from provider_configs where id=${broken.id}`;
+    const languageCalls = language.mock.calls.length;
+    try {
+      for (const [models, createdAt] of [
+        [{ chat: 42 }, "2010-01-01T00:00:00Z"],
+        [{ chat: "raw-corrupt-value", unexpected: "raw-secret" }, "2010-01-01T00:00:00Z"],
+        [null, "2010-01-01T00:00:00Z"],
+        [{ chat: "raw-corrupt-value" }, "-infinity"],
+      ] as const) {
+        await t.sql`update provider_configs set models=${JSON.stringify(models)}::jsonb, created_at=${createdAt}::timestamptz where id=${broken.id}`;
+        const response = await app.inject({
+          method: "GET",
+          url: "/v1/config",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        expect(response.statusCode).toBe(200);
+        const config = ConfigSchema.parse(response.json());
+        expect(config.providers.map((p) => p.id)).toEqual(healthyIds);
+        expect(config).toMatchObject({
+          invalid_provider_ids: [broken.id],
+          slots: { chat: { provider_id: broken.id, model: null, invalid: true } },
+        });
+        const status = ProjectStatusSchema.parse(await api.getProjectStatus(project, conversation));
+        expect(status.counts.total).toBe(2);
+        expect(status).toMatchObject({
+          invalid_provider_ids: [broken.id],
+          slots: { chat: { provider_id: broken.id, model: null, invalid: true } },
+        });
+        const text = await runManagementCommand(api, project, conversation, {
+          kind: "command",
+          name: "status",
+        });
+        expect(text).toContain("配置异常");
+        for (const body of [JSON.stringify(config), JSON.stringify(status), logs.join("")]) {
+          expect(body).not.toContain("raw-corrupt-value");
+          expect(body).not.toContain("raw-secret");
+          expect(body).not.toContain("fake-broken-key");
+        }
+      }
+      expect(language).toHaveBeenCalledTimes(languageCalls);
+      expect(vector).not.toHaveBeenCalled();
+      const [after] =
+        await t.sql`select api_key_encrypted from provider_configs where id=${broken.id}`;
+      expect(after!.api_key_encrypted).toBe(before!.api_key_encrypted);
+    } finally {
+      await t.sql`delete from provider_configs where id=${broken.id}`;
+    }
+  });
 });

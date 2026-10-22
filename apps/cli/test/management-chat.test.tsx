@@ -35,7 +35,7 @@ const status: ProjectStatus = {
   counts: { total: 1, active: 1, deleted: 0, retracted: 0, superseded: 0, expired: 0 },
   slots: config.slots,
 };
-function fixture() {
+function fixture(startFails = false) {
   const api = {
     createConversation: vi.fn(async () => row),
     commitConversation: vi.fn(async () => ({
@@ -56,6 +56,7 @@ function fixture() {
     getProjectStatus: vi.fn(async () => status),
     updateProvider: vi.fn(async (): Promise<ProviderConfig> => provider),
   };
+  if (startFails) api.createConversation.mockRejectedValueOnce(new Error("fixture-create-failed"));
   const done = vi.fn();
   const view = render(
     <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={done} />,
@@ -64,6 +65,22 @@ function fixture() {
 }
 afterEach(cleanup);
 describe("management commands inside Ink", () => {
+  it("reports a missing conversation locally while config remains usable", async () => {
+    const f = fixture(true);
+    await vi.waitFor(() => expect(f.view.lastFrame()).not.toContain("处理中"));
+    expect(f.api.createConversation).toHaveBeenCalledOnce();
+    f.view.stdin.write("/status");
+    f.view.stdin.write("\r");
+    await vi.waitFor(() => expect(f.view.frames.join("\n")).toContain("会话尚未创建"));
+    expect(f.api.getProjectStatus).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(f.view.lastFrame()).not.toContain("处理中"));
+    f.view.stdin.write("/config");
+    f.view.stdin.write("\r");
+    await vi.waitFor(() => expect(f.view.frames.join("\n")).toContain("全局服务端配置"));
+    expect(f.api.getConfig).toHaveBeenCalledOnce();
+    expect(f.api.createConversation).toHaveBeenCalledOnce();
+    expect(f.api.sendMessage).not.toHaveBeenCalled();
+  });
   it("reads config and status without messages, extraction or model probe", async () => {
     const f = fixture();
     await vi.waitFor(() => expect(f.view.lastFrame()).toContain(`会话 ${id}`));

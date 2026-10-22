@@ -163,7 +163,7 @@ export function ChatApp({
         parsed.kind === "command" &&
         (parsed.name === "status" || parsed.name === "config")
       ) {
-        const job = runManagementCommand(memoryApi, session.projectId, session.id ?? "", parsed);
+        const job = runManagementCommand(memoryApi, session.projectId, session.id, parsed);
         pendingCommand.current = job;
         append(parsed.name === "status" ? "状态" : "配置", await job, "gray");
       } else if (

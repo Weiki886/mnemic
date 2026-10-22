@@ -3,6 +3,24 @@ import * as management from "../src/management.js";
 import { createApiClient } from "../src/api.js";
 const id = "01920000-0000-7000-8000-000000000001";
 describe("management contracts (#32)", () => {
+  it("represents an invalid provider without exposing its malformed values or claiming a fallback", () => {
+    const invalid = { provider_id: id, provider_name: "broken", model: null, invalid: true };
+    const config = {
+      config_source: "server",
+      providers: [],
+      invalid_provider_ids: [id],
+      slots: { chat: invalid, extraction: null, embedding: null },
+    };
+    expect(management.ConfigSchema.safeParse(config).success).toBe(true);
+    for (const chat of [
+      { ...invalid, invalid: false },
+      { ...invalid, model: "not-confirmed" },
+      { ...invalid, raw: "must-not-leak" },
+    ])
+      expect(
+        management.ConfigSchema.safeParse({ ...config, slots: { ...config.slots, chat } }).success,
+      ).toBe(false);
+  });
   it("preserves previously valid model IDs and provider names exactly on reads", () => {
     const model = "  " + "x".repeat(300) + "  ",
       name = " legacy ";
