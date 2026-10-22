@@ -5,6 +5,7 @@ import { providerConfigs } from "../db/schema.js";
 import { decrypt } from "./crypto.js";
 import { realProviderFactory, type ProviderFactory } from "./factory.js";
 import type { ModelSlots, ProviderWithKey } from "./repository.js";
+import { selectSlotProvider } from "./selection.js";
 
 /** 模型三槽位（ADR-005）：调用方只按用途取模型，不感知厂商与协议 */
 export type Slot = keyof Required<ModelSlots>;
@@ -44,9 +45,12 @@ export async function resolveModel(
   const factory = options.factory ?? realProviderFactory;
   const rows = options.providerName
     ? await db.select().from(providerConfigs).where(eq(providerConfigs.name, options.providerName))
-    : await db.select().from(providerConfigs).orderBy(asc(providerConfigs.createdAt));
+    : await db
+        .select()
+        .from(providerConfigs)
+        .orderBy(asc(providerConfigs.createdAt), asc(providerConfigs.id));
 
-  const row = rows.find((r) => (r.models as ModelSlots)[slot] !== undefined);
+  const row = selectSlotProvider(rows, slot);
   if (!row) {
     const scope = options.providerName ? `Provider「${options.providerName}」` : "任何 Provider";
     throw new Error(`${scope}未配置 ${slot} 槽位模型`);

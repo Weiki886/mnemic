@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@mnemic/shared/management": fileURLToPath(
+        new URL("../../packages/shared/src/management.ts", import.meta.url),
+      ),
       "@mnemic/shared/memory": fileURLToPath(
         new URL("../../packages/shared/src/memory.ts", import.meta.url),
       ),

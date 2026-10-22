@@ -30,6 +30,15 @@ const memory: BeliefListItem = {
 };
 function fixture() {
   const api = {
+    getConfig: vi.fn(async () => {
+      throw new Error("unexpected config");
+    }),
+    getProjectStatus: vi.fn(async () => {
+      throw new Error("unexpected status");
+    }),
+    updateProvider: vi.fn(async () => {
+      throw new Error("unexpected patch");
+    }),
     recallBeliefs: vi.fn(async () => {
       throw new Error("unexpected recall");
     }),

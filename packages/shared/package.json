@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./management": {
+      "types": "./dist/management.d.ts",
+      "import": "./dist/management.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

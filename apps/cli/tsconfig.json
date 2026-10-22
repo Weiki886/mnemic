@@ -5,6 +5,7 @@
     "types": ["node"],
     "jsx": "react-jsx",
     "paths": {
+      "@mnemic/shared/management": ["../../packages/shared/src/management.ts"],
       "@mnemic/shared": ["../../packages/shared/src/index.ts"],
       "@mnemic/shared/memory": ["../../packages/shared/src/memory.ts"],
       "@mnemic/shared/doctor": ["../../packages/shared/src/doctor.ts"],

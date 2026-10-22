@@ -98,7 +98,10 @@ node apps/cli/dist/index.js sessions --project <项目UUID> --json
 手动召回（#32 拆分 3/4）可用 `/recall PostgreSQL storage`，显示 trace ID、两路得分、融合分和入选/落选原因。
 这会显式调用 embedding，**可能计费**；无可用 embedding 时沿用关键词降级，不生成聊天回答。
 查询原文会进入检索轨迹表，勿查询原始凭据。检索不写聊天 Evidence，不改变 salience。
-`/status`、`/config` 留给 4/4，Issue #32 保持打开；用法、分页、计费和失败边界见 [斜杠命令](slash-commands.md)。
+`/status` 展示当前会话/项目、精确记忆计数及生效槽位；`/config` 查看全局安全配置。
+`/config set ProviderUUID chat new-model` 修改已有 Provider 的 chat 模型，`/config set ProviderUUID name New Name` 修改名称。
+修改作用于全局后续模型解析，不调用模型、不输入密钥；embedding 端点/协议和模型切换需 REEMBED，不在轻量编辑器内修改。
+用法、分页、计费和失败边界见 [斜杠命令](slash-commands.md)。
 
 ## 恢复与切换会话（#31）
 
