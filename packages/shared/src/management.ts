@@ -1,5 +1,7 @@
 import { z } from "zod";
 const text = z.string().trim().min(1).max(200);
+// 旧 POST /providers 无模型长度上限且不 trim；只读必须忠实保留 SDK 使用的原值。
+const readText = z.string();
 export const SafeEndpointSchema = z
   .string()
   .url()
@@ -26,12 +28,16 @@ export const ProviderPatchSchema = z
   .refine((p) => Object.values(p).some((v) => v !== undefined), "修改不能为空");
 export type ProviderPatch = z.infer<typeof ProviderPatchSchema>;
 const models = z
-  .object({ chat: text.optional(), extraction: text.optional(), embedding: text.optional() })
+  .object({
+    chat: readText.optional(),
+    extraction: readText.optional(),
+    embedding: readText.optional(),
+  })
   .strict();
 export const ProviderConfigSchema = z
   .object({
     id: z.string().uuid(),
-    name: text,
+    name: readText,
     protocol: z.enum(["openai-compatible", "anthropic"]),
     base_url: SafeEndpointSchema.nullable(),
     models,
@@ -39,7 +45,7 @@ export const ProviderConfigSchema = z
   })
   .strict();
 const slot = z
-  .object({ provider_id: z.string().uuid(), provider_name: text, model: text })
+  .object({ provider_id: z.string().uuid(), provider_name: readText, model: readText })
   .strict()
   .nullable();
 export const SlotSnapshotSchema = z

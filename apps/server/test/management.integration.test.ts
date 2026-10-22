@@ -253,4 +253,32 @@ describe("status/config share server single source (#32)", () => {
         .model_snapshot,
     ).toMatchObject({ provider: "tie", model: "tie-model" });
   });
+  it("reads legacy POST model IDs without trimming or rejecting values used by the SDK", async () => {
+    const name = " old-api ",
+      model = "  " + "x".repeat(300) + "  ";
+    const created = await app.inject({
+      method: "POST",
+      url: "/providers",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name,
+        protocol: "openai-compatible",
+        base_url: "https://legacy-api.invalid",
+        api_key: "fake-legacy-key-0000",
+        models: { chat: model },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const config = ConfigSchema.parse(await api.getConfig());
+    const row = config.providers.find((p) => p.id === created.json().id)!;
+    expect(row.name).toBe(name);
+    expect(row.models.chat).toBe(model);
+    expect((await api.getProjectStatus(project, conversation)).project.id).toBe(project);
+    const resolved = await resolveModel(t.db, TEST_MASTER_KEY, "chat", {
+      providerName: name,
+      factory: { languageModel: () => new MockLanguageModelV2(), embeddingModel: vector },
+    });
+    expect(resolved.modelId).toBe(row.models.chat);
+    expect(resolved.providerName).toBe(row.name);
+  });
 });

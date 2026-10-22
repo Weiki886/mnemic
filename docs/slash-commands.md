@@ -115,6 +115,7 @@ CLI 与服务端需同步升级以支持新的 type 响应/筛选契约；旧服
   名称、路径与模型 ID 是用户配置文本，仍请不要把凭据放在这些字段里。
 - `FIELD` 仅支持 `name`、`base_url`、`protocol`、`chat`、`extraction`。`VALUE` 为后续以空白分隔的文字（空白合并，不处理 shell 引号）。
   名称上限 64，模型 ID 上限 200；协议为 openai-compatible/anthropic；端点须为不含用户信息、查询和片段的 HTTP(S) URL。
+  上述长度/去空白约束只适用于新修改；已有名称和模型 ID 原样读取，与 SDK 实际使用值一致，不因历史合法长值而拒绝整页。
   本命令只修改已有 Provider，不创建/删除 Provider，不接收 API Key，不改 `.env`。密钥录入沿用现有服务端安全配置流程，不应粘贴到聊天输入。
 - embedding 模型切换及维度变化需要 REEMBED/部署流程，本轻量编辑器不提供；若某 Provider 已承载 embedding，
   其端点/协议变更也返回 409，防止原有索引与新模型混用；仍可修改名称及 chat/extraction 槽位。

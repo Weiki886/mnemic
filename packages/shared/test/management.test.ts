@@ -3,6 +3,31 @@ import * as management from "../src/management.js";
 import { createApiClient } from "../src/api.js";
 const id = "01920000-0000-7000-8000-000000000001";
 describe("management contracts (#32)", () => {
+  it("preserves previously valid model IDs and provider names exactly on reads", () => {
+    const model = "  " + "x".repeat(300) + "  ",
+      name = " legacy ";
+    const config = management.ConfigSchema.parse({
+      config_source: "server",
+      providers: [
+        {
+          id,
+          name,
+          protocol: "openai-compatible",
+          base_url: "https://host",
+          models: { chat: model },
+          created_at: "2026-10-22T00:00:00Z",
+        },
+      ],
+      slots: {
+        chat: { provider_id: id, provider_name: name, model },
+        extraction: null,
+        embedding: null,
+      },
+    });
+    expect(config.providers[0]!.name).toBe(name);
+    expect(config.providers[0]!.models.chat).toBe(model);
+    expect(config.slots.chat?.model).toBe(model);
+  });
   it("permits only nonempty whitelisted provider changes, never inline credentials or embedding", () => {
     expect(management).toHaveProperty("ProviderPatchSchema");
     if (!management) throw new Error("missing management contracts");
