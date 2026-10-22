@@ -34,7 +34,7 @@ jobs:
         run: pnpm -r run typecheck
 
       - name: Test
-        run: pnpm -r run test && node --test scripts/deployment-output.test.mjs
+        run: pnpm -r run test && node --test scripts/*.test.mjs
 
       - name: Build
         run: pnpm -r run build
