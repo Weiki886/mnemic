@@ -112,6 +112,18 @@ describe("local slash command registry (#32, 1/3)", () => {
     expect(completeSlash("/f")).toEqual({ value: "/forget ", candidates: ["/forget"] });
   });
 
+  it("explains how to search for words starting with a dash", () => {
+    expect(parseChatInput("/memory -db")).toMatchObject({
+      kind: "error",
+      message: expect.stringContaining("/memory -- -db"),
+    });
+    expect(parseChatInput("/memory -- -db")).toMatchObject({
+      kind: "command",
+      name: "memory",
+      query: { q: "-db" },
+    });
+  });
+
   it.each([
     "/forget",
     "/forget bad",

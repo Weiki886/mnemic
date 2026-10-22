@@ -18,6 +18,19 @@ const row = {
 };
 
 describe("memory HTTP contracts (#32)", () => {
+  it("reads finite legacy scores without rejecting the whole page", () => {
+    expect(
+      shared.BeliefListSchema.safeParse([
+        row,
+        { ...row, confidence: 1.5, salience: -0.1, importance: 9.999 },
+      ]).success,
+    ).toBe(true);
+    for (const value of [NaN, Infinity, -Infinity, "1.5"]) {
+      expect(shared.BeliefListItemSchema.safeParse({ ...row, importance: value }).success).toBe(
+        false,
+      );
+    }
+  });
   it("exports one canonical list item schema with current source type and numeric scores", () => {
     expect(shared.BeliefListItemSchema).toBeDefined();
     expect(shared.BeliefListSchema.element).toBe(shared.BeliefListItemSchema);

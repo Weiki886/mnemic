@@ -13,7 +13,8 @@ export const MemoryListQuerySchema = z.object({
 });
 export type MemoryListQuery = z.infer<typeof MemoryListQuerySchema>;
 
-const score = z.number().min(0).max(1).nullable();
+// 读取兼容历史/手工数据；[0,1] 的业务约束仍由写入 schema 负责。
+const score = z.number().finite().nullable();
 export const BeliefListItemSchema = z.object({
   id: z.string().uuid(),
   subject: z.string(),

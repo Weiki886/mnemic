@@ -72,7 +72,7 @@ export function parseChatInput(text: string): ChatInput {
     } catch {
       return {
         kind: "error",
-        message: `用法：${command.usage}；limit 1–1000，offset 为非负安全整数，搜索词最多 200 字符。`,
+        message: `用法：${command.usage}；limit 1–1000，offset 为非负安全整数，搜索词最多 200 字符。搜索词以 - 开头时先加 --，例如 /memory -- -db。`,
       };
     }
   }

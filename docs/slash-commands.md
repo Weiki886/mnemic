@@ -49,6 +49,7 @@
 - 搜索与 Web 一样，只匹配 subject/attribute 的字面子串，不搜 value，`%`、`_`、`\` 不当作用户通配符。
   筛选在 SQL 中完成后再分页。返回当前值（终端预览最多 240 字符）、ID、状态、类型；详情沿用 `mnemic memory ID --project UUID`。
 - 以空白分词，不是 shell：无需为多词查询加引号，引号会被当作查询文本；重复/未知选项、非法数值在本地拒绝。
+  搜索词以 `-` 开头时，在搜索词前加 `--`，例如 `/memory -- -db`。
   参数不参与 Tab 补全。翻页请保留相同筛选条件，再调整 offset；不自动请求下一页，不承诺并发写入下的分页快照。
 
 `/forget UUID` 使用与 Web 相同的 `POST /projects/:projectId/beliefs/:id/delete`：只允许 active → deleted，
