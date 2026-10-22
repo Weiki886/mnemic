@@ -2,6 +2,7 @@ import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { MemoryListQuerySchema } from "@mnemic/shared/memory";
 import { beliefs, beliefVersions, messages, observations } from "../db/schema.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
 import { toApiNumber } from "./serialization.js";
@@ -9,12 +10,9 @@ import { toApiNumber } from "./serialization.js";
 /** 记忆中心只读 API + 基础软删除（#8）：列表/详情/版本时间线/删除/恢复。
  *  硬删除与删除传播归 #11；软删除 = status 'deleted'，检索侧已过滤非 active（#6）。 */
 
-const ListQuery = z.object({
-  status: z.enum(["active", "deleted", "retracted", "all"]).default("active"),
-  profile: z.enum(["true", "false"]).optional(),
-  q: z.string().max(200).optional(),
+const ListQuery = MemoryListQuerySchema.extend({
+  // 保留 Web/API 既有默认页大小；CLI 显式发送自己的 limit。
   limit: z.coerce.number().int().min(1).max(1000).default(200),
-  offset: z.coerce.number().int().min(0).default(0),
 });
 
 const ProjectParams = z.object({ projectId: z.string().uuid() });
@@ -38,10 +36,11 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
       return badRequest(reply, request.id, "列表查询参数非法", parsed.error);
     }
     const { projectId } = params.data;
-    const { status, profile, q, limit, offset } = parsed.data;
+    const { status, profile, q, limit, offset, type } = parsed.data;
     const conds: SQL[] = [eq(beliefs.projectId, projectId)];
     if (status !== "all") conds.push(eq(beliefs.status, status));
     if (profile) conds.push(eq(beliefs.isProfile, profile === "true"));
+    if (type) conds.push(eq(observations.type, type));
     if (q) {
       conds.push(or(contains(beliefs.subject, q), contains(beliefs.attribute, q))!);
     }
@@ -50,6 +49,7 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
         id: beliefs.id,
         subject: beliefs.subject,
         attribute: beliefs.attribute,
+        type: observations.type,
         status: beliefs.status,
         is_profile: beliefs.isProfile,
         confidence: beliefs.confidence,
@@ -60,7 +60,21 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
         current_value: beliefVersions.value,
       })
       .from(beliefs)
-      .leftJoin(beliefVersions, eq(beliefs.currentVersionId, beliefVersions.id))
+      .leftJoin(
+        beliefVersions,
+        and(
+          eq(beliefs.currentVersionId, beliefVersions.id),
+          eq(beliefVersions.beliefId, beliefs.id),
+        ),
+      )
+      // 不信任跨表引用：来源必须属于当前项目，历史版本的类型不参与列表过滤。
+      .leftJoin(
+        observations,
+        and(
+          eq(beliefVersions.sourceObservationId, observations.id),
+          eq(observations.projectId, beliefs.projectId),
+        ),
+      )
       .where(and(...conds))
       .orderBy(asc(beliefs.subject), asc(beliefs.attribute))
       .limit(limit)

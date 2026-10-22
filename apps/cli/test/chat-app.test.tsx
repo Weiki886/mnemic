@@ -28,6 +28,8 @@ const reply = {
   ],
 };
 const fixture = () => ({
+  listBeliefs: vi.fn(async () => []),
+  deleteBelief: vi.fn(async () => ({ id: belief, status: "deleted" })),
   resumeConversation: vi.fn(async () => ({ ...row, resumed_from: belief, messages: [] })),
   createConversation: vi.fn(async () => row),
   sendMessage: vi.fn(async () => reply),
@@ -55,7 +57,9 @@ describe("Ink 对话交互", () => {
       }),
     );
     const done = vi.fn();
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={done} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={done} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write("question");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("> question"));
@@ -84,7 +88,9 @@ describe("Ink 对话交互", () => {
   });
   it("Tab 补全 /help 并显示本地帮助，不发送或提交", async () => {
     const api = fixture();
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={() => {}} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write("/he");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("> /he"));
@@ -101,7 +107,9 @@ describe("Ink 对话交互", () => {
 
   it("歧义 Tab 只展示候选，不自动执行；普通文本 Tab 保持不变", async () => {
     const api = fixture();
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={() => {}} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write("/");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("> /"));
@@ -122,7 +130,9 @@ describe("Ink 对话交互", () => {
   it("补全后光标在结尾，非法参数和未知命令均不误发模型或退出", async () => {
     const api = fixture();
     const done = vi.fn();
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={done} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={done} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write("/ne");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("> /ne"));
@@ -158,7 +168,9 @@ describe("Ink 对话交互", () => {
     async (text) => {
       const api = fixture();
       const done = vi.fn();
-      const view = render(<ChatApp session={new ChatSession(api, project)} onDone={done} />);
+      const view = render(
+        <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={done} />,
+      );
       await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
       view.stdin.write(text);
       await vi.waitFor(() => expect(view.lastFrame()).toContain(`> ${text}`));
@@ -173,7 +185,9 @@ describe("Ink 对话交互", () => {
 
   it("错误命令可退格修改后直接执行", async () => {
     const api = fixture();
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={() => {}} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write("  /help x");
     await vi.waitFor(() => expect(view.lastFrame()).toContain(">   /help x"));
@@ -207,7 +221,9 @@ describe("Ink 对话交互", () => {
         ],
       })),
     };
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={() => {}} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write(`/resume ${target}`);
     await vi.waitFor(() => expect(view.lastFrame()).toContain(`/resume ${target}`));
@@ -226,7 +242,9 @@ describe("Ink 对话交互", () => {
 
   it.each(["", "   "])("空白输入 %j 回车不留下用户块，也不发请求", async (text) => {
     const api = fixture();
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={() => {}} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     if (text) {
       // Ink 裁掉帧末尾空格；先加可见字符再退格，确认空格确实进入 TextInput。
@@ -250,7 +268,9 @@ describe("Ink 对话交互", () => {
   it("Enter 发送、显示引用，新会话提交再创建，退出提交", async () => {
     const api = fixture();
     const done = vi.fn();
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={done} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={done} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write("数据库是什么？");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("数据库是什么？"));
@@ -277,7 +297,9 @@ describe("Ink 对话交互", () => {
         resolve = r;
       }),
     );
-    const view = render(<ChatApp session={new ChatSession(api, project)} onDone={() => {}} />);
+    const view = render(
+      <ChatApp session={new ChatSession(api, project)} memoryApi={api} onDone={() => {}} />,
+    );
     await vi.waitFor(() => expect(view.lastFrame()).toContain(conv));
     view.stdin.write("unknown");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("unknown"));

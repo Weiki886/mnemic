@@ -15,6 +15,7 @@ export async function startChat(
   const instance = render(
     <ChatApp
       session={session}
+      memoryApi={api}
       onDone={(result) => {
         code = result;
       }}

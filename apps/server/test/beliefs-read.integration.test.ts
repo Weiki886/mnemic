@@ -26,6 +26,7 @@ describe("记忆只读 API 与软删除（#8）", () => {
     status?: string;
     isProfile?: boolean;
     project?: string;
+    type?: "fact" | "preference" | "decision" | "progress";
   }) => {
     const id = uuidv7();
     const vid = uuidv7();
@@ -38,7 +39,7 @@ describe("记忆只读 API 与软删除（#8）", () => {
     const oid = uuidv7();
     await t.sql`insert into observations
       (id, project_id, type, subject, attribute, value, assertion_intent, source_type, authority, evidence_id, valid_time)
-      values (${oid}, ${pid}, 'fact', ${opts.subject}, ${opts.attribute}, ${JSON.stringify(opts.value)}, 'ASSERT', 'USER_EXPLICIT', 60, ${mid}, '2026-09-01')`;
+      values (${oid}, ${pid}, ${opts.type ?? "fact"}, ${opts.subject}, ${opts.attribute}, ${JSON.stringify(opts.value)}, 'ASSERT', 'USER_EXPLICIT', 60, ${mid}, '2026-09-01')`;
     await t.sql`insert into beliefs (id, project_id, subject, attribute, confidence, salience, importance, is_profile, status)
       values (${id}, ${pid}, ${opts.subject}, ${opts.attribute}, 0.8, 0.5, 0.8, ${opts.isProfile ?? false}, ${opts.status ?? "active"})`;
     await t.sql`insert into belief_versions (id, belief_id, value, valid_from, recorded_from, source_observation_id, confidence)
@@ -157,6 +158,104 @@ describe("记忆只读 API 与软删除（#8）", () => {
       url: `/projects/${otherProjectId}/beliefs`,
     });
     expect((other.json() as { subject: string }[]).map((r) => r.subject)).toEqual(["other"]);
+  });
+
+  it("列表类型按当前来源过滤，先过滤再分页，保留默认列表与项目隔离", async () => {
+    const project = uuidv7();
+    await t.sql`insert into projects (id, name) values (${project}, 'memory-types')`;
+    const fact = await seedBelief({
+      project,
+      subject: "a-db",
+      attribute: "engine",
+      value: "pg",
+      type: "fact",
+    });
+    const preference = await seedBelief({
+      project,
+      subject: "b-db",
+      attribute: "editor",
+      value: "vim",
+      type: "preference",
+    });
+    const decision = await seedBelief({
+      project,
+      subject: "c-db",
+      attribute: "engine",
+      value: "sqlite",
+      type: "decision",
+    });
+    const progress = await seedBelief({
+      project,
+      subject: "d-db",
+      attribute: "phase",
+      value: "done",
+      type: "progress",
+      status: "deleted",
+    });
+    // 历史 decision 不应让当前 fact 也匹配 decision。
+    const [source] =
+      await t.sql`select source_observation_id from belief_versions where id = ${decision.vid}`;
+    await t.sql`insert into belief_versions (id, belief_id, value, valid_from, recorded_from, recorded_to, source_observation_id) values (${uuidv7()}, ${fact.id}, '"old"', '2026-01-01', '2026-01-01', '2026-02-01', ${source!.source_observation_id})`;
+    const get = async (query = "") =>
+      app.inject({ method: "GET", url: `/projects/${project}/beliefs${query}` });
+    const all = await get();
+    expect(all.json().map((r: { type: string }) => r.type)).toEqual([
+      "fact",
+      "preference",
+      "decision",
+    ]);
+    for (const [type, id] of [
+      ["fact", fact.id],
+      ["preference", preference.id],
+      ["decision", decision.id],
+    ]) {
+      const filtered = await get(`?type=${type}&q=db&limit=1`);
+      expect(filtered.statusCode).toBe(200);
+      expect(filtered.json().map((r: { id: string }) => r.id)).toEqual([id]);
+      expect((await get(`?type=${type}&offset=1`)).json()).toEqual([]);
+    }
+    expect((await get("?type=progress")).json()).toEqual([]);
+    expect(
+      (await get("?type=progress&status=deleted")).json().map((r: { id: string }) => r.id),
+    ).toEqual([progress.id]);
+    const invalid = await get("?type=unknown");
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().errors).toContainEqual(expect.objectContaining({ path: "type" }));
+  });
+
+  it("列表不解析跨项目来源或其他 belief 的 current_version_id", async () => {
+    const project = uuidv7();
+    await t.sql`insert into projects (id, name) values (${project}, 'memory-type-isolation')`;
+    const target = await seedBelief({
+      project,
+      subject: "source-broken",
+      attribute: "a",
+      value: "own",
+    });
+    const foreign = await seedBelief({
+      project: otherProjectId,
+      subject: "foreign",
+      attribute: "private",
+      value: "secret-value",
+      type: "decision",
+    });
+    const [source] =
+      await t.sql`select source_observation_id from belief_versions where id = ${foreign.vid}`;
+    await t.sql`update belief_versions set source_observation_id = null where id = ${target.vid}`;
+    const noSource = await app.inject({ method: "GET", url: `/projects/${project}/beliefs` });
+    expect(noSource.json()[0]).toMatchObject({ type: null, current_value: "own" });
+    await t.sql`update belief_versions set source_observation_id = ${source!.source_observation_id} where id = ${target.vid}`;
+    const get = async () => app.inject({ method: "GET", url: `/projects/${project}/beliefs` });
+    expect((await get()).json()[0]).toMatchObject({ type: null, current_value: "own" });
+    const typed = await app.inject({
+      method: "GET",
+      url: `/projects/${project}/beliefs?type=decision`,
+    });
+    expect(typed.json()).toEqual([]);
+    await t.sql`update beliefs set current_version_id = ${foreign.vid} where id = ${target.id}`;
+    const res = await get();
+    expect(res.json()[0]).toMatchObject({ type: null, current_value: null });
+    expect(res.body).not.toContain("secret-value");
   });
 
   it("详情：当前值 + 版本时间线（含来源会话跳转锚点）", async () => {
