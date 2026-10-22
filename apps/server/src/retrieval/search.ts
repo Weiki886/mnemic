@@ -34,6 +34,8 @@ export interface RetrieveResult {
 }
 
 export interface RetrieveOptions extends ResolveOptions {
+  /** 显式手动召回的 embedding 时间预算；不改变普通调用方的默认重试。 */
+  signal?: AbortSignal;
   topK?: number;
   /** 拒答阈值（默认 ABSTAIN_THRESHOLD；#12/#22 实验配置可调） */
   threshold?: number;
@@ -61,7 +63,15 @@ export async function retrieve(
   let queryVec: number[] | null = null;
   try {
     const { model } = await resolveModel(db, masterKey, "embedding", options);
-    queryVec = (await embed({ model, value: query })).embedding;
+    queryVec = (
+      await embed({
+        model,
+        value: query,
+        ...(options.signal ? { abortSignal: options.signal, maxRetries: 0 } : {}),
+      })
+    ).embedding;
+    // 零向量无余弦方向；错误数值也不能进入 pgvector 排序/trace。
+    if (!queryVec.every(Number.isFinite) || queryVec.every((n) => n === 0)) queryVec = null;
   } catch {
     queryVec = null;
   }
@@ -71,31 +81,42 @@ export async function retrieve(
 
   // 2. 两路召回 + 加权融合（仅当前版本 + active belief）
   const rows = await db.execute(sql`
-    with vec as (
+    with eligible as (
+      select b.id as belief_id, bv.id as version_id, b.subject, b.attribute, bv.value
+      from beliefs b
+      join belief_versions bv on bv.id = b.current_version_id and bv.belief_id = b.id
+      where b.project_id = ${projectId} and b.status = 'active'
+    ), raw_vec as (
       select me.belief_version_id as version_id,
              1 - (me.embedding <=> ${vecLiteral}::vector) as vscore
       from memory_embeddings me
+      join eligible e on e.version_id = me.belief_version_id
       where ${queryVec !== null}
+    ), vec as (
+      -- 重试/REEMBED 可产生多行：每版本只取最佳有限分。
+      -- PG 的 NaN 大于所有正常数，必须在 max 之前剔除，不能聚合后才过滤。
+      select version_id, max(vscore) filter (
+        where vscore > '-Infinity'::float8 and vscore < 'Infinity'::float8
+      ) as vscore
+      from raw_vec group by version_id
     ), kw as (
-      select bv.id as version_id,
-             ts_rank(to_tsvector('simple', bv.value::text), plainto_tsquery('simple', ${query})) as kscore
-      from belief_versions bv
-      where to_tsvector('simple', bv.value::text) @@ plainto_tsquery('simple', ${query})
+      select e.version_id,
+             ts_rank(to_tsvector('simple', e.value::text), plainto_tsquery('simple', ${query})) as kscore
+      from eligible e
+      where to_tsvector('simple', e.value::text) @@ plainto_tsquery('simple', ${query})
     ), kwn as (
       -- ts_rank 原始值（~0.01-0.1）与 cosine（0~1）量级悬殊，按本查询内最大值归一
       -- 使两路可加权融合；本查询零命中时 CTE 为空集，不受影响
       select version_id, kscore / nullif(max(kscore) over (), 0) as kscore from kw
     )
-    select b.id as belief_id, bv.id as version_id, b.subject, b.attribute, bv.value,
+    select e.belief_id, e.version_id, e.subject, e.attribute, e.value,
            vec.vscore, kwn.kscore,
            (${VECTOR_WEIGHT} * coalesce(vec.vscore, 0) + ${KEYWORD_WEIGHT} * coalesce(kwn.kscore, 0)) as fused
-    from beliefs b
-    join belief_versions bv on bv.id = b.current_version_id
-    left join vec on vec.version_id = bv.id
-    left join kwn on kwn.version_id = bv.id
-    where b.project_id = ${projectId} and b.status = 'active'
-      and (vec.vscore is not null or kwn.kscore is not null)
-    order by fused desc
+    from eligible e
+    left join vec on vec.version_id = e.version_id
+    left join kwn on kwn.version_id = e.version_id
+    where vec.vscore is not null or kwn.kscore is not null
+    order by fused desc, e.version_id
   `);
 
   const all = rows.map((r): RetrievalCandidate => {

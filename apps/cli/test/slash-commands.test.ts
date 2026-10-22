@@ -12,6 +12,7 @@ describe("local slash command registry (#32, 1/3)", () => {
       "exit",
       "memory",
       "forget",
+      "recall",
     ]);
     for (const command of SLASH_COMMANDS) {
       expect(slashHelp()).toContain(command.usage);
@@ -19,11 +20,11 @@ describe("local slash command registry (#32, 1/3)", () => {
       expect(completeSlash(`/${command.name}`).candidates).toEqual([`/${command.name}`]);
       expect(
         parseChatInput(
-          `/${command.name}${["resume", "forget"].includes(command.name) ? ` ${id}` : ""}`,
+          `/${command.name}${["resume", "forget"].includes(command.name) ? ` ${id}` : command.name === "recall" ? " db" : ""}`,
         ),
       ).toMatchObject({ kind: "command", name: command.name });
     }
-    expect(slashHelp()).not.toContain("/recall");
+    expect(slashHelp()).toContain("embedding");
   });
 
   it.each(["", "   ", "\n\t"])("ignores empty input %j", (text) => {
@@ -65,10 +66,10 @@ describe("local slash command registry (#32, 1/3)", () => {
 
   it("completes only unambiguous command names, never arguments or normal text", () => {
     expect(completeSlash("/he")).toEqual({ value: "/help ", candidates: ["/help"] });
-    expect(completeSlash("/re")).toEqual({ value: "/resume ", candidates: ["/resume"] });
+    expect(completeSlash("/re")).toEqual({ value: "/re", candidates: ["/resume", "/recall"] });
     expect(completeSlash("/")).toEqual({
       value: "/",
-      candidates: ["/help", "/new", "/resume", "/exit", "/memory", "/forget"],
+      candidates: ["/help", "/new", "/resume", "/exit", "/memory", "/forget", "/recall"],
     });
     for (const text of ["plain", "/unknown", "/resume ", `/resume ${id}`, "/he extra", "/he\n"]) {
       expect(completeSlash(text)).toEqual({ value: text, candidates: [] });
@@ -82,7 +83,7 @@ describe("local slash command registry (#32, 1/3)", () => {
     });
     expect(completeSlash(`${prefix}/`)).toEqual({
       value: `${prefix}/`,
-      candidates: ["/help", "/new", "/resume", "/exit", "/memory", "/forget"],
+      candidates: ["/help", "/new", "/resume", "/exit", "/memory", "/forget", "/recall"],
     });
     for (const suffix of ["/unknown", "/resume ", "/he extra", "normal text"]) {
       const text = prefix + suffix;
@@ -122,6 +123,28 @@ describe("local slash command registry (#32, 1/3)", () => {
       name: "memory",
       query: { q: "-db" },
     });
+  });
+
+  it("parses recall query without shell parsing, with a bounded explicit billing action", () => {
+    expect(parseChatInput(" /recall  PostgreSQL   storage ")).toEqual({
+      kind: "command",
+      name: "recall",
+      query: "PostgreSQL   storage",
+    });
+    expect(parseChatInput("/recall --help")).toMatchObject({
+      kind: "command",
+      name: "recall",
+      query: "--help",
+    });
+    for (const text of [
+      "/recall",
+      "/recall   ",
+      `/recall ${"x".repeat(1001)}`,
+      "/status",
+      "/config",
+    ])
+      expect(parseChatInput(text).kind).toBe("error");
+    expect(completeSlash("/rec")).toEqual({ value: "/recall ", candidates: ["/recall"] });
   });
 
   it.each([

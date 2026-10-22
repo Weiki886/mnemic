@@ -4,7 +4,12 @@ import type { ChatReply } from "@mnemic/shared";
 import type { ChatSession } from "./chat-session.js";
 import { chatFailure, formatReply, renderAnswerChunks, terminalText } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
-import { runMemoryCommand, type MemoryApi } from "./memory-commands.js";
+import {
+  runMemoryCommand,
+  runRecallCommand,
+  type MemoryApi,
+  type RecallApi,
+} from "./memory-commands.js";
 import { editLine, type LineState } from "./line-input.js";
 
 interface Block {
@@ -20,7 +25,7 @@ export function ChatApp({
   onDone,
 }: {
   session: ChatSession;
-  memoryApi: MemoryApi;
+  memoryApi: MemoryApi & RecallApi;
   onDone: (code: number) => void;
 }) {
   const { exit } = useApp();
@@ -44,7 +49,7 @@ export function ChatApp({
   const closingRef = useRef(false);
   const mounted = useRef(true);
   const sequence = useRef(0);
-  const pendingMemory = useRef<Promise<string> | undefined>(undefined);
+  const pendingCommand = useRef<Promise<string> | undefined>(undefined);
   const append = (label: string, text: string, color: Block["color"]) => {
     if (mounted.current) {
       const block = { id: sequence.current++, label, text: terminalText(text, true), color };
@@ -90,8 +95,8 @@ export function ChatApp({
     setClosing(true);
     let code = 0;
     try {
-      // /forget 也可能已有写副作用；退出要先等待确认，不丢弃或重发请求。
-      await pendingMemory.current?.catch(() => {});
+      // /forget、/recall 可能已写入状态/trace 或计费；等待确认，不重发。
+      await pendingCommand.current?.catch(() => {});
       await session.close();
       append("会话已提交", "记忆提取在后台完成，提交不等于已完成索引。", "gray");
     } catch (error) {
@@ -155,11 +160,14 @@ export function ChatApp({
         appendHistory();
       } else if (
         parsed.kind === "command" &&
-        (parsed.name === "memory" || parsed.name === "forget")
+        (parsed.name === "memory" || parsed.name === "forget" || parsed.name === "recall")
       ) {
-        const job = runMemoryCommand(memoryApi, session.projectId, parsed);
-        pendingMemory.current = job;
-        append("记忆", await job, "gray");
+        const job =
+          parsed.name === "recall"
+            ? runRecallCommand(memoryApi, session.projectId, parsed.query)
+            : runMemoryCommand(memoryApi, session.projectId, parsed);
+        pendingCommand.current = job;
+        append(parsed.name === "recall" ? "手动召回" : "记忆", await job, "gray");
       } else if (parsed.kind === "message") {
         append("你", text, "cyan");
         const reply = await session.send(text);
@@ -174,7 +182,7 @@ export function ChatApp({
     } catch (error) {
       append("错误", chatFailure(error), "red");
     } finally {
-      pendingMemory.current = undefined;
+      pendingCommand.current = undefined;
       busyRef.current = false;
       if (mounted.current) {
         setBusy(false);
