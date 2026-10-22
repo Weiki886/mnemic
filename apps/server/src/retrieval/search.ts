@@ -70,6 +70,8 @@ export async function retrieve(
         ...(options.signal ? { abortSignal: options.signal, maxRetries: 0 } : {}),
       })
     ).embedding;
+    // 零向量无余弦方向；错误数值也不能进入 pgvector 排序/trace。
+    if (!queryVec.every(Number.isFinite) || queryVec.every((n) => n === 0)) queryVec = null;
   } catch {
     queryVec = null;
   }
@@ -84,12 +86,19 @@ export async function retrieve(
       from beliefs b
       join belief_versions bv on bv.id = b.current_version_id and bv.belief_id = b.id
       where b.project_id = ${projectId} and b.status = 'active'
-    ), vec as (
+    ), raw_vec as (
       select me.belief_version_id as version_id,
              1 - (me.embedding <=> ${vecLiteral}::vector) as vscore
       from memory_embeddings me
       join eligible e on e.version_id = me.belief_version_id
       where ${queryVec !== null}
+    ), vec as (
+      -- 重试/REEMBED 可产生多行：每版本只取最佳有限分。
+      -- PG 的 NaN 大于所有正常数，必须在 max 之前剔除，不能聚合后才过滤。
+      select version_id, max(vscore) filter (
+        where vscore > '-Infinity'::float8 and vscore < 'Infinity'::float8
+      ) as vscore
+      from raw_vec group by version_id
     ), kw as (
       select e.version_id,
              ts_rank(to_tsvector('simple', e.value::text), plainto_tsquery('simple', ${query})) as kscore

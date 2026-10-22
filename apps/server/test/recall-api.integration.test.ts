@@ -8,7 +8,8 @@ import { indexBeliefVersion } from "../src/retrieval/embed.js";
 import { createProvider } from "../src/providers/repository.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { TEST_MASTER_KEY } from "./test-keys.js";
-import { bagEmbeddingFactory } from "./fixtures/bag-embedding.js";
+import { bagEmbeddingFactory, bagOfWordsVector } from "./fixtures/bag-embedding.js";
+import { MockEmbeddingModelV2 } from "ai/test";
 import { runRecallCommand } from "../../cli/src/memory-commands.js";
 import { parseChatInput } from "../../cli/src/slash-commands.js";
 
@@ -251,5 +252,59 @@ describe("explicit project recall HTTP (#32), real PG and offline embedding", ()
     const after = await retrieve(t.db, TEST_MASTER_KEY, p, q, opts);
     expect(after.candidates).toEqual(before.candidates);
     expect(after.candidates[0]!.keywordScore).toBe(1);
+  });
+
+  it("deduplicates repeated embeddings for the same version using the best finite score", async () => {
+    const p = uuidv7();
+    await t.sql`insert into projects(id,name) values (${p},'duplicates')`;
+    const b = await seed(p, "PostgreSQL", true);
+    await indexBeliefVersion(
+      t.db,
+      TEST_MASTER_KEY,
+      { beliefVersionId: b.version, subject: b.belief, attribute: "db", value: "PostgreSQL" },
+      { factory },
+    );
+    // 索引文本含 UUID subject，原向量分小于 1；新增精确查询向量保护 max 而非 min/avg。
+    await t.sql`insert into memory_embeddings(id,belief_version_id,embedding,model) values (${uuidv7()},${b.version},${JSON.stringify(bagOfWordsVector("PostgreSQL"))}::vector,'offline')`;
+    const r = RecallResultSchema.parse(await api.recallBeliefs(p, "PostgreSQL"));
+    expect(r.candidates).toHaveLength(1);
+    expect(r.trace.candidate_count).toBe(1);
+    expect(r.trace.candidates[0]!.beliefVersionId).toBe(b.version);
+    expect(Number.isFinite(r.trace.candidates[0]!.fusedScore)).toBe(true);
+    expect(r.trace.candidates[0]!.vectorScore).toBeCloseTo(1, 5);
+  });
+
+  it.each(["!!!???", "PostgreSQL"])(
+    "zero query vector degrades to keyword for %s without NaN",
+    async (query) => {
+      embedding.mockReturnValueOnce(
+        new MockEmbeddingModelV2({
+          doEmbed: async ({ values }) => ({ embeddings: values.map(() => Array(1024).fill(0)) }),
+        }),
+      );
+      const r = RecallResultSchema.parse(await api.recallBeliefs(project, query));
+      expect(r.abstained).toBe(query === "!!!???");
+      expect(
+        r.trace.candidates.every((c) => c.vectorScore === null && Number.isFinite(c.fusedScore)),
+      ).toBe(true);
+    },
+  );
+
+  it("stored zero embeddings cannot mask a valid score or poison keyword-only candidates", async () => {
+    const p = uuidv7();
+    await t.sql`insert into projects(id,name) values (${p},'stored-zero')`;
+    const valid = await seed(p, "PostgreSQL", true);
+    const zeroOnly = await seed(p, "PostgreSQL");
+    for (const version of [valid.version, zeroOnly.version])
+      await t.sql`insert into memory_embeddings(id,belief_version_id,embedding,model) values (${uuidv7()},${version},${JSON.stringify(Array(1024).fill(0))}::vector,'offline')`;
+    const r = RecallResultSchema.parse(await api.recallBeliefs(p, "PostgreSQL"));
+    expect(r.candidates).toHaveLength(2);
+    const good = r.candidates.find((c) => c.beliefVersionId === valid.version)!;
+    const kw = r.candidates.find((c) => c.beliefVersionId === zeroOnly.version)!;
+    expect(Number.isFinite(good.vectorScore)).toBe(true);
+    expect(kw.vectorScore).toBeNull();
+    expect(kw.keywordScore).toBe(1);
+    const [trace] = await t.sql`select candidates from retrieval_traces where id=${r.trace.id}`;
+    expect(trace!.candidates).toEqual(r.trace.candidates);
   });
 });
