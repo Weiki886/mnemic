@@ -1,22 +1,25 @@
-# CLI 斜杠命令（#32，拆分 1/4–3/4）
+# CLI 斜杠命令（#32，拆分 1/4–4/4）
 
 前两轮交付本地命令入口及 `/memory`、`/forget`。
-原计划三轮，现为保持检索与配置管理的审查边界，调整为四轮：3/4 只接入 `/recall`，4/4 再做 `/status`、`/config`。
+原计划三轮，现为保持检索与配置管理的审查边界，调整为四轮：3/4 接入 `/recall`，4/4 接入 `/status`、`/config`。
 均复用服务端单源配置及项目范围 API；当前无新数据库字段或迁移。
 
 ## 使用
 
 在 `mnemic chat --project UUID` 或 `mnemic resume ID --project UUID` 中输入：
 
-| 命令               | 行为                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| `/help`            | 显示已实现命令、用法和计费提示，不新增 HTTP 或模型请求     |
-| `/new`             | 提交当前会话后新建，不继承历史                             |
-| `/resume UUID`     | 按项目恢复为新续聊会话，引用完整历史，原会话只读           |
-| `/exit`            | 等待当前请求后提交并退出；Ctrl+C 行为不变                  |
-| `/memory`          | 查看当前项目 active 记忆，支持搜索、类型、状态和分页筛选   |
-| `/forget UUID`     | 软删除当前项目的 active 记忆，可在 Web 恢复，不调用模型    |
-| `/recall 查询内容` | 手动混合检索，显示入选内容、分数和轨迹，embedding 可能计费 |
+| 命令                           | 行为                                                        |
+| ------------------------------ | ----------------------------------------------------------- |
+| `/help`                        | 显示已实现命令、用法和计费提示，不新增 HTTP 或模型请求      |
+| `/new`                         | 提交当前会话后新建，不继承历史                              |
+| `/resume UUID`                 | 按项目恢复为新续聊会话，引用完整历史，原会话只读            |
+| `/exit`                        | 等待当前请求后提交并退出；Ctrl+C 行为不变                   |
+| `/memory`                      | 查看当前项目 active 记忆，支持搜索、类型、状态和分页筛选    |
+| `/forget UUID`                 | 软删除当前项目的 active 记忆，可在 Web 恢复，不调用模型     |
+| `/recall 查询内容`             | 手动混合检索，显示入选内容、分数和轨迹，embedding 可能计费  |
+| `/status`                      | 当前项目/会话、精确记忆计数及生效模型槽位，不探测模型       |
+| `/config`                      | 查看全局服务端 Provider 配置及生效槽位，不返回密钥          |
+| `/config set UUID FIELD VALUE` | 修改已有 Provider 元数据或 chat/extraction 槽位，作用于全局 |
 
 打开对话仍按原有流程创建或恢复服务端会话；上表“本地”不意味着整个 CLI 离线运行。
 提交或归档可能触发尚未处理消息的后台提取并计费；后续普通消息会调用聊天模型。
@@ -89,11 +92,49 @@ CLI 与服务端需同步升级以支持新的 type 响应/筛选契约；旧服
 向量未命中时显示“未命中”，不伪装成 0 分；API 不返回 Provider Key、端点或原始 SDK 异常。
 仅提供手动召回诊断，不生成回答。现阶段仍使用 pgvector 扫描与 simple 关键词分词，不承诺大库 ANN 性能或中文分词效果。
 
-## 后续范围
+## 状态与配置管理（4/4）
 
-Issue #32 保持打开；以下不是当前已支持的命令，不会出现在补全或帮助中：
+```text
+/status
+/config
+/config set ProviderUUID name My Provider
+/config set ProviderUUID chat new-chat-model
+/config set ProviderUUID extraction new-extraction-model
+/config set ProviderUUID base_url https://api.example.com/v1
+/config set ProviderUUID protocol openai-compatible
+```
 
-- 拆分 4/4：`/status`、`/config`（服务端配置单源）。
+- `/status` 不接受参数，从服务端读取当前项目与当前会话；必须同时匹配二者，否则 404。
+  当前会话尚未创建（如初始创建失败）时，本地提示先 `/new`，不发送空 ID；此时 `/config` 仍可使用。
+  `total` 包括 active/deleted/retracted/superseded/expired，各状态计数由数据库精确聚合，非当前列表页的估算。
+  状态和配置查询是调用时快照，不承诺多次查询之间的事务一致性。
+- `/config` 是**全局配置，不是项目配置**：展示已有 Provider ID、名称、协议、安全端点、已配置的槽位与当前生效槽位。
+  同一用途取最早创建且配置了该槽位的 Provider，创建时间相同则按 ID 升序；真实模型解析与消解记录使用相同规则。
+  修改非生效 Provider 不会使它自动获得优先级，须用 `/config` 核对。
+- 查询只选择非密钥字段，不解密、不构造模型 SDK、不调用或探测模型。未配置槽位显示“未配置”，不伪装为已连通。
+  手工 SQL/旧数据中的异常 Provider 按行隔离，返回 `invalid_provider_ids`，不显示损坏字段，不拖垮其余配置或记忆计数。
+  若异常行影响当前优先级槽位，该槽位标记 `invalid: true`、`model: null`，显示“配置异常”，不悄悄显示下一家的模型。
+  新 HTTP 视图不返回明文、密文或掩码 Key；旧端点里的 URL 凭据、查询和片段不会出现在新视图中。
+  名称、路径与模型 ID 是用户配置文本，仍请不要把凭据放在这些字段里。
+- `FIELD` 仅支持 `name`、`base_url`、`protocol`、`chat`、`extraction`。`VALUE` 为后续以空白分隔的文字（空白合并，不处理 shell 引号）。
+  名称上限 64，模型 ID 上限 200；协议为 openai-compatible/anthropic；端点须为不含用户信息、查询和片段的 HTTP(S) URL。
+  上述长度/去空白约束只适用于新修改；已有名称和模型 ID 原样读取，与 SDK 实际使用值一致，不因历史合法长值而拒绝整页。
+  本命令只修改已有 Provider，不创建/删除 Provider，不接收 API Key，不改 `.env`。密钥录入沿用现有服务端安全配置流程，不应粘贴到聊天输入。
+- embedding 模型切换及维度变化需要 REEMBED/部署流程，本轻量编辑器不提供；若某 Provider 已承载 embedding，
+  其端点/协议变更也返回 409，防止原有索引与新模型混用；仍可修改名称及 chat/extraction 槽位。
+- 配置修改复用 `PATCH /providers/:id`，要求 Bearer 与 JSON；空修改、未知字段或非法值为 400，不存在为 404，名称重复或 REEMBED 限制为 409。
+  槽位更新按 JSON 字段合并且行锁串行化，保留其他槽位与原加密 Key。不记录配置正文或原始异常。
+- 只有收到匹配 ID/修改字段的响应才确认成功；失败/超时时先用 `/config` 核对，不自动重试。
+  修改不会探测模型或产生 Evidence/版本；后续模型解析使用新配置，已经解析的调用不切换。Ctrl+C 仍等待进行中的配置请求，再提交会话退出。
+
+HTTP：`GET /v1/config`；`GET /projects/:projectId/status?conversation_id=UUID`；`PATCH /providers/:id`。
+均需要现有全局 Bearer，响应 no-store。当前鉴权是个人服务单 Token，不宣称多用户租户授权。
+
+## 范围边界
+
+至此 #32 的六类命令均可在对话中使用并补全，但 `/config` 是有限的已有配置编辑器。
+本轮仅 `Refs #32`，不自动关闭 Issue；剩余 Provider 配置管理范围待 owner 明确后继续跟踪，不以命令存在代表全部配置管理验收完成。
+用户自定义命令、任意工具执行、密钥创建/轮换 UI 和 REEMBED 管理不属于此轻量入口。
 
 没有通用 shell 解析器、用户自定义命令、工具执行、网络加载命令、自动重试或新依赖。
 后续命令继续通过同一注册表接入，不把“有命令名字”当作已交付功能。

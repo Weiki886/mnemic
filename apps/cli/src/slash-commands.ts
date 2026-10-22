@@ -5,6 +5,7 @@ import {
   type MemoryListQuery,
 } from "@mnemic/shared/memory";
 import { parseArgs } from "node:util";
+import { ProviderPatchSchema, type ProviderPatch } from "@mnemic/shared/management";
 
 /** 只注册已经实现的命令；解析、帮助与补全共用，不从网络或历史加载命令。 */
 export const SLASH_COMMANDS = [
@@ -33,18 +34,37 @@ export const SLASH_COMMANDS = [
     description:
       "手动召回并显示 trace/分数；embedding 可能计费，失败时可降级为关键词，不生成聊天回答",
   },
+  {
+    name: "status",
+    usage: "/status",
+    description: "当前会话、项目精确记忆计数及生效模型配置；不探测模型",
+  },
+  {
+    name: "config",
+    usage: "/config [set PROVIDER_UUID FIELD VALUE]",
+    description:
+      "全局配置查看/修改已有 Provider；FIELD=name/base_url/protocol/chat/extraction，不接收密钥，embedding 需 REEMBED",
+  },
 ] as const;
 
 type CommandName = (typeof SLASH_COMMANDS)[number]["name"];
 export type MemoryCommand =
   | { kind: "command"; name: "memory"; query: MemoryListQuery }
   | { kind: "command"; name: "forget"; argument: string };
+export type ManagementCommand =
+  | { kind: "command"; name: "status" }
+  | { kind: "command"; name: "config"; action: "show" }
+  | { kind: "command"; name: "config"; action: "set"; id: string; patch: ProviderPatch };
 type ChatInput =
   | { kind: "empty" }
   | { kind: "message"; text: string }
-  | { kind: "command"; name: Exclude<CommandName, "resume" | "memory" | "forget" | "recall"> }
+  | {
+      kind: "command";
+      name: Exclude<CommandName, "resume" | "memory" | "forget" | "recall" | "status" | "config">;
+    }
   | { kind: "command"; name: "resume"; argument: string }
   | MemoryCommand
+  | ManagementCommand
   | { kind: "command"; name: "recall"; query: string }
   | { kind: "error"; message: string };
 
@@ -55,6 +75,34 @@ export function parseChatInput(text: string): ChatInput {
   const [token, ...args] = trimmed.split(/\s+/);
   const command = SLASH_COMMANDS.find((entry) => `/${entry.name}` === token);
   if (!command) return { kind: "error", message: "未知斜杠命令；输入 /help 查看已支持命令。" };
+  if (command.name === "status")
+    return args.length
+      ? { kind: "error", message: "用法：/status" }
+      : { kind: "command", name: "status" };
+  if (command.name === "config") {
+    if (!args.length) return { kind: "command", name: "config", action: "show" };
+    const [action, rawId, field, ...values] = args;
+    const id = ChatConversationSchema.shape.id.safeParse(rawId);
+    const value = values.join(" ");
+    const patch = ProviderPatchSchema.safeParse(
+      field === "chat" || field === "extraction"
+        ? { models: { [field]: value } }
+        : { [field ?? ""]: value },
+    );
+    if (action !== "set" || !id.success || !patch.success || !values.length)
+      return {
+        kind: "error",
+        message:
+          "用法：/config set PROVIDER_UUID FIELD VALUE；全局修改 name/base_url/protocol/chat/extraction，不接受密钥或 embedding 切换。",
+      };
+    return {
+      kind: "command",
+      name: "config",
+      action: "set",
+      id: id.data.toLowerCase(),
+      patch: patch.data,
+    };
+  }
   if (command.name === "recall") {
     const parsed = RecallRequestSchema.safeParse({ query: trimmed.slice(token!.length) });
     return parsed.success

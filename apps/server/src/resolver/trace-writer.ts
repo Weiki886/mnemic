@@ -3,6 +3,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
 import { providerConfigs, resolutionTraces } from "../db/schema.js";
 import type { ModelSlots } from "../providers/repository.js";
+import { selectSlotProvider } from "../providers/selection.js";
 import type { ResolutionTraceRecord, ResolutionTraceWriter } from "./types.js";
 
 /**
@@ -36,8 +37,8 @@ async function loadModelSnapshot(db: PostgresJsDatabase): Promise<Record<string,
   const rows = await db
     .select({ name: providerConfigs.name, models: providerConfigs.models })
     .from(providerConfigs)
-    .orderBy(asc(providerConfigs.createdAt));
-  const row = rows.find((r) => (r.models as ModelSlots).extraction !== undefined);
+    .orderBy(asc(providerConfigs.createdAt), asc(providerConfigs.id));
+  const row = selectSlotProvider(rows, "extraction");
   if (!row) return null;
   return { slot: "extraction", provider: row.name, model: (row.models as ModelSlots).extraction };
 }

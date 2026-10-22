@@ -13,6 +13,8 @@ describe("local slash command registry (#32, 1/3)", () => {
       "memory",
       "forget",
       "recall",
+      "status",
+      "config",
     ]);
     for (const command of SLASH_COMMANDS) {
       expect(slashHelp()).toContain(command.usage);
@@ -69,7 +71,17 @@ describe("local slash command registry (#32, 1/3)", () => {
     expect(completeSlash("/re")).toEqual({ value: "/re", candidates: ["/resume", "/recall"] });
     expect(completeSlash("/")).toEqual({
       value: "/",
-      candidates: ["/help", "/new", "/resume", "/exit", "/memory", "/forget", "/recall"],
+      candidates: [
+        "/help",
+        "/new",
+        "/resume",
+        "/exit",
+        "/memory",
+        "/forget",
+        "/recall",
+        "/status",
+        "/config",
+      ],
     });
     for (const text of ["plain", "/unknown", "/resume ", `/resume ${id}`, "/he extra", "/he\n"]) {
       expect(completeSlash(text)).toEqual({ value: text, candidates: [] });
@@ -83,7 +95,17 @@ describe("local slash command registry (#32, 1/3)", () => {
     });
     expect(completeSlash(`${prefix}/`)).toEqual({
       value: `${prefix}/`,
-      candidates: ["/help", "/new", "/resume", "/exit", "/memory", "/forget", "/recall"],
+      candidates: [
+        "/help",
+        "/new",
+        "/resume",
+        "/exit",
+        "/memory",
+        "/forget",
+        "/recall",
+        "/status",
+        "/config",
+      ],
     });
     for (const suffix of ["/unknown", "/resume ", "/he extra", "normal text"]) {
       const text = prefix + suffix;
@@ -136,15 +158,34 @@ describe("local slash command registry (#32, 1/3)", () => {
       name: "recall",
       query: "--help",
     });
-    for (const text of [
-      "/recall",
-      "/recall   ",
-      `/recall ${"x".repeat(1001)}`,
-      "/status",
-      "/config",
-    ])
+    for (const text of ["/recall", "/recall   ", `/recall ${"x".repeat(1001)}`])
       expect(parseChatInput(text).kind).toBe("error");
     expect(completeSlash("/rec")).toEqual({ value: "/recall ", candidates: ["/recall"] });
+  });
+
+  it("parses management commands without accepting credentials or deployment embedding changes", () => {
+    expect(parseChatInput("/status")).toMatchObject({ name: "status", kind: "command" });
+    expect(parseChatInput("/config")).toMatchObject({ name: "config", action: "show" });
+    expect(parseChatInput(`/config set ${id} chat next-model`)).toMatchObject({
+      name: "config",
+      action: "set",
+      id,
+      patch: { models: { chat: "next-model" } },
+    });
+    expect(parseChatInput(`/config set ${id} name My Provider`)).toMatchObject({
+      patch: { name: "My Provider" },
+    });
+    for (const command of [
+      "/status extra",
+      "/config extra",
+      `/config set ${id} api_key secret`,
+      `/config set ${id} embedding new`,
+      `/config set bad chat model`,
+      `/config set ${id} base_url https://user:secret@host`,
+    ])
+      expect(parseChatInput(command).kind).toBe("error");
+    expect(completeSlash("/s")).toEqual({ value: "/status ", candidates: ["/status"] });
+    expect(completeSlash("/c")).toEqual({ value: "/config ", candidates: ["/config"] });
   });
 
   it.each([

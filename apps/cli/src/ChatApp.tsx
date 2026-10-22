@@ -11,6 +11,7 @@ import {
   type RecallApi,
 } from "./memory-commands.js";
 import { editLine, type LineState } from "./line-input.js";
+import { runManagementCommand, type ManagementApi } from "./management-commands.js";
 
 interface Block {
   id: number;
@@ -25,7 +26,7 @@ export function ChatApp({
   onDone,
 }: {
   session: ChatSession;
-  memoryApi: MemoryApi & RecallApi;
+  memoryApi: MemoryApi & RecallApi & ManagementApi;
   onDone: (code: number) => void;
 }) {
   const { exit } = useApp();
@@ -158,6 +159,13 @@ export function ChatApp({
         if (mounted.current) setId(row.id);
         append("续聊会话", "已引用目标会话历史；原会话与切换前会话保持只读。", "gray");
         appendHistory();
+      } else if (
+        parsed.kind === "command" &&
+        (parsed.name === "status" || parsed.name === "config")
+      ) {
+        const job = runManagementCommand(memoryApi, session.projectId, session.id, parsed);
+        pendingCommand.current = job;
+        append(parsed.name === "status" ? "状态" : "配置", await job, "gray");
       } else if (
         parsed.kind === "command" &&
         (parsed.name === "memory" || parsed.name === "forget" || parsed.name === "recall")
