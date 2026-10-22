@@ -14,6 +14,7 @@ import { waitForChatJobs } from "./chat/jobs.js";
 import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 import { registerDoctorRoutes } from "./doctor/routes.js";
+import { registerRecallRoutes } from "./retrieval/routes.js";
 import { registerBearerAuth } from "./auth.js";
 import { resolveAuthToken } from "./config.js";
 
@@ -120,6 +121,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   if (options.db && options.masterKey) {
     registerProviderRoutes(app, options.db, options.masterKey);
+    registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory);
   }
   if (options.db) {
     registerGateRoutes(app, options.db);

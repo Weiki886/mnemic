@@ -1,5 +1,9 @@
 import { ChatConversationSchema } from "@mnemic/shared/chat";
-import { MemoryListQuerySchema, type MemoryListQuery } from "@mnemic/shared/memory";
+import {
+  MemoryListQuerySchema,
+  RecallRequestSchema,
+  type MemoryListQuery,
+} from "@mnemic/shared/memory";
 import { parseArgs } from "node:util";
 
 /** 只注册已经实现的命令；解析、帮助与补全共用，不从网络或历史加载命令。 */
@@ -23,6 +27,12 @@ export const SLASH_COMMANDS = [
     usage: "/forget UUID",
     description: "软删除当前项目的 active 记忆，可在 Web 恢复；不调用模型",
   },
+  {
+    name: "recall",
+    usage: "/recall 查询内容",
+    description:
+      "手动召回并显示 trace/分数；embedding 可能计费，失败时可降级为关键词，不生成聊天回答",
+  },
 ] as const;
 
 type CommandName = (typeof SLASH_COMMANDS)[number]["name"];
@@ -32,9 +42,10 @@ export type MemoryCommand =
 type ChatInput =
   | { kind: "empty" }
   | { kind: "message"; text: string }
-  | { kind: "command"; name: Exclude<CommandName, "resume" | "memory" | "forget"> }
+  | { kind: "command"; name: Exclude<CommandName, "resume" | "memory" | "forget" | "recall"> }
   | { kind: "command"; name: "resume"; argument: string }
   | MemoryCommand
+  | { kind: "command"; name: "recall"; query: string }
   | { kind: "error"; message: string };
 
 export function parseChatInput(text: string): ChatInput {
@@ -44,6 +55,15 @@ export function parseChatInput(text: string): ChatInput {
   const [token, ...args] = trimmed.split(/\s+/);
   const command = SLASH_COMMANDS.find((entry) => `/${entry.name}` === token);
   if (!command) return { kind: "error", message: "未知斜杠命令；输入 /help 查看已支持命令。" };
+  if (command.name === "recall") {
+    const parsed = RecallRequestSchema.safeParse({ query: trimmed.slice(token!.length) });
+    return parsed.success
+      ? { kind: "command", name: "recall", query: parsed.data.query }
+      : {
+          kind: "error",
+          message: "用法：/recall 查询内容；须为 1–1000 字符，embedding 可能计费。",
+        };
+  }
   if (command.name === "memory") {
     try {
       const parsed = parseArgs({

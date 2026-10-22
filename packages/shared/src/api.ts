@@ -5,7 +5,7 @@
 
 import type { ErrorCode, FieldError } from "./errors.js";
 import type { DoctorReport } from "./doctor.js";
-import type { BeliefListItem, MemoryListQuery } from "./memory.js";
+import type { BeliefListItem, MemoryListQuery, RecallResult } from "./memory.js";
 export type { BeliefListItem } from "./memory.js";
 import type {
   ChatConversation,
@@ -196,6 +196,8 @@ export function createApiClient(options: ApiClientOptions) {
     health: () => request<{ status: string }>("/health"),
     doctor: (probe = false): Promise<DoctorReport> =>
       probe ? post<DoctorReport>("/v1/doctor/probe", {}) : request<DoctorReport>("/v1/doctor"),
+    recallBeliefs: (projectId: string, query: string) =>
+      post<RecallResult>(`/projects/${projectId}/recall`, { query }),
     listBeliefs: (projectId: string, params: BeliefListParams = {}) =>
       request<BeliefListItem[]>(`/projects/${projectId}/beliefs${toQuery(params)}`),
     getBelief: (projectId: string, id: string) =>

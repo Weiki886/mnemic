@@ -28,6 +28,9 @@ const reply = {
   ],
 };
 const fixture = () => ({
+  recallBeliefs: vi.fn(async () => {
+    throw new Error("unexpected recall");
+  }),
   listBeliefs: vi.fn(async () => []),
   deleteBelief: vi.fn(async () => ({ id: belief, status: "deleted" })),
   resumeConversation: vi.fn(async () => ({ ...row, resumed_from: belief, messages: [] })),

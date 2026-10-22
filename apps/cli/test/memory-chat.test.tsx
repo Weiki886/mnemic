@@ -30,6 +30,9 @@ const memory: BeliefListItem = {
 };
 function fixture() {
   const api = {
+    recallBeliefs: vi.fn(async () => {
+      throw new Error("unexpected recall");
+    }),
     createConversation: vi.fn(async () => row),
     resumeConversation: vi.fn(async () => ({ ...row, resumed_from: id, messages: [] })),
     commitConversation: vi.fn(async () => ({

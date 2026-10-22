@@ -80,12 +80,12 @@ node apps/cli/dist/index.js sessions --project <项目UUID> --json
 
 “已提交”表示现有 `ended_at` 非空，旧 ID 不能直接再发消息；使用下述 `resume` 创建续聊会话。
 
-## 本地命令帮助与补全（#32，拆分 1/3）
+## 本地命令帮助与补全（#32）
 
 对话中输入 `/help` 查看当前已实现命令。`/he` + Tab 补全为 `/help `，回车才执行；
 `/` + Tab 只展示候选。未知命令、`/new extra` 等非法参数只报错，不误发给模型。
 已有 `/new`、`/resume UUID`、`/exit` 和 Ctrl+C 保持原有会话语义。
-对话中可直接管理项目记忆（#32 拆分 2/3）：
+对话中可直接管理项目记忆（#32 前两轮）：
 
 ```text
 /memory --type decision --limit 10 database
@@ -95,7 +95,10 @@ node apps/cli/dist/index.js sessions --project <项目UUID> --json
 
 列表搜索 subject/attribute，默认只读 active 记忆；删除复用 Web 的软删除 API，不产生聊天 Evidence。
 可在 Web 恢复后再次 `/memory` 查看。类型来自当前版本来源 Observation，未记录类型不参与筛选。
-召回及配置命令仍待拆分 3/3；用法、分页、计费和失败边界见 [斜杠命令](slash-commands.md)。
+手动召回（#32 拆分 3/4）可用 `/recall PostgreSQL storage`，显示 trace ID、两路得分、融合分和入选/落选原因。
+这会显式调用 embedding，**可能计费**；无可用 embedding 时沿用关键词降级，不生成聊天回答。
+查询原文会进入检索轨迹表，勿查询原始凭据。检索不写聊天 Evidence，不改变 salience。
+`/status`、`/config` 留给 4/4，Issue #32 保持打开；用法、分页、计费和失败边界见 [斜杠命令](slash-commands.md)。
 
 ## 恢复与切换会话（#31）
 

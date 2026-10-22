@@ -36,3 +36,68 @@ export const ForgetResultSchema = z.object({
   id: z.string().uuid().toLowerCase(),
   status: z.literal("deleted"),
 });
+
+/** 显式手动召回可能调用 embedding；只接收查询，不开放强化/阈值控制。 */
+export const RecallRequestSchema = z.object({ query: z.string().trim().min(1).max(1000) }).strict();
+const traceCandidate = z
+  .object({
+    beliefVersionId: z.string().uuid(),
+    vectorScore: z.number().finite().nullable(),
+    keywordScore: z.number().finite().nullable(),
+    fusedScore: z.number().finite(),
+    selected: z.boolean(),
+    reason: z.enum(["top_k", "below_topk", "below_threshold"]),
+  })
+  .strict();
+export const RecallResultSchema = z
+  .object({
+    project_id: z.string().uuid(),
+    query: z.string().min(1).max(1000),
+    abstained: z.boolean(),
+    candidates: z
+      .array(
+        traceCandidate.extend({
+          beliefId: z.string().uuid(),
+          subject: z.string(),
+          attribute: z.string(),
+          value: z.unknown().refine((value) => value !== undefined, "值不可缺失"),
+        }),
+      )
+      .max(5),
+    trace: z
+      .object({
+        id: z.string().uuid(),
+        reinforce_enabled: z.literal(false),
+        candidate_count: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        candidates: z.array(traceCandidate).max(200),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((r, ctx) => {
+    const shown = r.trace.candidates;
+    const selected = shown.filter((c) => c.selected);
+    if (
+      r.abstained !== (r.candidates.length === 0) ||
+      r.trace.candidate_count < shown.length ||
+      r.trace.truncated !== r.trace.candidate_count > shown.length ||
+      new Set(shown.map((c) => c.beliefVersionId)).size !== shown.length ||
+      selected.length !== r.candidates.length ||
+      shown.some((c) => c.selected !== (c.reason === "top_k")) ||
+      r.candidates.some((c, i) => {
+        const s = selected[i];
+        return (
+          !s ||
+          !c.selected ||
+          c.reason !== "top_k" ||
+          s.beliefVersionId !== c.beliefVersionId ||
+          s.vectorScore !== c.vectorScore ||
+          s.keywordScore !== c.keywordScore ||
+          s.fusedScore !== c.fusedScore
+        );
+      })
+    )
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "召回与轨迹不一致" });
+  });
+export type RecallResult = z.infer<typeof RecallResultSchema>;
