@@ -1,6 +1,8 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /workspace
-RUN corepack enable && corepack prepare pnpm@10.32.0 --activate
+COPY package.json ./
+COPY scripts/prepare-pnpm.mjs ./scripts/prepare-pnpm.mjs
+RUN corepack enable && node scripts/prepare-pnpm.mjs
 COPY . .
 RUN pnpm --filter @mnemic/web... install --frozen-lockfile
 RUN VITE_API_BASE_URL=/api pnpm --filter @mnemic/web run build
