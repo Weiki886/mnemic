@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { ChatStreamReadError } from "@mnemic/shared/chat-stream";
 import { SessionStreamError, type ChatSession } from "./chat-session.js";
 import { chatFailure, formatReply, terminalText } from "./presentation.js";
@@ -30,6 +30,7 @@ export function ChatApp({
   onDone: (code: number) => void;
 }) {
   const { exit } = useApp();
+  const { write } = useStdout();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [line, setLine] = useState<LineState>({ text: "", cursor: 0 });
   const lineRef = useRef(line);
@@ -104,7 +105,8 @@ export function ChatApp({
       append("会话已提交", "记忆提取在后台完成，提交不等于已完成索引。", "gray");
     } catch (error) {
       code = 1;
-      append("提交未确认", chatFailure(error), "red");
+      // A queued React block may never render after exit(); emit the final diagnostic directly.
+      write(`提交未确认\n${terminalText(chatFailure(error), true)}\n`);
     }
     onDone(code);
     exit();

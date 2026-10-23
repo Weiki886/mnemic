@@ -68,6 +68,59 @@ function fixture() {
   return { api, event, end: () => controller.close(), session: new ChatSession(api, project) };
 }
 describe("CLI durable stream lifecycle", () => {
+  it.each([new Error("offline startup"), new ApiError(500, "INTERNAL_ERROR", "offline startup")])(
+    "creation failure before dispatch does not block a later explicit send (%s)",
+    async (error) => {
+      const f = fixture();
+      f.api.createConversation.mockRejectedValueOnce(error).mockRejectedValueOnce(error);
+      await expect(f.session.start()).rejects.toBe(error);
+      await expect(f.session.send("not sent", () => {})).rejects.toBe(error);
+      expect(f.session.id).toBeNull();
+      expect(f.api.openMessageStream).not.toHaveBeenCalled();
+      expect(f.api.sendMessage).not.toHaveBeenCalled();
+      const wire = encodeChatStreamEvent(start) + encodeChatStreamEvent(finish());
+      f.api.openMessageStream.mockImplementationOnce(
+        async () => new Response(wire, { headers: { "content-type": "text/event-stream" } }),
+      );
+      await expect(f.session.send("explicit retry", () => {})).resolves.toMatchObject({
+        generation_status: "complete",
+      });
+      f.api.createConversation.mockResolvedValueOnce({ ...row, id: g });
+      await expect(f.session.newConversation()).resolves.toMatchObject({ id: g });
+      expect(f.api.openMessageStream).toHaveBeenCalledOnce();
+    },
+  );
+  it("closing after creation failed does not claim an unsent message is uncertain", async () => {
+    const f = fixture();
+    const error = new Error("offline startup");
+    f.api.createConversation.mockRejectedValueOnce(error);
+    await expect(f.session.send("not sent", () => {})).rejects.toBe(error);
+    await expect(f.session.close()).resolves.toBeUndefined();
+    expect(f.api.openMessageStream).not.toHaveBeenCalled();
+    expect(f.api.commitConversation).not.toHaveBeenCalled();
+  });
+  it("cancellation during slow creation does not dispatch a message after its deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = fixture();
+      let created!: (value: typeof row) => void;
+      f.api.createConversation.mockReturnValueOnce(
+        new Promise((resolve) => {
+          created = resolve;
+        }),
+      );
+      const job = f.session.send("not sent", () => {});
+      const rejection = expect(job).rejects.toThrow();
+      f.session.interrupt();
+      await vi.advanceTimersByTimeAsync(10_001);
+      created(row);
+      await rejection;
+      expect(f.api.openMessageStream).not.toHaveBeenCalled();
+      await expect(f.session.close()).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("a saved finish remains confirmed even if its display callback fails", async () => {
     const f = fixture();
     const job = f.session.send("question", (event) => {
@@ -161,6 +214,16 @@ describe("CLI durable stream lifecycle", () => {
     await rejection;
     await expect(f.session.send("blind replay", () => {})).rejects.toThrow("未确认");
     await expect(f.session.close()).rejects.toThrow("未确认");
+    expect(f.api.commitConversation).not.toHaveBeenCalled();
+  });
+  it("unknown-state exit includes the external resume command and exact scope IDs", async () => {
+    const f = fixture();
+    const job = f.session.send("question", () => {});
+    const rejection = expect(job).rejects.toThrow();
+    f.event(start);
+    f.end();
+    await rejection;
+    await expect(f.session.close()).rejects.toThrow(`mnemic resume ${c} --project ${project}`);
     expect(f.api.commitConversation).not.toHaveBeenCalled();
   });
   it("explicit resume clears uncertainty only after a server-confirmed new continuation", async () => {

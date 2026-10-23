@@ -176,8 +176,11 @@ export class ChatSession {
           confirmed: false,
         };
         this.active = turn;
+        let sending = false;
         try {
           const row = await this.ensureConversation();
+          turn.controller.signal.throwIfAborted();
+          sending = true;
           const response = await this.api.openMessageStream(
             this.projectId,
             row.id,
@@ -209,10 +212,9 @@ export class ChatSession {
             error.progress.terminal?.type === "error" &&
             error.progress.terminal.code === "GENERATION_FAILED";
           const saved = turn.confirmed || savedFinish || savedFailure;
-          this.uncertain = !(
-            saved ||
-            (error instanceof ApiError && error.status >= 400 && error.status < 500)
-          );
+          this.uncertain =
+            sending &&
+            !(saved || (error instanceof ApiError && error.status >= 400 && error.status < 500));
           if (error instanceof ChatStreamReadError) throw new SessionStreamError(error, saved);
           throw error;
         } finally {
@@ -236,6 +238,10 @@ export class ChatSession {
     this.closing ??= (async () => {
       // Ctrl+C 也先等待发消息完成，避免 commit 与正在写入的消息竞态。
       await this.pending?.catch(() => {});
+      if (this.uncertain && this.id)
+        throw new SessionError(
+          `上一轮保存未确认，不会自动重发或提交。退出后沿用原服务端地址和鉴权配置，在终端运行：\nmnemic resume ${this.id} --project ${this.projectId}`,
+        );
       await this.commit();
       this.closed = true;
     })();

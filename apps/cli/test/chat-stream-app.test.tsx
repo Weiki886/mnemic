@@ -81,6 +81,27 @@ function fixture() {
 }
 afterEach(cleanup);
 describe("Ink real streaming", () => {
+  it.each(["\u0003", "/exit"])(
+    "unknown-state exit %j prints an external recovery command before leaving",
+    async (key) => {
+      const f = fixture();
+      await vi.waitFor(() => expect(f.view.lastFrame()).toContain(c));
+      await f.send("question");
+      await vi.waitFor(() => expect(f.api.openMessageStream).toHaveBeenCalledOnce());
+      f.event(start);
+      f.event({ type: "delta", generation_id: g, text: "保留前缀" });
+      f.end();
+      await vi.waitFor(() => expect(f.view.lastFrame()).toContain("保存未确认"));
+      if (key === "/exit") await f.send(key);
+      else f.view.stdin.write(key);
+      await vi.waitFor(() => expect(f.done).toHaveBeenCalledWith(1));
+      const output = f.view.frames.join("\n");
+      expect(output).toContain(`mnemic resume ${c} --project ${project}`);
+      expect(output).not.toContain("请先 /resume 当前会话 ID");
+      expect(f.api.commitConversation).not.toHaveBeenCalled();
+      expect(f.api.openMessageStream).toHaveBeenCalledOnce();
+    },
+  );
   it("a valid cancel receipt followed by EOF is saved but not falsely presented as a complete answer", async () => {
     const f = fixture();
     f.api.cancelMessageStream.mockImplementationOnce(async () => ({
