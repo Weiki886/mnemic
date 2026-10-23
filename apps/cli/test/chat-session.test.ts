@@ -24,6 +24,11 @@ const answer = (value = "PostgreSQL") => ({
   ],
 });
 const fixture = () => ({
+  getConversation: vi.fn(async () => ({
+    ...conversation(),
+    ended_at: "2026-10-16T01:00:00.000Z",
+    messages: [],
+  })),
   resumeConversation: vi.fn(async () => ({ ...conversation(), resumed_from: c2, messages: [] })),
   createConversation: vi.fn(async () => conversation()),
   sendMessage: vi.fn(async () => answer()),
