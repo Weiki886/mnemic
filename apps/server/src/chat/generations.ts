@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { ErrorCode, problem } from "@mnemic/shared";
+import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
+import { z } from "zod";
 import { uuidv7 } from "uuidv7";
 
 export interface Generation {
@@ -22,7 +23,6 @@ export class ChatGenerations {
     const keys = [...new Set(ids.map((id) => id.toLowerCase()))];
     if (
       this.closing ||
-      this.locks.size + keys.filter((id) => !this.locks.has(id)).length > 32 ||
       keys.some((id) => this.exclusive.has(id) || (exclusive && this.locks.has(id)))
     )
       return;
@@ -39,6 +39,7 @@ export class ChatGenerations {
       });
   }
   start(projectId: string, conversationId: string): Generation | undefined {
+    if (this.atCapacity) return;
     const release = this.acquire([conversationId], true);
     if (!release) return;
     const id = uuidv7();
@@ -66,11 +67,34 @@ export class ChatGenerations {
     const g = this.active.get(generationId);
     return g?.projectId === projectId && g.conversationId === conversationId ? g : undefined;
   }
-  guard(handler: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>) {
+  get atCapacity() {
+    return this.active.size >= 32;
+  }
+  guard(
+    handler: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>,
+    currentId?: string,
+  ) {
     return async (request: FastifyRequest, reply: FastifyReply) => {
-      const { id } = request.params as { id: string };
-      const body = request.body as { current_conversation_id?: unknown } | undefined;
-      const current = body?.current_conversation_id;
+      const parsed = z
+        .object({
+          id: z.string().uuid().toLowerCase(),
+          current_conversation_id: z.string().uuid().toLowerCase().optional(),
+        })
+        .safeParse({ ...(request.params as object), current_conversation_id: currentId });
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .type("application/problem+json")
+          .send(
+            problem({
+              status: 400,
+              code: ErrorCode.VALIDATION_FAILED,
+              detail: "会话路径参数非法",
+              errors: zodIssues(parsed.error),
+              requestId: request.id,
+            }),
+          );
+      const { id, current_conversation_id: current } = parsed.data;
       const release = this.acquire([id, ...(typeof current === "string" ? [current] : [])]);
       if (!release) return generationConflict(reply, request.id);
       try {
@@ -88,7 +112,7 @@ export class ChatGenerations {
   }
 }
 
-export function generationConflict(reply: FastifyReply, requestId: string) {
+export function generationConflict(reply: FastifyReply, requestId: string, reason?: "capacity") {
   return reply
     .code(409)
     .type("application/problem+json")
@@ -96,7 +120,10 @@ export function generationConflict(reply: FastifyReply, requestId: string) {
       problem({
         status: 409,
         code: ErrorCode.CONFLICT,
-        detail: "会话正在生成或服务正在停止，请先取消当前生成",
+        detail:
+          reason === "capacity"
+            ? "活动流式生成已达 32 个，请稍后重试"
+            : "会话正在生成或服务正在停止，请先取消当前生成",
         requestId,
       }),
     );

@@ -58,7 +58,8 @@ export function registerChatStreamRoutes(
       .limit(1);
     if (!scoped) return missing(reply, request.id);
     const generation = generations.start(projectId, id);
-    if (!generation) return generationConflict(reply, request.id);
+    if (!generation)
+      return generationConflict(reply, request.id, generations.atCapacity ? "capacity" : undefined);
     const closed = () => generation.controller.abort();
     reply.raw.once("close", closed);
     if (reply.raw.destroyed) closed();

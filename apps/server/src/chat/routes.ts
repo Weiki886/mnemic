@@ -154,7 +154,7 @@ export function registerChatRoutes(
             }),
           );
       }
-    })(request, reply);
+    }, body.data.current_conversation_id)(request, reply);
   });
 
   app.post("/v1/conversations", async (request, reply) => {
