@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./chat-stream": {
+      "types": "./dist/chat-stream.d.ts",
+      "import": "./dist/chat-stream.js"
+    },
     "./management": {
       "types": "./dist/management.d.ts",
       "import": "./dist/management.js"
@@ -37,6 +41,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "eventsource-parser": "3.1.1",
     "zod": "^3.25.76"
   }
 }
