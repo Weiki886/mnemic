@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Static, Text, useApp, useInput } from "ink";
 import { ChatStreamReadError } from "@mnemic/shared/chat-stream";
-import type { ChatSession } from "./chat-session.js";
+import { SessionStreamError, type ChatSession } from "./chat-session.js";
 import { chatFailure, formatReply, terminalText } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
 import {
@@ -202,11 +202,15 @@ export function ChatApp({
       }
     } catch (error) {
       if (error instanceof ChatStreamReadError) {
-        const saved =
+        const failed =
           error.progress.terminal?.type === "error" &&
           error.progress.terminal.code === "GENERATION_FAILED";
         append(
-          saved ? "生成失败 · 已保存片段" : "保存未确认",
+          failed
+            ? "生成失败 · 已保存片段"
+            : error instanceof SessionStreamError && error.saved
+              ? "已保存 · 输出未完成"
+              : "保存未确认",
           error.progress.answer || "未收到回答片段；不会自动重发。",
           "yellow",
         );

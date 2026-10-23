@@ -24,6 +24,15 @@ type ChatApi = Pick<
 > &
   Partial<Pick<ApiClient, "openMessageStream" | "cancelMessageStream" | "getConversation">>;
 export class SessionError extends Error {}
+/** Persistence confirmation is independent of whether the whole reply reached the terminal. */
+export class SessionStreamError extends ChatStreamReadError {
+  constructor(
+    error: ChatStreamReadError,
+    readonly saved: boolean,
+  ) {
+    super(error.code, error.progress);
+  }
+}
 interface ActiveTurn {
   controller: AbortController;
   generationId?: string;
@@ -199,12 +208,12 @@ export class ChatSession {
             error instanceof ChatStreamReadError &&
             error.progress.terminal?.type === "error" &&
             error.progress.terminal.code === "GENERATION_FAILED";
+          const saved = turn.confirmed || savedFinish || savedFailure;
           this.uncertain = !(
-            turn.confirmed ||
-            savedFinish ||
-            savedFailure ||
+            saved ||
             (error instanceof ApiError && error.status >= 400 && error.status < 500)
           );
+          if (error instanceof ChatStreamReadError) throw new SessionStreamError(error, saved);
           throw error;
         } finally {
           if (turn.timer) clearTimeout(turn.timer);

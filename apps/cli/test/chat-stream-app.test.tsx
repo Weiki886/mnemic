@@ -81,6 +81,26 @@ function fixture() {
 }
 afterEach(cleanup);
 describe("Ink real streaming", () => {
+  it("a valid cancel receipt followed by EOF is saved but not falsely presented as a complete answer", async () => {
+    const f = fixture();
+    f.api.cancelMessageStream.mockImplementationOnce(async () => ({
+      generation_id: g,
+      message_id: g,
+      status: "interrupted",
+    }));
+    await vi.waitFor(() => expect(f.view.lastFrame()).toContain(c));
+    await f.send("question");
+    await vi.waitFor(() => expect(f.api.openMessageStream).toHaveBeenCalledOnce());
+    f.event(start);
+    f.event({ type: "delta", generation_id: g, text: "收到的部分" });
+    await vi.waitFor(() => expect(f.view.lastFrame()).toContain("收到的部分"));
+    f.view.stdin.write("\u001b");
+    await vi.waitFor(() => expect(f.api.cancelMessageStream).toHaveBeenCalledOnce());
+    f.end();
+    await vi.waitFor(() => expect(f.view.frames.join("\n")).toContain("已保存 · 输出未完成"));
+    expect(f.view.frames.join("\n")).not.toContain("保存未确认");
+    expect(f.view.frames.join("\n")).not.toContain("已中断 · 已保存");
+  });
   it.each(["\u001b", "\u0003"])(
     "key %j cancels a live turn without exiting; continued input uses the same conversation",
     async (key) => {
