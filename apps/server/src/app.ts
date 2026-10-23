@@ -40,7 +40,7 @@ export interface BuildAppOptions {
   /** 测试注入 Fake 模型工厂（#7 对话闭环等模型消费者共用） */
   providerFactory?: ProviderFactory | undefined;
   /** 对话闭环附加依赖（测试注入检索替身） */
-  chatDeps?: { retrieveFn?: typeof retrieve } | undefined;
+  chatDeps?: { retrieveFn?: typeof retrieve; streamTimeoutMs?: number } | undefined;
   /** 停机等待异步写回任务的超时上限（毫秒），默认 10s；测试可调小 */
   shutdownDrainMs?: number | undefined;
   /** CORS 允许的源（#8 Web 记忆中心跨源调 API）；未配置则不启用 CORS */
@@ -135,6 +135,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerChatRoutes(app, options.db, options.masterKey, {
       ...(options.providerFactory ? { factory: options.providerFactory } : {}),
       ...(options.chatDeps?.retrieveFn ? { retrieveFn: options.chatDeps.retrieveFn } : {}),
+      ...(options.chatDeps?.streamTimeoutMs !== undefined
+        ? { streamTimeoutMs: options.chatDeps.streamTimeoutMs }
+        : {}),
     });
   }
 

@@ -39,6 +39,11 @@ const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" 
 const score = (name: string) => numeric(name, { precision: 4, scale: 3 });
 
 export const speakerEnum = pgEnum("speaker", ["user", "assistant", "tool"]);
+export const generationStatusEnum = pgEnum("message_generation_status", [
+  "complete",
+  "interrupted",
+  "failed",
+]);
 export const observationTypeEnum = pgEnum("observation_type", [
   "fact",
   "preference",
@@ -121,6 +126,8 @@ export const messages = pgTable("messages", {
   /** 回答引用的记忆（#8 对话只读视图）：只存 belief_version_id 数组（决策 8 引用不复制），
    *  内容读出时 join belief_versions/beliefs 现查；null = 无引用（用户消息/无记忆回答） */
   memories: jsonb("memories"),
+  /** #33: null for legacy/user messages; partial text remains Evidence, never rewritten as a complete answer. */
+  generationStatus: generationStatusEnum("generation_status"),
 });
 
 /**

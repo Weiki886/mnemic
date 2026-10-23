@@ -1,9 +1,50 @@
-# Chat streaming protocol v1（#33，拆分 1/3）
+# Chat streaming protocol v1（#33，拆分 1/3 + 2/3）
 
-本轮只交付 `@mnemic/shared/chat-stream` 的事件契约、编码器和可中断收流组件。
-**尚未新增服务端 SSE/取消路由，也未切换 CLI：当前对话仍使用原 JSON API。**
-后续 2/3 接服务端生成、取消与持久化，3/3 接 CLI 实时渲染、ESC/Ctrl+C。
-`Refs #33`，Issue 保持打开；本轮测试不能代表“终端可打断且继续对话”已验收。
+1/3 交付 `@mnemic/shared/chat-stream` 的事件契约、编码器和可中断收流组件；
+2/3 新增以下服务端生成、取消与持久化接口。**CLI 尚未切换，默认对话仍使用原 JSON API。**
+后续 3/3 接 CLI 实时渲染、ESC/Ctrl+C。`Refs #33`，Issue 保持打开；
+服务端离线测试不能代表“终端可打断且继续对话”已完整验收。
+
+## 服务端 API（2/3）
+
+两条路由均沿用全局 Bearer 鉴权。所有路径 ID 按 UUID 校验并规范化小写，且查询同时验证项目与会话归属。
+
+- `POST /projects/:projectId/conversations/:id/messages/stream`，JSON `{ "text": "问题" }`，1–8000 字符、不接受其他字段。
+  校验/鉴权/查找/已提交或坏历史分别返回 RFC7807 的 400/401/404/409；成功才进入 SSE。
+- `POST /projects/:projectId/conversations/:id/generations/:generationId/cancel`，空对象或无 body。
+  请求取消并等待保存结果，返回 `{ generation_id, message_id, status }`，status 为 complete/interrupted/failed。
+  已保存的结果可重复查询，不会重新生成；跨项目或未知 ID 返回 404。对已知活动生成，若保存失败则返回安全的 500，绝不伪装取消成功。
+
+`generation_id` 即本次新助手消息的 ID，和 start 的 `user_message_id` 分离。
+先在会话行锁事务中写入用户 Evidence，再发送 start；复用检索、引用、续聊历史和异步提取写回。
+生成结束后先保存助手原文、引用版本 ID 和状态，再发送 finish；数据库失败发 PERSISTENCE_FAILED，模型失败发 GENERATION_FAILED。
+主生成调用采用 [AI SDK v5 streamText](https://ai-sdk.dev/v5/docs/reference/ai-sdk-core/stream-text)，显式 `maxRetries: 0`；检索与提取仍沿用原有实现。
+
+调用方应在保持收流时发取消请求，然后读取 finish 或取消返回的持久化状态；仅 abort 本地 reader 不等于收到服务端确认。
+连接在终态前关闭会取消模型并尝试保存部分回答；finish 后客户端主动关闭属于正常结束，不能回写为 interrupted。
+模型适配器收到 AbortSignal，但不保证不合作的上游立刻停止计算或停止计费；本地不等待挂死的 SDK read。
+
+### 状态与上下文
+
+升级前先执行 `pnpm --filter @mnemic/server db:migrate`（新增 nullable `messages.generation_status`）。
+新流式助手消息记录 complete/interrupted/failed；旧消息和用户消息为 null，旧响应不增加空字段。
+消息读 API 对新流式回答返回可选 `generation_status`；部分/失败原文不改写，传给模型时另加“未完成回答”标记。
+没有任何文本时取消也保存空的 interrupted 助手消息，用户 Evidence 仍保留。只提取用户消息，认领复用原去重规则，commit 不会重复提取。
+
+同一服务实例内，活动流式生成与该会话的其他流、JSON 发消息、commit、resume（含 current_conversation_id）互斥，冲突返回 409。
+旧 JSON 路径之间不增加全局并发名额限制；只有活动流式生成最多 32 个，保存结果后释放名额，名额满返回明确的 409 提示。
+JSON 发消息/commit/resume 仍登记已校验的会话 UUID，用于与同会话流互斥，但不占用流式名额；不读取 JSON 发消息体里被忽略的字段来加锁。
+这是当前单进程部署的协调器，不是分布式锁；不支持多个服务副本共享数据库同时处理聊天。
+
+服务端检索/生成阶段默认总预算 **300 秒**（用户消息事务提交后开始，含背压等待；不是空闲超时），单次背压最多 30 秒。
+服务端对文本 + 未向用户显示的 reasoning 合计限制 2 MiB；不转发或持久化 reasoning，SSE wire 总预算 8 MiB。
+所有 SDK 事件均参与让出事件循环，不能通过纯推理流饿死取消请求。
+数据库保存不受模型 AbortSignal 取消：中断后仍需完成保存，保存失败不确认成功。
+[Fastify preClose](https://fastify.dev/docs/latest/Reference/Hooks/#preclose) 先停止接收新的聊天操作、取消活动流并等待保存，再进入连接关闭与后台写回排空。
+
+进程崩溃、强杀或数据库不可用时，尚未保存的部分回答无法保证恢复；用户消息已单独持久化。
+若外部进程在生成期间归档该会话，保存会拒绝追加，返回 PERSISTENCE_FAILED，而非确认中断成功；已保存的用户 Evidence 保留。
+本轮没有逐 token 数据库日志、多副本路由、重启恢复或断线续传，也不自动部署或迁移用户开发库。
 
 ## 事件
 
@@ -59,6 +100,8 @@ try {
 
 `onEvent` 可同步或异步，按顺序等待，并传递独立副本；慢异步回调也受取消/超时约束。
 默认总预算 120 秒，`timeoutMs` 可设为 1–600000 的整数；总预算包含收流和回调等待。
+这是收流器总时长上限，不是空闲超时。接入 Mnemic 服务端长回复的客户端应显式传 `timeoutMs: 600_000`，
+留出服务端 300 秒生成及保存/传输余量；后续 CLI 3/3 必须实际接入并测试，不依赖 120 秒默认值。
 定时器加单调时钟双重检查，避免已缓冲数据的微任务链延迟定时器；不能抢占调用方同步阻塞的 JavaScript 回调。
 每 64 次读取/切片主动让出事件循环，空块或已缓冲流也不会一直占住微任务队列，阻止外部取消事件执行。
 取消/超时会 cancel reader、移除监听、清理定时器并释放锁；不等待可能永不 settle 的底层 cancel。
@@ -66,12 +109,12 @@ try {
 
 需要严格区分：
 
-- `finish.status=interrupted`：**未来生产方必须先保存用户消息及部分回答/中断标记，再发此确认**。收流器只验证协议，不能检查服务端数据库。
+- `finish.status=interrupted`：**生产方必须先保存用户消息及部分回答/中断标记，再发此确认**。本服务端已按此顺序实现；收流器自身只验证协议，不能检查数据库。
 - 本地 AbortSignal、超时、断网或无终态 EOF：停止本地收流，保留前缀，但**不知道服务端是否停止或落库**；不伪装成已确认中断。
 - 已收到 finish 但 UI 回调失败：异常进度仍保留该 terminal 确认，调用方可分别处理服务端确认和本地显示失败。
 
-服务端取消与上下文一致性必须在后续 PR 真正实现并测试，不能仅 abort fetch 就宣称完成 #33。
-本轮没有自动重连、Last-Event-ID 续传、自动重发、模型请求或工具执行中断。
+终端按键与完整 CLI 上下文闭环仍需 3/3 验证，不能仅 abort fetch 就宣称完成 #33。
+本轮没有自动重连、Last-Event-ID 续传、自动重发或工具执行中断。
 
 ## 资源与错误边界
 
@@ -88,6 +131,8 @@ root 只导出类型；新运行时入口独立，不让现有 Web/JSON client �
 
 ## 验证范围
 
-测试包含协议/编码、任意 UTF-8 分片、真实环回 HTTP 的增量到达/确认/取消/断开/超时，以及资源清理。
-环回服务是一次性离线 fixture，不是新 Mnemic SSE API，也不是模型联调或 CLI 真实交互闭环。
-没有模型 Key、付费调用、新数据库迁移或用户服务重启。
+共享层测试包含协议/编码、任意 UTF-8 分片、真实环回 HTTP 的增量到达/确认/取消/断开/超时，以及资源清理。
+服务端测试使用真实 Fastify HTTP、AI SDK 和 PostgreSQL，模型为离线 MockLanguageModelV2：
+覆盖显式取消后继续 JSON 对话、断连/超时/停机保存、项目隔离、非法输入、并发互斥、纯推理调度/预算和实际数据库 trigger 注入的保存失败。
+尚未做真实付费模型、CLI 键盘交互、恶劣公网代理链路或 VPS 联调；不将测试模型的取消响应速度冒充上游厂商的保证。
+测试不读取真实 .env；真实模型 Key 置空，不产生付费调用，不重启用户服务。

@@ -37,6 +37,7 @@ export const ChatReplySchema = z.object({
   ),
 });
 export const ConversationMessageSchema = z.object({
+  generation_status: z.enum(["complete", "interrupted", "failed"]).nullable().optional(),
   id: z.string().uuid(),
   speaker: z.enum(["user", "assistant", "tool"]),
   raw_text: z.string(),
