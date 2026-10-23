@@ -39,7 +39,7 @@ export interface RespondOptions extends ResolveOptions {
   logger?: { warn: (obj: object, msg: string) => void };
 }
 
-function toMemoryRef(c: RetrievalCandidate): MemoryRef {
+export function toMemoryRef(c: RetrievalCandidate): MemoryRef {
   return {
     belief_id: c.beliefId,
     belief_version_id: c.beliefVersionId,
@@ -49,13 +49,12 @@ function toMemoryRef(c: RetrievalCandidate): MemoryRef {
   };
 }
 
-export async function respondToMessage(
+export async function enterMessage(
   db: PostgresJsDatabase,
-  masterKey: Buffer,
   conversationId: string,
   text: string,
-  options: RespondOptions,
-): Promise<RespondResult> {
+  projectId?: string,
+) {
   const userMessageId = uuidv7();
   // 会话行锁内完成"未提交检查 + 写入消息"：与并发 commit 互斥，
   // 要么先于 commit 写入（commit 会提取它），要么看到已提交直接 409，不留孤儿消息
@@ -66,7 +65,7 @@ export async function respondToMessage(
       .where(eq(conversations.id, conversationId))
       .for("update")
       .limit(1);
-    if (!conv) return { kind: "not_found" } as const;
+    if (!conv || (projectId && conv.projectId !== projectId)) return { kind: "not_found" } as const;
     if (conv.endedAt) return { kind: "ended" } as const;
     let history;
     try {
@@ -82,10 +81,26 @@ export async function respondToMessage(
       rawText: text,
       msgTime: new Date(),
     });
-    return { kind: "ok" as const, projectId: conv.projectId, history };
+    return {
+      kind: "ok" as const,
+      projectId: conv.projectId,
+      conversationId,
+      history,
+      userMessageId,
+    };
   });
-  if (entered.kind !== "ok") return { kind: entered.kind };
+  return entered;
+}
 
+export type EnteredMessage = Extract<Awaited<ReturnType<typeof enterMessage>>, { kind: "ok" }>;
+
+export async function prepareAnswer(
+  db: PostgresJsDatabase,
+  masterKey: Buffer,
+  text: string,
+  entered: EnteredMessage,
+  options: RespondOptions,
+) {
   // 检索（#6）；检索失败降级为无记忆回答，不阻塞对话
   let candidates: RetrievalCandidate[] = [];
   let abstained = true;
@@ -100,18 +115,31 @@ export async function respondToMessage(
     candidates = r.candidates;
     abstained = r.abstained;
   } catch (err) {
-    options.logger?.warn({ err, conversationId }, "retrieval failed, degrade to no-memory answer");
+    options.logger?.warn(
+      { err, conversationId: entered.conversationId },
+      "retrieval failed, degrade to no-memory answer",
+    );
   }
 
   const { model } = await resolveModel(db, masterKey, "chat", options);
   const history = await modelHistory(db, entered.projectId, entered.history);
-  const { text: answer } = await generateText({
+  return {
     model,
+    candidates,
+    abstained,
+    history,
     system: buildChatSystemPrompt(candidates, history.length > 0),
-    messages: [...history, { role: "user", content: text }],
-  });
+  };
+}
 
-  const assistantMessageId = uuidv7();
+export async function saveAnswer(
+  db: PostgresJsDatabase,
+  conversationId: string,
+  assistantMessageId: string,
+  answer: string,
+  candidates: RetrievalCandidate[],
+  generationStatus?: "complete" | "interrupted" | "failed",
+) {
   const saved = await db.transaction(async (tx) => {
     const [conv] = await tx
       .select()
@@ -129,23 +157,59 @@ export async function respondToMessage(
       msgTime: new Date(),
       // 引用留痕（#8）：只存版本 ID，内容读出时现查（决策 8 引用不复制）
       memories: candidates.length > 0 ? candidates.map((c) => c.beliefVersionId) : null,
+      generationStatus: generationStatus ?? null,
     });
     return true;
   });
-  if (!saved) return { kind: "ended" };
+  return saved;
+}
 
+export async function scheduleMessageWriteback(
+  db: PostgresJsDatabase,
+  masterKey: Buffer,
+  entered: EnteredMessage,
+  text: string,
+  options: RespondOptions,
+) {
   // 异步写记忆：先认领再提取（认领失败 = 并发 commit 已接管，无需重复提取）
   const projectId = entered.projectId;
-  if (await claimMessageForExtraction(db, userMessageId)) {
+  if (await claimMessageForExtraction(db, entered.userMessageId)) {
     options.onJob(() =>
       runExtractionWriteback(
         db,
         masterKey,
-        { projectId, text, evidenceId: userMessageId },
+        { projectId, text, evidenceId: entered.userMessageId },
         options,
       ).then(() => undefined),
     );
   }
+}
+
+export async function respondToMessage(
+  db: PostgresJsDatabase,
+  masterKey: Buffer,
+  conversationId: string,
+  text: string,
+  options: RespondOptions,
+): Promise<RespondResult> {
+  const entered = await enterMessage(db, conversationId, text);
+  if (entered.kind !== "ok") return { kind: entered.kind };
+  const { model, candidates, abstained, history, system } = await prepareAnswer(
+    db,
+    masterKey,
+    text,
+    entered,
+    options,
+  );
+  const { text: answer } = await generateText({
+    model,
+    system,
+    messages: [...history, { role: "user", content: text }],
+  });
+  const assistantMessageId = uuidv7();
+  if (!(await saveAnswer(db, conversationId, assistantMessageId, answer, candidates)))
+    return { kind: "ended" };
+  await scheduleMessageWriteback(db, masterKey, entered, text, options);
 
   return {
     kind: "answered",
