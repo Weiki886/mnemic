@@ -1,4 +1,3 @@
-import { setTimeout as delay } from "node:timers/promises";
 import { ApiError, type ChatReply, type BeliefDetail } from "@mnemic/shared";
 import { SessionError } from "./chat-session.js";
 
@@ -60,15 +59,4 @@ export function chatFailure(error: unknown): string {
     if (error.status === 409) return "会话已归档或状态冲突，请核对历史引用后使用 resume 或新建会话";
   }
   return "请求失败、超时或响应不兼容；服务端可能已收到消息，不会自动重试";
-}
-/** HTTP 完整回答到达后客户端分段显示；不是 SSE/token 流（#33）。 */
-export async function renderAnswerChunks(
-  answer: string,
-  render: (text: string) => void,
-): Promise<void> {
-  const chars = Array.from(terminalText(answer, true));
-  for (let end = 240; end < chars.length + 240; end += 240) {
-    render(chars.slice(0, end).join(""));
-    if (end < chars.length) await delay(15);
-  }
 }

@@ -11,7 +11,8 @@ mnemic memory ID --project UUID [--server URL] [--json]
 mnemic sessions --project UUID [--limit N] [--offset N] [--server URL] [--json]
 
 读取服务端配置并检查连接、鉴权状态、数据库和模型槽位。
-chat：Ink 对话；/new 提交后新建，/exit 提交退出。会调用模型，可能计费。
+chat：实时流式对话；ESC/Ctrl+C 在生成中请求中断、保留上下文，空闲时 Ctrl+C 或 /exit 提交退出。
+/new 提交后新建；取消不撤销已发生的模型费用，不自动重试。
 resume：创建续聊会话、引用历史，旧会话归档只读；/resume UUID 可切换。归档可能触发待处理消息提取，可能计费。
 memory：只读查看当前值与来源。
 sessions：只读当前项目的会话列表，不恢复会话、不调用模型；默认 limit=50、offset=0。
