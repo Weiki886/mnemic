@@ -83,7 +83,7 @@ export async function messageViews(
     id: m.id,
     speaker: m.speaker,
     raw_text: m.rawText,
-    generation_status: m.generationStatus,
+    ...(m.generationStatus ? { generation_status: m.generationStatus } : {}),
     msg_time: m.msgTime,
     memories: Array.isArray(m.memories)
       ? refs(m).flatMap((id) => {

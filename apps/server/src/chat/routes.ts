@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
+import { and, eq, inArray } from "drizzle-orm";
+import { conversations } from "../db/schema.js";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import type { ProviderFactory } from "../providers/factory.js";
 import type { retrieve } from "../retrieval/search.js";
@@ -60,31 +62,57 @@ export function registerChatRoutes(
     deps.streamTimeoutMs,
   );
 
-  app.post(
-    "/projects/:projectId/conversations/:id/resume",
-    generations.guard(async (request, reply) => {
-      const params = z
-        .object({ projectId: z.string().uuid(), id: z.string().uuid() })
-        .safeParse(request.params);
-      const body = z
-        .object({ current_conversation_id: z.string().uuid().optional() })
-        .strict()
-        .safeParse(request.body);
-      const invalid = (error: z.ZodError) =>
-        reply
-          .code(400)
-          .type("application/problem+json")
-          .send(
-            problem({
-              status: 400,
-              code: ErrorCode.VALIDATION_FAILED,
-              detail: "恢复参数非法",
-              requestId: request.id,
-              errors: zodIssues(error),
-            }),
-          );
-      if (!params.success) return invalid(params.error);
-      if (!body.success) return invalid(body.error);
+  app.post("/projects/:projectId/conversations/:id/resume", async (request, reply) => {
+    const params = z
+      .object({ projectId: z.string().uuid(), id: z.string().uuid() })
+      .safeParse(request.params);
+    const body = z
+      .object({ current_conversation_id: z.string().uuid().optional() })
+      .strict()
+      .safeParse(request.body);
+    const invalid = (error: z.ZodError) =>
+      reply
+        .code(400)
+        .type("application/problem+json")
+        .send(
+          problem({
+            status: 400,
+            code: ErrorCode.VALIDATION_FAILED,
+            detail: "恢复参数非法",
+            requestId: request.id,
+            errors: zodIssues(error),
+          }),
+        );
+    if (!params.success) return invalid(params.error);
+    if (!body.success) return invalid(body.error);
+    // Scope BOTH source and current IDs before revealing an in-process busy state.
+    const ids = [
+      ...new Set(
+        [
+          params.data.id,
+          ...(body.data.current_conversation_id ? [body.data.current_conversation_id] : []),
+        ].map((id) => id.toLowerCase()),
+      ),
+    ];
+    const scoped = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(
+        and(eq(conversations.projectId, params.data.projectId), inArray(conversations.id, ids)),
+      );
+    if (scoped.length !== ids.length)
+      return reply
+        .code(404)
+        .type("application/problem+json")
+        .send(
+          problem({
+            status: 404,
+            code: ErrorCode.NOT_FOUND,
+            detail: "会话不存在",
+            requestId: request.id,
+          }),
+        );
+    return generations.guard(async () => {
       try {
         const result = await resumeConversation(
           db,
@@ -126,8 +154,8 @@ export function registerChatRoutes(
             }),
           );
       }
-    }),
-  );
+    })(request, reply);
+  });
 
   app.post("/v1/conversations", async (request, reply) => {
     const parsed = CreateConversation.safeParse(request.body);

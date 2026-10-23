@@ -50,10 +50,18 @@ export function registerChatStreamRoutes(
     if (!params.success) return bad(reply, request.id, params.error);
     if (!body.success) return bad(reply, request.id, body.error);
     const { projectId, id } = params.data;
+    // Check scope before consulting the process registry: a foreign project must not learn busy/existence state.
+    const [scoped] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.projectId, projectId)))
+      .limit(1);
+    if (!scoped) return missing(reply, request.id);
     const generation = generations.start(projectId, id);
     if (!generation) return generationConflict(reply, request.id);
     const closed = () => generation.controller.abort();
     reply.raw.once("close", closed);
+    if (reply.raw.destroyed) closed();
     let admitted = false;
     try {
       const entered = await enterMessage(db, id, body.data.text, projectId);
@@ -79,6 +87,7 @@ export function registerChatStreamRoutes(
         options,
         timeoutMs,
       );
+      if (reply.raw.destroyed) stream.destroy();
       // Stream close handles interruption only until the saved terminal decision.
       reply.raw.removeListener("close", closed);
       reply.raw.once("close", () => stream.destroy());
@@ -122,7 +131,21 @@ export function registerChatStreamRoutes(
           ),
         )
         .limit(1);
-      if (!row?.status) return missing(reply, request.id);
+      if (!row?.status) {
+        if (active)
+          return reply
+            .code(500)
+            .type("application/problem+json")
+            .send(
+              problem({
+                status: 500,
+                code: ErrorCode.INTERNAL_ERROR,
+                detail: "生成结果未能保存，不能确认取消完成",
+                requestId: request.id,
+              }),
+            );
+        return missing(reply, request.id);
+      }
       return { generation_id: generationId, message_id: row.id, status: row.status };
     },
   );

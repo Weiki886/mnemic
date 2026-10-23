@@ -1,4 +1,7 @@
 import { fileURLToPath } from "node:url";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -28,8 +31,21 @@ describe("专用修正会话迁移（#70）", () => {
     const canonical = "01920000-0000-7000-8000-000000000001";
     const tied = "01920000-0000-7000-8000-000000000002";
     const scoped = postgres(t.url, { max: 1 });
+    const fixtureFolder = await mkdtemp(path.join(tmpdir(), "mnemic-migration-0008-"));
     let created = false;
     try {
+      // Pin this regression to 0008: future migrations must not mutate its intentionally legacy tables.
+      const journal = JSON.parse(
+        await readFile(path.join(migrationsFolder, "meta/_journal.json"), "utf8"),
+      );
+      journal.entries = journal.entries.slice(0, 9);
+      await mkdir(path.join(fixtureFolder, "meta"));
+      await writeFile(path.join(fixtureFolder, "meta/_journal.json"), JSON.stringify(journal));
+      for (const entry of journal.entries as { tag: string }[])
+        await copyFile(
+          path.join(migrationsFolder, `${entry.tag}.sql`),
+          path.join(fixtureFolder, `${entry.tag}.sql`),
+        );
       // 独立单连接隔离表和迁移账本；只重定向旧 DDL 的 schema，目标迁移原样执行。
       await scoped.unsafe(`create schema "${schema}"`);
       created = true;
@@ -89,7 +105,7 @@ describe("专用修正会话迁移（#70）", () => {
         await scoped`insert into __drizzle_migrations (hash, created_at)
           values (${migration.hash}, ${migration.folderMillis})`;
       }
-      const config = { migrationsFolder, migrationsSchema: schema };
+      const config = { migrationsFolder: fixtureFolder, migrationsSchema: schema };
       await migrate(drizzle(scoped), config);
       expect(await scoped`select * from conversations order by id`).toEqual(expected);
       expect(await scoped`select * from messages order by id`).toEqual(messages);
@@ -121,6 +137,7 @@ describe("专用修正会话迁移（#70）", () => {
         if (created) await scoped.unsafe(`drop schema "${schema}" cascade`);
       } finally {
         await scoped.end();
+        await rm(fixtureFolder, { recursive: true, force: true });
       }
     }
   });

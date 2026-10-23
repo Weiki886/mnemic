@@ -14,6 +14,17 @@ describe("streamed message status and historical context (#33)", () => {
   afterAll(async () => {
     await t?.close();
   });
+  it("does not add a status field to legacy message responses", async () => {
+    const p = uuidv7(),
+      c = uuidv7(),
+      m = uuidv7();
+    await t.sql`insert into projects(id,name) values(${p},'legacy')`;
+    await t.sql`insert into conversations(id,project_id) values(${c},${p})`;
+    await t.sql`insert into messages(id,conversation_id,speaker,raw_text,msg_time) values(${m},${c},'assistant','legacy answer',now())`;
+    const [conv] = await t.db.select().from(conversations).where(eq(conversations.id, c));
+    const views = await messageViews(t.db, p, await loadConversationMessages(t.db, conv!));
+    expect(views[0]).not.toHaveProperty("generation_status");
+  });
 
   it.each(["complete", "interrupted", "failed"] as const)(
     "persists %s metadata without copying or rewriting the partial answer",

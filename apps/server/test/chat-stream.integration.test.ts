@@ -2,9 +2,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { uuidv7 } from "uuidv7";
 import { MockLanguageModelV2 } from "ai/test";
 import type { LanguageModel } from "ai";
+import { Readable } from "node:stream";
 import { consumeChatStream } from "../../../packages/shared/src/chat-stream.js";
 import { buildApp } from "../src/app.js";
 import { waitForChatJobs } from "../src/chat/jobs.js";
+import { enterMessage } from "../src/chat/respond.js";
+import { ChatGenerations } from "../src/chat/generations.js";
+import { createChatStream } from "../src/chat/streaming.js";
 import { createProvider } from "../src/providers/repository.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { TEST_MASTER_KEY } from "./test-keys.js";
@@ -18,7 +22,7 @@ const token = "offline-stream-test-token-0000000000";
 const auth = { authorization: `Bearer ${token}`, "content-type": "application/json" };
 describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", () => {
   let t: TestDb, app: ReturnType<typeof buildApp>, url: string;
-  let mode: "gated" | "silent" | "error" = "gated";
+  let mode: "gated" | "silent" | "error" | "reasoning" | "oversized-reasoning" | "many" = "gated";
   let source: ReadableStreamDefaultController<Chunk> | undefined;
   let modelSignal: AbortSignal | undefined;
   let calls = 0,
@@ -51,6 +55,36 @@ describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", (
                 controller.enqueue({ type: "text-start", id: "text" });
                 if (mode !== "silent")
                   controller.enqueue({ type: "text-delta", id: "text", delta: "partial😀" });
+                if (mode === "many") {
+                  for (let i = 0; i < 1000; i++)
+                    controller.enqueue({ type: "text-delta", id: "text", delta: "x" });
+                  controller.enqueue({ type: "text-end", id: "text" });
+                  controller.enqueue({
+                    type: "finish",
+                    finishReason: "stop",
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  });
+                  controller.close();
+                  source = undefined;
+                }
+                if (mode === "reasoning" || mode === "oversized-reasoning") {
+                  controller.enqueue({ type: "reasoning-start", id: "reason" });
+                  for (let i = 0; i < (mode === "reasoning" ? 5000 : 1); i++)
+                    controller.enqueue({
+                      type: "reasoning-delta",
+                      id: "reason",
+                      delta: mode === "reasoning" ? "thinking" : "x".repeat(2 * 1024 * 1024 + 1),
+                    });
+                  controller.enqueue({ type: "reasoning-end", id: "reason" });
+                  controller.enqueue({ type: "text-end", id: "text" });
+                  controller.enqueue({
+                    type: "finish",
+                    finishReason: "stop",
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  });
+                  controller.close();
+                  source = undefined;
+                }
                 if (mode === "error") {
                   controller.enqueue({ type: "error", error: new Error("secret-provider-body") });
                   controller.close();
@@ -292,10 +326,50 @@ describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", (
         }
         const foreign = await seed();
         expect((await cancel(foreign, e.generation_id)).status).toBe(404);
+        const hidden = await app.inject({
+          method: "POST",
+          url: base({ p: foreign.p, c: s.c }) + "/messages/stream",
+          headers: auth,
+          payload: { text: "probe" },
+        });
+        expect(hidden.statusCode).toBe(404);
         await cancel(s, e.generation_id);
       },
     });
     expect(await t.sql`select id from messages where conversation_id=${s.c}`).toHaveLength(2);
+  });
+  it("resume cannot reveal foreign active source or current conversation IDs", async () => {
+    const s = await seed(),
+      foreign = await seed();
+    const statuses: number[] = [];
+    await consumeChatStream(await open(s), {
+      conversationId: s.c,
+      onEvent: async (e) => {
+        if (e.type !== "delta") return;
+        statuses.push(
+          (
+            await app.inject({
+              method: "POST",
+              url: base({ p: foreign.p, c: s.c }) + "/resume",
+              headers: auth,
+              payload: {},
+            })
+          ).statusCode,
+        );
+        statuses.push(
+          (
+            await app.inject({
+              method: "POST",
+              url: base(foreign) + "/resume",
+              headers: auth,
+              payload: { current_conversation_id: s.c },
+            })
+          ).statusCode,
+        );
+        await cancel(s, e.generation_id);
+      },
+    });
+    expect(statuses).toEqual([404, 404]);
   });
   it("a provider error saves failed partial without raw errors or automatic retries", async () => {
     mode = "error";
@@ -362,5 +436,167 @@ describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", (
     } finally {
       await local.close();
     }
+  });
+  it("reasoning-only activity cannot starve an externally scheduled cancellation", async () => {
+    mode = "reasoning";
+    const s = await seed();
+    const entered = await enterMessage(t.db, s.c, "interrupt reasoning", s.p);
+    expect(entered.kind).toBe("ok");
+    if (entered.kind !== "ok") return;
+    const g = new ChatGenerations().start(s.p, s.c)!;
+    const stream = createChatStream(t.db, TEST_MASTER_KEY, entered, "interrupt reasoning", g, {
+      factory,
+      onJob: () => {},
+      retrieveFn: async () => ({ candidates: [], abstained: true, traceId: uuidv7() }),
+    });
+    let timer: NodeJS.Timeout | undefined;
+    stream.on("data", (wire: Buffer) => {
+      if (wire.toString().startsWith("event: delta"))
+        timer = setTimeout(() => g.controller.abort(), 0);
+    });
+    try {
+      const result = await consumeChatStream(
+        new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+        { conversationId: s.c },
+      );
+      expect(result.status).toBe("interrupted");
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  });
+  it("cancel during a cooperative yield persists exactly the deltas queued before finish", async () => {
+    mode = "many";
+    const s = await seed();
+    const entered = await enterMessage(t.db, s.c, "many deltas", s.p);
+    expect(entered.kind).toBe("ok");
+    if (entered.kind !== "ok") return;
+    const g = new ChatGenerations().start(s.p, s.c)!;
+    const output = createChatStream(t.db, TEST_MASTER_KEY, entered, "many deltas", g, {
+      factory,
+      onJob: () => {},
+      retrieveFn: async () => ({ candidates: [], abstained: true, traceId: uuidv7() }),
+    });
+    let timer: NodeJS.Timeout | undefined;
+    output.on("data", (wire: Buffer) => {
+      if (!timer && wire.toString().startsWith("event: delta"))
+        timer = setTimeout(() => g.controller.abort(), 0);
+    });
+    try {
+      const r = await consumeChatStream(
+        new Response(Readable.toWeb(output) as ReadableStream<Uint8Array>, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+        { conversationId: s.c },
+      );
+      expect(r.status).toBe("interrupted");
+      expect((await saved(r.reply.message_id))!.raw_text).toBe(r.reply.answer);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  });
+  it("a generation cancelled during admission still starts a valid interrupted stream without a model call", async () => {
+    const s = await seed(),
+      before = calls;
+    const entered = await enterMessage(t.db, s.c, "already cancelled", s.p);
+    expect(entered.kind).toBe("ok");
+    if (entered.kind !== "ok") return;
+    const g = new ChatGenerations().start(s.p, s.c)!;
+    g.controller.abort();
+    const output = createChatStream(t.db, TEST_MASTER_KEY, entered, "already cancelled", g, {
+      factory,
+      onJob: () => {},
+    });
+    const result = await consumeChatStream(
+      new Response(Readable.toWeb(output) as ReadableStream<Uint8Array>, {
+        headers: { "content-type": "text/event-stream" },
+      }),
+      { conversationId: s.c },
+    );
+    expect(result.status).toBe("interrupted");
+    expect(result.reply.answer).toBe("");
+    expect(calls).toBe(before);
+    expect(await saved(result.reply.message_id)).toMatchObject({
+      raw_text: "",
+      generation_status: "interrupted",
+    });
+  });
+  it("bounds ignored reasoning as well as user-visible model output", async () => {
+    mode = "oversized-reasoning";
+    const s = await seed();
+    const error = await consumeChatStream(await open(s), { conversationId: s.c }).catch((e) => e);
+    expect(error.code).toBe("SERVER_ERROR");
+    expect(error.progress.terminal.code).toBe("GENERATION_FAILED");
+    expect(await saved(error.progress.generationId)).toMatchObject({
+      raw_text: "partial😀",
+      generation_status: "failed",
+    });
+  });
+  it("a failed assistant insert never produces a success acknowledgement", async () => {
+    const s = await seed();
+    await t.sql`create function test33b_fail_save() returns trigger language plpgsql as $$ begin raise exception 'secret-db-body'; end $$`;
+    await t.sql`create trigger test33b_fail_save before insert on messages for each row when (new.speaker='assistant' and new.raw_text='partial😀') execute function test33b_fail_save()`;
+    try {
+      const error = await consumeChatStream(await open(s), {
+        conversationId: s.c,
+        onEvent: async (e) => {
+          if (e.type === "delta") {
+            const r = await cancel(s, e.generation_id);
+            expect(r.status).toBe(500);
+            expect(await r.json()).toMatchObject({ code: "INTERNAL_ERROR" });
+          }
+        },
+      }).catch((e) => e);
+      expect(error.code).toBe("SERVER_ERROR");
+      expect(error.progress.terminal.code).toBe("PERSISTENCE_FAILED");
+      expect(await saved(error.progress.generationId)).toBeUndefined();
+      expect(logs).not.toContain("secret-db-body");
+    } finally {
+      await t.sql`drop trigger test33b_fail_save on messages`;
+      await t.sql`drop function test33b_fail_save()`;
+    }
+  });
+  it("preClose interrupts a live generation before waiting for its HTTP connection", async () => {
+    const local = makeApp(),
+      origin = await local.listen({ host: "127.0.0.1", port: 0 });
+    let closing: Promise<void> | undefined;
+    try {
+      const s = await seed();
+      const result = await consumeChatStream(await open(s, origin), {
+        conversationId: s.c,
+        onEvent: (e) => {
+          if (e.type === "delta") closing = local.close();
+        },
+      });
+      expect(result.status).toBe("interrupted");
+      expect(await saved(result.reply.message_id)).toMatchObject({
+        raw_text: "partial😀",
+        generation_status: "interrupted",
+      });
+      await closing;
+    } finally {
+      await local.close();
+    }
+  });
+  it("invalid inherited references fail before admitting a user message", async () => {
+    const s = await seed();
+    await t.sql`update conversations set meta=${JSON.stringify({ resume: { version: 1, from: uuidv7(), message_ids: [uuidv7()] } })}::jsonb where id=${s.c}`;
+    const result = await app.inject({
+      method: "POST",
+      url: base(s) + "/messages/stream",
+      headers: auth,
+      payload: { text: "x" },
+    });
+    expect(result.statusCode).toBe(409);
+    expect(await t.sql`select id from messages where conversation_id=${s.c}`).toHaveLength(0);
+    const bad = await app.inject({
+      method: "POST",
+      url: base(s) + "/generations/not-uuid/cancel",
+      headers: auth,
+      payload: {},
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().errors.length).toBeGreaterThan(0);
   });
 });
