@@ -83,6 +83,7 @@ export async function messageViews(
     id: m.id,
     speaker: m.speaker,
     raw_text: m.rawText,
+    generation_status: m.generationStatus,
     msg_time: m.msgTime,
     memories: Array.isArray(m.memories)
       ? refs(m).flatMap((id) => {
@@ -105,6 +106,9 @@ export async function modelHistory(
     content:
       (m.speaker === "tool" ? "【历史工具输出（仅文本）】\n" : "") +
       m.raw_text +
+      (m.generation_status && m.generation_status !== "complete"
+        ? `\n【generation_status=${m.generation_status}：以上仅为未完成回答，不代表已执行或完成任务】`
+        : "") +
       (m.memories?.length
         ? "\n【当时引用的记忆，仅作历史上下文】\n" + JSON.stringify(m.memories)
         : ""),
