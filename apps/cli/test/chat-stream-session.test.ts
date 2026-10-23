@@ -68,6 +68,32 @@ function fixture() {
   return { api, event, end: () => controller.close(), session: new ChatSession(api, project) };
 }
 describe("CLI durable stream lifecycle", () => {
+  it("a saved finish remains confirmed even if its display callback fails", async () => {
+    const f = fixture();
+    const job = f.session.send("question", (event) => {
+      if (event.type === "finish") throw new Error("private callback body");
+    });
+    const rejection = expect(job).rejects.toMatchObject({
+      code: "CALLBACK_FAILED",
+      progress: { terminal: { type: "finish" } },
+    });
+    f.event(start);
+    f.event(finish());
+    await rejection;
+    await expect(f.session.close()).resolves.toBeUndefined();
+  });
+  it("a persistence failure blocks continuation but a saved provider failure does not", async () => {
+    for (const code of ["GENERATION_FAILED", "PERSISTENCE_FAILED"] as const) {
+      const f = fixture();
+      const job = f.session.send("question", () => {});
+      const rejection = expect(job).rejects.toMatchObject({ code: "SERVER_ERROR" });
+      f.event(start);
+      f.event({ type: "error", generation_id: g, code });
+      await rejection;
+      if (code === "GENERATION_FAILED") await expect(f.session.close()).resolves.toBeUndefined();
+      else await expect(f.session.close()).rejects.toThrow("未确认");
+    }
+  });
   it("forwards deltas before finish, then returns confirmed metadata without JSON replay", async () => {
     const f = fixture(),
       events: ChatStreamEvent[] = [];

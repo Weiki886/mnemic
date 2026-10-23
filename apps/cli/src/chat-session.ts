@@ -191,12 +191,17 @@ export class ChatSession {
             throw new ChatStreamReadError("INVALID_STREAM", { answer: result.reply.answer });
           return { ...result.reply, generation_status: result.status };
         } catch (error) {
+          const savedFinish =
+            error instanceof ChatStreamReadError &&
+            error.progress.terminal?.type === "finish" &&
+            error.progress.terminal.message_id === error.progress.generationId;
           const savedFailure =
             error instanceof ChatStreamReadError &&
             error.progress.terminal?.type === "error" &&
             error.progress.terminal.code === "GENERATION_FAILED";
           this.uncertain = !(
             turn.confirmed ||
+            savedFinish ||
             savedFailure ||
             (error instanceof ApiError && error.status >= 400 && error.status < 500)
           );

@@ -186,11 +186,10 @@ export function ChatApp({
       } else if (parsed.kind === "message") {
         append("你", text, "cyan");
         setStreaming(true);
-        let answer = "";
         const reply = await session.send(text, (event) => {
           if (event.type === "delta") {
-            answer += event.text;
-            if (mounted.current) setPartial(terminalText(answer, true));
+            const chunk = terminalText(event.text, true);
+            if (mounted.current) setPartial((answer) => answer + chunk);
           }
         });
         if (!mounted.current || closingRef.current) return;
