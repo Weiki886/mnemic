@@ -25,6 +25,22 @@ const finish = {
 };
 
 describe("chat stream v1 contract (#33 part 1)", () => {
+  it("validates strict cancellation acknowledgements", async () => {
+    const protocol = await load();
+    expect(typeof protocol.ChatStreamCancelSchema).toBe("object");
+    for (const status of ["complete", "interrupted", "failed"]) {
+      expect(
+        protocol.ChatStreamCancelSchema.parse({ generation_id: id, message_id: id, status }),
+      ).toEqual({ generation_id: id, message_id: id, status });
+    }
+    for (const receipt of [
+      { generation_id: id, message_id: "bad", status: "interrupted" },
+      { generation_id: id, message_id: id, status: "aborted" },
+      { generation_id: id, message_id: id, status: "complete", secret: "hidden" },
+    ]) {
+      expect(protocol.ChatStreamCancelSchema.safeParse(receipt).success).toBe(false);
+    }
+  });
   it("accepts all event variants, including a server-confirmed interruption", async () => {
     const { ChatStreamEventSchema } = await load();
     for (const event of [

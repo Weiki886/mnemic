@@ -8,6 +8,14 @@ export const CHAT_STREAM_LIMITS = Object.freeze({
   timeoutMs: 120_000,
 });
 const UUID = z.string().uuid().toLowerCase();
+export const ChatStreamCancelSchema = z
+  .object({
+    generation_id: UUID,
+    message_id: UUID,
+    status: z.enum(["complete", "interrupted", "failed"]),
+  })
+  .strict();
+export type ChatStreamCancel = z.infer<typeof ChatStreamCancelSchema>;
 export const ChatStreamEventSchema = z.discriminatedUnion("type", [
   z
     .object({
