@@ -21,6 +21,7 @@ const response: RecallResult = {
 };
 function fixture() {
   const api = {
+    listApprovalAudits: vi.fn(),
     getConfig: vi.fn(async () => {
       throw new Error("unexpected config");
     }),

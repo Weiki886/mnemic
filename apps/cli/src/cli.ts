@@ -21,6 +21,7 @@ mnemic sessions --project UUID [--limit N] [--offset N] [--server URL] [--json]
 chat：实时流式对话；ESC/Ctrl+C 在生成中请求中断、保留上下文，空闲时 Ctrl+C 或 /exit 提交退出。
 /new 提交后新建；取消不撤销已发生的模型费用，不自动重试。
 文件/命令审批默认 read-only，项目根默认当前目录；/permissions 切换、列出或撤销授权。
+审批审计：/permissions history [--limit N --offset N]，只读当前项目历史，不调用模型。
 仅为未来 Tools 的审批框架；聊天、记忆管理和配置命令不受此文件权限模式控制。
 resume：创建续聊会话、引用历史，旧会话归档只读；/resume UUID 可切换。归档可能触发待处理消息提取，可能计费。
 memory：只读查看当前值与来源。

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { parse } from "node:path";
 import {
@@ -8,9 +8,11 @@ import {
   type ApprovalEvaluation,
   type ApprovalOperation,
   type ApprovalScope,
+  type ReusableApprovalGrant,
 } from "@mnemic/shared/approval";
 import { evaluateApproval } from "./approval-policy.js";
 import { ApprovalStore, type StoredApproval } from "./approval-store.js";
+import { ApprovalAuditEventSchema, type ApprovalAuditSink } from "@mnemic/shared/approval-audit";
 
 type Ask = Extract<ApprovalEvaluation, { decision: "ask" }>;
 export interface ApprovalPrompt {
@@ -23,6 +25,7 @@ export interface ApprovalResult {
   approved: boolean;
   reason: string;
   evaluation?: ApprovalEvaluation;
+  scope?: ApprovalScope;
 }
 interface Waiting {
   prompt: ApprovalPrompt;
@@ -40,10 +43,16 @@ export class ApprovalController {
   private epoch = 0;
   private sessionGrants: StoredApproval[] = [];
   private listeners = new Set<() => void>();
+  private requests = new Set<Promise<ApprovalResult>>();
+  private answers = new Set<Promise<boolean>>();
+  private newGrant: { id: string; scope: "session" | "permanent" } | null = null;
+  private preparedGrant: ReusableApprovalGrant | null = null;
+  private auditFailure = false;
 
   private constructor(
     ctx: ApprovalController["ctx"],
     private store: ApprovalStore,
+    private audit: ApprovalAuditSink,
   ) {
     this.ctx = ctx;
   }
@@ -52,6 +61,7 @@ export class ApprovalController {
     root: string;
     mode?: string;
     store?: ApprovalStore;
+    audit: ApprovalAuditSink;
   }) {
     const root = await realpath(options.root);
     if (root === parse(root).root || !(await stat(root)).isDirectory())
@@ -62,7 +72,8 @@ export class ApprovalController {
       root,
       ...(options.mode === undefined ? {} : { mode: options.mode }),
     });
-    return new ApprovalController(ctx, options.store ?? new ApprovalStore());
+    if (typeof options.audit !== "function") throw new Error("审批审计写入器未配置。");
+    return new ApprovalController(ctx, options.store ?? new ApprovalStore(), options.audit);
   }
   get mode() {
     return this.ctx.mode;
@@ -75,6 +86,12 @@ export class ApprovalController {
   }
   get busy() {
     return this.active;
+  }
+  get auditFailed() {
+    return this.auditFailure;
+  }
+  async drain(): Promise<void> {
+    await Promise.allSettled([...this.requests, ...this.answers]);
   }
   get pending(): ApprovalPrompt | null {
     return this.waiting ? structuredClone(this.waiting.prompt) : null;
@@ -97,6 +114,10 @@ export class ApprovalController {
   private cancel() {
     this.epoch++;
     if (this.waiting) this.finish(this.waiting, { approved: false, reason: "cancelled" });
+  }
+  cancelRequest(): void {
+    this.cancel();
+    this.emit();
   }
   setMode(mode: string) {
     const parsed = ApprovalModeSchema.parse(mode);
@@ -139,12 +160,126 @@ export class ApprovalController {
     const grants = (await this.list()).map((row) => row.grant);
     return evaluateApproval({ ...this.ctx, grants }, operation);
   }
-  async request(input: unknown): Promise<ApprovalResult> {
-    if (this.closed) return { approved: false, reason: "closed" };
-    if (this.active) return { approved: false, reason: "busy" };
+  request(input: unknown): Promise<ApprovalResult> {
+    const task = this.auditedRequest(input);
+    this.requests.add(task);
+    void task.then(
+      () => this.requests.delete(task),
+      () => this.requests.delete(task),
+    );
+    return task;
+  }
+  private async undoGrant() {
+    const grant = this.newGrant;
+    this.newGrant = null;
+    if (!grant) return;
+    if (grant.scope === "session")
+      this.sessionGrants = this.sessionGrants.filter((row) => row.id !== grant.id);
+    else await this.store.remove(grant.id);
+  }
+  private async auditedRequest(input: unknown): Promise<ApprovalResult> {
+    const ctx = { ...this.ctx },
+      epoch = this.epoch,
+      owns = !this.closed && !this.active;
+    if (owns) this.active = true;
+    try {
+      const result = this.closed
+        ? { approved: false, reason: "closed" }
+        : owns
+          ? await this.decide(input)
+          : { approved: false, reason: "busy" };
+      const parsed = ApprovalOperationSchema.safeParse(input);
+      const evaluation = result.evaluation;
+      const canonical = evaluation && "target" in evaluation ? evaluation : null;
+      const operation = canonical?.operation ?? (parsed.success ? parsed.data.kind : null);
+      const target =
+        canonical?.target ??
+        (parsed.success
+          ? parsed.data.kind === "shell"
+            ? parsed.data.cwd
+            : parsed.data.target
+          : null);
+      const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+      const event = ApprovalAuditEventSchema.parse({
+        event_id: randomUUID(),
+        request_id: randomUUID(),
+        project_id: ctx.project_id,
+        session_id: ctx.session_id,
+        mode: ctx.mode,
+        operation,
+        decision: result.approved ? "allow" : "deny",
+        reason: result.reason,
+        ...(result.scope ? { scope: result.scope } : {}),
+        root_hash: digest(ctx.root),
+        target_hash: target === null ? null : digest(target),
+        target_basis: target === null ? "none" : canonical ? "canonical" : "requested",
+        ...(parsed.success && parsed.data.kind === "shell"
+          ? { command_hash: digest(parsed.data.command) }
+          : {}),
+      });
+      await this.audit(Object.freeze(event));
+      const denyAfterAudit = async (
+        reason: "changed" | "cancelled" | "storage_error",
+      ): Promise<ApprovalResult> => {
+        await this.undoGrant().catch(() => {});
+        await this.audit(
+          Object.freeze(
+            ApprovalAuditEventSchema.parse({
+              ...event,
+              event_id: randomUUID(),
+              decision: "deny",
+              reason,
+              scope: undefined,
+            }),
+          ),
+        );
+        return { approved: false, reason };
+      };
+      if (owns && result.approved && canonical && parsed.success) {
+        const recheck = async (): Promise<"changed" | "cancelled" | null> => {
+          if (epoch !== this.epoch || this.closed) return "cancelled";
+          const current = await this.assess(parsed.data);
+          if (epoch !== this.epoch || this.closed) return "cancelled";
+          return current.decision === "deny" ||
+            current.operation !== canonical.operation ||
+            current.target !== canonical.target ||
+            (result.reason !== "confirmed" && current.decision !== "allow")
+            ? "changed"
+            : null;
+        };
+        let rejection: "changed" | "cancelled" | "storage_error" | null = null;
+        try {
+          rejection = await recheck();
+          if (!rejection && this.preparedGrant) {
+            const grant = this.preparedGrant;
+            const id = grant.scope === "permanent" ? await this.store.add(grant) : randomUUID();
+            this.newGrant = { id, scope: grant.scope };
+            if (grant.scope === "session") this.sessionGrants.push({ id, grant });
+            rejection = await recheck();
+          }
+        } catch {
+          rejection = "storage_error";
+        }
+        if (rejection) return await denyAfterAudit(rejection);
+      }
+      if (owns) this.newGrant = null;
+      return result;
+    } catch {
+      this.auditFailure = true;
+      if (owns) await this.undoGrant().catch(() => {});
+      return { approved: false, reason: "audit_error" };
+    } finally {
+      if (owns) {
+        await Promise.allSettled([...this.answers]);
+        this.preparedGrant = null;
+        this.active = false;
+        this.emit();
+      }
+    }
+  }
+  private async decide(input: unknown): Promise<ApprovalResult> {
     const parsed = ApprovalOperationSchema.safeParse(input);
     if (!parsed.success) return { approved: false, reason: "invalid_request" };
-    this.active = true;
     const epoch = this.epoch;
     try {
       const evaluation = await this.assess(parsed.data);
@@ -171,13 +306,19 @@ export class ApprovalController {
       });
     } catch {
       return { approved: false, reason: "storage_error" };
-    } finally {
-      this.active = false;
-      this.emit();
     }
   }
   /** Call only for an explicit local human action; never expose this method to model/HTTP inputs. */
-  async answer(id: string, choice: ApprovalScope | "deny"): Promise<boolean> {
+  answer(id: string, choice: ApprovalScope | "deny"): Promise<boolean> {
+    const task = this.decideAnswer(id, choice);
+    this.answers.add(task);
+    void task.then(
+      () => this.answers.delete(task),
+      () => this.answers.delete(task),
+    );
+    return task;
+  }
+  private async decideAnswer(id: string, choice: ApprovalScope | "deny"): Promise<boolean> {
     const waiting = this.waiting;
     if (!waiting || waiting.prompt.id !== id || waiting.prompt.answering) return false;
     if (choice === "deny") {
@@ -187,7 +328,6 @@ export class ApprovalController {
     if (!waiting.prompt.evaluation.allowed_scopes.includes(choice)) return false;
     waiting.prompt.answering = true;
     this.emit();
-    let saved: string | undefined;
     try {
       const current = await this.assess(waiting.operation),
         original = waiting.prompt.evaluation;
@@ -208,31 +348,16 @@ export class ApprovalController {
         target: current.target,
         operation: "file.create" as const,
       };
-      if (choice === "permanent") saved = await this.store.add({ ...fields, scope: "permanent" });
-      if (saved) {
-        const afterSave = await this.assess(waiting.operation);
-        if (
-          afterSave.decision === "deny" ||
-          afterSave.operation !== original.operation ||
-          afterSave.target !== original.target
-        ) {
-          await this.store.remove(saved);
-          this.finish(waiting, { approved: false, reason: "changed" });
-          return true;
-        }
-      }
-      if (this.waiting !== waiting || waiting.epoch !== this.epoch) {
-        if (saved) await this.store.remove(saved);
-        return true;
-      }
       if (choice === "session")
-        this.sessionGrants.push({
-          id: randomUUID(),
-          grant: { ...fields, scope: "session", session_id: this.ctx.session_id },
-        });
-      this.finish(waiting, { approved: true, reason: "confirmed", evaluation: current });
+        this.preparedGrant = { ...fields, scope: "session", session_id: this.ctx.session_id };
+      if (choice === "permanent") this.preparedGrant = { ...fields, scope: "permanent" };
+      this.finish(waiting, {
+        approved: true,
+        reason: "confirmed",
+        evaluation: current,
+        scope: choice,
+      });
     } catch {
-      if (saved) await this.store.remove(saved).catch(() => {});
       this.finish(waiting, { approved: false, reason: "storage_error" });
     }
     return true;
