@@ -13,6 +13,7 @@ import {
 import { editLine, type LineState } from "./line-input.js";
 import { runManagementCommand, type ManagementApi } from "./management-commands.js";
 import type { ApprovalController } from "./approval-controller.js";
+import { runApprovalHistory, type ApprovalHistoryApi } from "./approval-audit.js";
 
 interface Block {
   id: number;
@@ -28,7 +29,7 @@ export function ChatApp({
   onDone,
 }: {
   session: ChatSession;
-  memoryApi: MemoryApi & RecallApi & ManagementApi;
+  memoryApi: MemoryApi & RecallApi & ManagementApi & ApprovalHistoryApi;
   approval?: ApprovalController;
   onDone: (code: number) => void;
 }) {
@@ -126,7 +127,10 @@ export function ChatApp({
   useInput((value, key) => {
     const prompt = approval?.pending;
     if (prompt) {
-      if (prompt.answering) return;
+      if (prompt.answering) {
+        if (key.escape || (key.ctrl && value === "c")) approval?.cancelRequest();
+        return;
+      }
       const plain =
         !key.ctrl &&
         !key.meta &&
@@ -147,7 +151,10 @@ export function ChatApp({
       if (choice) void approval!.answer(prompt.id, choice);
       return;
     }
-    if (approval?.busy) return;
+    if (approval?.busy) {
+      if (key.escape || (key.ctrl && value === "c")) approval.cancelRequest();
+      return;
+    }
     if ((key.escape || (key.ctrl && value === "c")) && session.generating) {
       session.interrupt();
       setCancelling(true);
@@ -207,7 +214,11 @@ export function ChatApp({
       } else if (parsed.kind === "command" && parsed.name === "permissions") {
         if (!approval) throw new Error("审批控制器未初始化。");
         if (parsed.action === "mode") approval.setMode(parsed.mode);
-        if (parsed.action === "revoke") {
+        if (parsed.action === "history") {
+          const job = runApprovalHistory(memoryApi, session.projectId, parsed.query);
+          pendingCommand.current = job;
+          append("审批历史", await job, "gray");
+        } else if (parsed.action === "revoke") {
           append(
             "权限",
             (await approval.revoke(parsed.id)) ? "授权已撤销。" : "当前项目未找到此授权。",
@@ -282,13 +293,16 @@ export function ChatApp({
           "yellow",
         );
       }
-      if (parsed.kind === "command" && parsed.name === "permissions" && approval)
-        append(
-          "权限错误",
-          `请手动检查授权目录 ${terminalLiteral(approval.storageDirectory)} 中的目录/文件权限或损坏记录；不会自动忽略或删除记录。`,
-          "red",
-        );
-      else append("错误", chatFailure(error), "red");
+      if (parsed.kind === "command" && parsed.name === "permissions" && approval) {
+        if (parsed.action === "history")
+          append("审批审计错误", "审批审计查询失败，请检查服务端连接、鉴权与版本。", "red");
+        else
+          append(
+            "权限错误",
+            `请手动检查授权目录 ${terminalLiteral(approval.storageDirectory)} 中的目录/文件权限或损坏记录；不会自动忽略或删除记录。`,
+            "red",
+          );
+      } else append("错误", chatFailure(error), "red");
     } finally {
       pendingCommand.current = undefined;
       busyRef.current = false;
@@ -341,6 +355,9 @@ export function ChatApp({
               : `1 单次${approval.pending.evaluation.allowed_scopes.includes("session") ? " · 2 本会话" : ""}${approval.pending.evaluation.allowed_scopes.includes("permanent") ? " · 3 永久" : ""} · n / ESC / Ctrl+C 拒绝；Enter 不确认`}
           </Text>
         </Box>
+      )}
+      {approval?.busy && !approval.pending && (
+        <Text color="yellow">审批审计记录中，ESC / Ctrl+C 取消本次授权…</Text>
       )}
       {candidates.length > 0 && <Text dimColor>候选：{candidates.join(" ")}</Text>}
       {streaming && partial && <Text>{partial}</Text>}

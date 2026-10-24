@@ -4,6 +4,12 @@
  *  - fetch 可注入（默认全局 fetch），便于单测与非浏览器环境。 */
 
 import type { ErrorCode, FieldError } from "./errors.js";
+import type {
+  ApprovalAuditEvent,
+  ApprovalAuditRecord,
+  ApprovalAuditPage,
+  ApprovalAuditQuery,
+} from "./approval-audit.js";
 import type { DoctorReport } from "./doctor.js";
 import type { ChatStreamCancel } from "./stream-protocol.js";
 import type { BeliefListItem, MemoryListQuery, RecallResult } from "./memory.js";
@@ -169,11 +175,11 @@ export function createApiClient(options: ApiClientOptions) {
     }
     return res;
   }
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    return (await (await requestResponse(path, init)).json()) as T;
+  async function request<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
+    return (await (await requestResponse(path, init, timeoutMs)).json()) as T;
   }
 
-  const post = <T>(path: string, body?: unknown): Promise<T> =>
+  const post = <T>(path: string, body?: unknown, timeoutMs?: number): Promise<T> =>
     request<T>(
       path,
       body === undefined
@@ -183,9 +189,18 @@ export function createApiClient(options: ApiClientOptions) {
             headers: { "content-type": "application/json" },
             body: JSON.stringify(body),
           },
+      timeoutMs,
     );
 
   return {
+    recordApproval: (projectId: string, event: ApprovalAuditEvent) =>
+      post<ApprovalAuditRecord>(`/projects/${projectId}/approvals`, event, 5000),
+    listApprovalAudits: (projectId: string, params: Partial<ApprovalAuditQuery> = {}) =>
+      request<ApprovalAuditPage>(
+        `/projects/${projectId}/approvals${toQuery(params)}`,
+        undefined,
+        5000,
+      ),
     openMessageStream: (
       projectId: string,
       conversationId: string,

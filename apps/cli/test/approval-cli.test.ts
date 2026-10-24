@@ -62,3 +62,22 @@ it("local permissions command has strict parsing and participates in completion"
     expect(parseChatInput(input)).toMatchObject({ kind: "error" });
   expect(completeSlash("/perm").value).toBe("/permissions ");
 });
+it("permissions history parses bounded paging without accepting arbitrary filters", () => {
+  expect(parseChatInput("/permissions history")).toMatchObject({
+    kind: "command",
+    name: "permissions",
+    action: "history",
+    query: { limit: 50, offset: 0 },
+  });
+  expect(parseChatInput("/permissions history --limit 2 --offset 4")).toMatchObject({
+    action: "history",
+    query: { limit: 2, offset: 4 },
+  });
+  for (const input of [
+    "/permissions history --limit 201",
+    "/permissions history --offset -1",
+    "/permissions history --limit 1 --limit 2",
+    "/permissions history raw-query",
+  ])
+    expect(parseChatInput(input)).toMatchObject({ kind: "error" });
+});

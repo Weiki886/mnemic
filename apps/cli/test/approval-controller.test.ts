@@ -23,7 +23,13 @@ afterEach(async () => {
 async function create(mode = "confirm", id = projectId) {
   expect(existsSync(new URL("../src/approval-controller.ts", import.meta.url))).toBe(true);
   const { ApprovalController } = await import("../src/approval-controller.js");
-  const c = await ApprovalController.create({ projectId: id, root, mode, store });
+  const c = await ApprovalController.create({
+    projectId: id,
+    root,
+    mode,
+    store,
+    audit: async () => {},
+  });
   controllers.push(c);
   return c;
 }
@@ -34,7 +40,7 @@ async function prompt(c: Awaited<ReturnType<typeof create>>) {
 }
 it("default mode is read-only; reads remain available, writes never ask or persist", async () => {
   const { ApprovalController } = await import("../src/approval-controller.js");
-  const c = await ApprovalController.create({ projectId, root, store });
+  const c = await ApprovalController.create({ projectId, root, store, audit: async () => {} });
   controllers.push(c);
   expect(c.mode).toBe("read-only");
   expect(await c.request(op)).toMatchObject({ approved: false, reason: "read_only" });

@@ -15,6 +15,7 @@ beforeEach(async () => {
     projectId: project,
     root,
     mode: "confirm",
+    audit: async () => {},
     store: new ApprovalStore(join(root, "grants")),
   });
   await writeFile(join(root, "old.ts"), "unchanged");
@@ -47,6 +48,7 @@ function setup() {
     getConfig: vi.fn(),
     getProjectStatus: vi.fn(),
     updateProvider: vi.fn(),
+    listApprovalAudits: vi.fn(async () => ({ items: [], limit: 50, offset: 0 })),
   };
   const view = render(
     <ChatApp
@@ -58,6 +60,45 @@ function setup() {
   );
   return { view, api };
 }
+it("permissions history queries only server audit history, not local grant storage or models", async () => {
+  const { view, api } = setup();
+  await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${project}`));
+  view.stdin.write("/permissions history");
+  await vi.waitFor(() => expect(view.lastFrame()).toContain("> /permissions history"));
+  view.stdin.write("\r");
+  await vi.waitFor(() => expect(view.frames.join("\n")).toContain("暂无审批记录"));
+  expect(api.listApprovalAudits).toHaveBeenCalledWith(project, { limit: 50, offset: 0 });
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  expect(api.commitConversation).not.toHaveBeenCalled();
+});
+it("ESC during audit receipt wait cancels permission without committing the conversation", async () => {
+  approval.dispose();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const audit = vi.fn(async () => {
+    await gate;
+  });
+  approval = await ApprovalController.create({
+    projectId: project,
+    root,
+    mode: "confirm",
+    store: new ApprovalStore(join(root, "grants")),
+    audit,
+  });
+  const { view, api } = setup();
+  await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${project}`));
+  const request = approval.request({ kind: "file.create", target: "new.ts" });
+  await vi.waitFor(() => expect(view.lastFrame()).toContain("审批确认"));
+  view.stdin.write("1");
+  await vi.waitFor(() => expect(audit).toHaveBeenCalledOnce());
+  view.stdin.write("\u001b");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  release();
+  expect(await request).toMatchObject({ approved: false, reason: "cancelled" });
+  expect(api.commitConversation).not.toHaveBeenCalled();
+});
 it.each(["list", "revoke"])(
   "corrupt store %s failure identifies the directory without exposing or deleting records",
   async (action) => {
