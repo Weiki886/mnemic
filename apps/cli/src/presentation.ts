@@ -6,6 +6,13 @@ export function terminalText(text: string, multiline = false): string {
     multiline && char === "\n" ? "\n" : " ",
   );
 }
+/** Quote a command faithfully: invisible controls must be visible, not silently removed. */
+export function terminalLiteral(text: string): string {
+  return JSON.stringify(text).replace(
+    /[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
 export function valueText(value: unknown): string {
   return typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "未提供");
 }

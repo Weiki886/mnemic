@@ -3,16 +3,25 @@ import { ApiError, createApiClient, type ApiClient, type DoctorReport } from "@m
 import { DoctorReportSchema } from "@mnemic/shared/doctor";
 import { terminalText, formatMemory, chatFailure } from "./presentation.js";
 import { runSessions } from "./sessions.js";
+import { resolve } from "node:path";
+import { ApprovalModeSchema, ApprovalPathSchema } from "@mnemic/shared/approval";
+
+export interface ChatApprovalOptions {
+  mode: "read-only" | "confirm" | "auto";
+  root: string;
+}
 
 const HELP = `mnemic doctor [--server URL] [--probe] [--json]
-mnemic chat --project UUID [--server URL]
-mnemic resume ID --project UUID [--server URL]
+mnemic chat --project UUID [--server URL] [--approval-mode read-only|confirm|auto] [--root PATH]
+mnemic resume ID --project UUID [--server URL] [--approval-mode read-only|confirm|auto] [--root PATH]
 mnemic memory ID --project UUID [--server URL] [--json]
 mnemic sessions --project UUID [--limit N] [--offset N] [--server URL] [--json]
 
 读取服务端配置并检查连接、鉴权状态、数据库和模型槽位。
 chat：实时流式对话；ESC/Ctrl+C 在生成中请求中断、保留上下文，空闲时 Ctrl+C 或 /exit 提交退出。
 /new 提交后新建；取消不撤销已发生的模型费用，不自动重试。
+文件/命令审批默认 read-only，项目根默认当前目录；/permissions 切换、列出或撤销授权。
+仅为未来 Tools 的审批框架；聊天、记忆管理和配置命令不受此文件权限模式控制。
 resume：创建续聊会话、引用历史，旧会话归档只读；/resume UUID 可切换。归档可能触发待处理消息提取，可能计费。
 memory：只读查看当前值与来源。
 sessions：只读当前项目的会话列表，不恢复会话、不调用模型；默认 limit=50、offset=0。
@@ -27,7 +36,12 @@ interface CliOptions {
   fetch?: typeof globalThis.fetch;
   write?: (text: string) => void;
   isTTY?: boolean;
-  startChat?: (api: ApiClient, projectId: string, resumeId?: string) => Promise<number>;
+  startChat?: (
+    api: ApiClient,
+    projectId: string,
+    resumeId?: string,
+    approval?: ChatApprovalOptions,
+  ) => Promise<number>;
 }
 
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -65,6 +79,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
   let offset = 0;
   let projectId: string | undefined;
   let resourceId: string | undefined;
+  let approval: ChatApprovalOptions | undefined;
   let invalid: "arguments" | "command" | "server" | "project" | "limit" | "offset" = "arguments";
   try {
     const parsed = parseArgs({
@@ -78,6 +93,8 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         project: { type: "string" },
         limit: { type: "string" },
         offset: { type: "string" },
+        "approval-mode": { type: "string" },
+        root: { type: "string" },
       },
     });
     if (parsed.values.help || args.length === 0) {
@@ -102,10 +119,19 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       (command !== "doctor" && parsed.values.probe !== undefined) ||
       ((command === "chat" || command === "resume") && parsed.values.json !== undefined) ||
       (command === "doctor" && parsed.values.project !== undefined) ||
+      (command !== "chat" &&
+        command !== "resume" &&
+        (parsed.values["approval-mode"] !== undefined || parsed.values.root !== undefined)) ||
       (command !== "sessions" &&
         (parsed.values.limit !== undefined || parsed.values.offset !== undefined))
     )
       throw new Error("flags");
+    if (parsed.values["approval-mode"] !== undefined || parsed.values.root !== undefined) {
+      approval = {
+        mode: ApprovalModeSchema.parse(parsed.values["approval-mode"] ?? "read-only"),
+        root: resolve(ApprovalPathSchema.parse(parsed.values.root ?? process.cwd())),
+      };
+    }
     if (command === "sessions") {
       invalid = "limit";
       limit = pageNumber(parsed.values.limit, 50, 1, 1000);
@@ -171,6 +197,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     }
     try {
       const start = options.startChat ?? (await import("./render-chat.js")).startChat;
+      if (approval) return await start(api, projectId!, resourceId, approval);
       return command === "resume"
         ? await start(api, projectId!, resourceId!)
         : await start(api, projectId!);

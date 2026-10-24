@@ -6,6 +6,7 @@ import {
 } from "@mnemic/shared/memory";
 import { parseArgs } from "node:util";
 import { ProviderPatchSchema, type ProviderPatch } from "@mnemic/shared/management";
+import { ApprovalModeSchema } from "@mnemic/shared/approval";
 
 /** 只注册已经实现的命令；解析、帮助与补全共用，不从网络或历史加载命令。 */
 export const SLASH_COMMANDS = [
@@ -45,6 +46,11 @@ export const SLASH_COMMANDS = [
     description:
       "全局配置查看/修改已有 Provider；FIELD=name/base_url/protocol/chat/extraction，不接收密钥，embedding 需 REEMBED",
   },
+  {
+    name: "permissions",
+    usage: "/permissions [read-only|confirm|auto|list|revoke UUID]",
+    description: "本地文件/命令审批模式与精确授权；默认只读，不控制聊天/记忆 API",
+  },
 ] as const;
 
 type CommandName = (typeof SLASH_COMMANDS)[number]["name"];
@@ -60,12 +66,18 @@ type ChatInput =
   | { kind: "message"; text: string }
   | {
       kind: "command";
-      name: Exclude<CommandName, "resume" | "memory" | "forget" | "recall" | "status" | "config">;
+      name: Exclude<
+        CommandName,
+        "resume" | "memory" | "forget" | "recall" | "status" | "config" | "permissions"
+      >;
     }
   | { kind: "command"; name: "resume"; argument: string }
   | MemoryCommand
   | ManagementCommand
   | { kind: "command"; name: "recall"; query: string }
+  | { kind: "command"; name: "permissions"; action: "show" | "list" }
+  | { kind: "command"; name: "permissions"; action: "mode"; mode: "read-only" | "confirm" | "auto" }
+  | { kind: "command"; name: "permissions"; action: "revoke"; id: string }
   | { kind: "error"; message: string };
 
 export function parseChatInput(text: string): ChatInput {
@@ -75,6 +87,18 @@ export function parseChatInput(text: string): ChatInput {
   const [token, ...args] = trimmed.split(/\s+/);
   const command = SLASH_COMMANDS.find((entry) => `/${entry.name}` === token);
   if (!command) return { kind: "error", message: "未知斜杠命令；输入 /help 查看已支持命令。" };
+  if (command.name === "permissions") {
+    if (!args.length) return { kind: "command", name: "permissions", action: "show" };
+    if (args.length === 1 && args[0] === "list")
+      return { kind: "command", name: "permissions", action: "list" };
+    const mode = ApprovalModeSchema.safeParse(args[0]);
+    if (args.length === 1 && mode.success)
+      return { kind: "command", name: "permissions", action: "mode", mode: mode.data };
+    const id = ChatConversationSchema.shape.id.safeParse(args[1]);
+    if (args.length === 2 && args[0] === "revoke" && id.success)
+      return { kind: "command", name: "permissions", action: "revoke", id: id.data.toLowerCase() };
+    return { kind: "error", message: `用法：${command.usage}` };
+  }
   if (command.name === "status")
     return args.length
       ? { kind: "error", message: "用法：/status" }

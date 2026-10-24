@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { ChatStreamReadError } from "@mnemic/shared/chat-stream";
 import { SessionStreamError, type ChatSession } from "./chat-session.js";
-import { chatFailure, formatReply, terminalText } from "./presentation.js";
+import { chatFailure, formatReply, terminalText, terminalLiteral } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
 import {
   runMemoryCommand,
@@ -12,6 +12,7 @@ import {
 } from "./memory-commands.js";
 import { editLine, type LineState } from "./line-input.js";
 import { runManagementCommand, type ManagementApi } from "./management-commands.js";
+import type { ApprovalController } from "./approval-controller.js";
 
 interface Block {
   id: number;
@@ -23,14 +24,18 @@ interface Block {
 export function ChatApp({
   session,
   memoryApi,
+  approval,
   onDone,
 }: {
   session: ChatSession;
   memoryApi: MemoryApi & RecallApi & ManagementApi;
+  approval?: ApprovalController;
   onDone: (code: number) => void;
 }) {
   const { exit } = useApp();
   const { write } = useStdout();
+  const [, setApprovalVersion] = useState(0);
+  useEffect(() => approval?.subscribe(() => setApprovalVersion((v) => v + 1)), [approval]);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [line, setLine] = useState<LineState>({ text: "", cursor: 0 });
   const lineRef = useRef(line);
@@ -75,6 +80,10 @@ export function ChatApp({
 
   useEffect(() => {
     mounted.current = true;
+    const unsubscribeIdentity = session.subscribeIdentity((id) => {
+      approval?.setSession(id);
+      if (mounted.current) setId(id);
+    });
     void (async () => {
       try {
         const row = await session.start();
@@ -89,13 +98,16 @@ export function ChatApp({
     })();
     return () => {
       mounted.current = false;
+      unsubscribeIdentity();
       session.interrupt();
+      approval?.dispose();
     };
-  }, [session]);
+  }, [session, approval]);
 
   const finish = async () => {
     if (closingRef.current) return;
     closingRef.current = true;
+    approval?.dispose();
     setClosing(true);
     let code = 0;
     try {
@@ -112,6 +124,30 @@ export function ChatApp({
     exit();
   };
   useInput((value, key) => {
+    const prompt = approval?.pending;
+    if (prompt) {
+      if (prompt.answering) return;
+      const plain =
+        !key.ctrl &&
+        !key.meta &&
+        !key.shift &&
+        !key.super &&
+        !key.hyper &&
+        (key.eventType === undefined || key.eventType === "press");
+      const choice =
+        key.escape || (key.ctrl && value === "c") || value === "n"
+          ? "deny"
+          : plain && value === "1"
+            ? "once"
+            : plain && value === "2"
+              ? "session"
+              : plain && value === "3"
+                ? "permanent"
+                : null;
+      if (choice) void approval!.answer(prompt.id, choice);
+      return;
+    }
+    if (approval?.busy) return;
     if ((key.escape || (key.ctrl && value === "c")) && session.generating) {
       session.interrupt();
       setCancelling(true);
@@ -168,6 +204,35 @@ export function ChatApp({
         if (mounted.current) setId(row.id);
         append("续聊会话", "已引用目标会话历史；原会话与切换前会话保持只读。", "gray");
         appendHistory();
+      } else if (parsed.kind === "command" && parsed.name === "permissions") {
+        if (!approval) throw new Error("审批控制器未初始化。");
+        if (parsed.action === "mode") approval.setMode(parsed.mode);
+        if (parsed.action === "revoke") {
+          append(
+            "权限",
+            (await approval.revoke(parsed.id)) ? "授权已撤销。" : "当前项目未找到此授权。",
+            "gray",
+          );
+        } else if (parsed.action === "list") {
+          const rows = await approval.list();
+          append(
+            "权限授权",
+            rows.length
+              ? rows
+                  .map(
+                    (row) =>
+                      `${row.id} ${row.grant.scope} ${row.grant.operation} ${row.grant.target}`,
+                  )
+                  .join("\n")
+              : "无可复用授权。",
+            "gray",
+          );
+        } else
+          append(
+            "权限",
+            `${approval.mode} · ${approval.root}\n授权目录 ${terminalLiteral(approval.storageDirectory)}\n仅控制未来文件/命令 Tools，当前没有执行器。`,
+            "gray",
+          );
       } else if (
         parsed.kind === "command" &&
         (parsed.name === "status" || parsed.name === "config")
@@ -217,7 +282,13 @@ export function ChatApp({
           "yellow",
         );
       }
-      append("错误", chatFailure(error), "red");
+      if (parsed.kind === "command" && parsed.name === "permissions" && approval)
+        append(
+          "权限错误",
+          `请手动检查授权目录 ${terminalLiteral(approval.storageDirectory)} 中的目录/文件权限或损坏记录；不会自动忽略或删除记录。`,
+          "red",
+        );
+      else append("错误", chatFailure(error), "red");
     } finally {
       pendingCommand.current = undefined;
       busyRef.current = false;
@@ -252,6 +323,25 @@ export function ChatApp({
       </Text>
       <Text dimColor>实时流式回答，可能计费。ESC / Ctrl+C 中断后等待保存确认，可继续对话。</Text>
       <Text dimColor>/help 命令帮助 · Tab 补全命令名（不执行）</Text>
+      {approval && (
+        <Text dimColor>
+          权限 {approval.mode} · 项目根 {terminalText(approval.root)}
+        </Text>
+      )}
+      {approval?.pending && (
+        <Box flexDirection="column">
+          <Text color="yellow" bold>
+            审批确认 · {approval.pending.evaluation.operation}
+          </Text>
+          <Text>{terminalText(approval.pending.evaluation.target)}</Text>
+          {approval.pending.command && <Text>{terminalLiteral(approval.pending.command)}</Text>}
+          <Text>
+            {approval.pending.answering
+              ? "正在复核并保存选择…"
+              : `1 单次${approval.pending.evaluation.allowed_scopes.includes("session") ? " · 2 本会话" : ""}${approval.pending.evaluation.allowed_scopes.includes("permanent") ? " · 3 永久" : ""} · n / ESC / Ctrl+C 拒绝；Enter 不确认`}
+          </Text>
+        </Box>
+      )}
       {candidates.length > 0 && <Text dimColor>候选：{candidates.join(" ")}</Text>}
       {streaming && partial && <Text>{partial}</Text>}
       {(busy || closing) && (
