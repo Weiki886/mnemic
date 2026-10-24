@@ -161,7 +161,9 @@ export class ApprovalController {
     return evaluateApproval({ ...this.ctx, grants }, operation);
   }
   request(input: unknown): Promise<ApprovalResult> {
-    const task = this.auditedRequest(input);
+    const parsed = ApprovalOperationSchema.safeParse(input);
+    // Own one immutable snapshot before the first await, not the caller's mutable object.
+    const task = this.auditedRequest(parsed.success ? Object.freeze(parsed.data) : null);
     this.requests.add(task);
     void task.then(
       () => this.requests.delete(task),
@@ -177,7 +179,7 @@ export class ApprovalController {
       this.sessionGrants = this.sessionGrants.filter((row) => row.id !== grant.id);
     else await this.store.remove(grant.id);
   }
-  private async auditedRequest(input: unknown): Promise<ApprovalResult> {
+  private async auditedRequest(input: ApprovalOperation | null): Promise<ApprovalResult> {
     const ctx = { ...this.ctx },
       epoch = this.epoch,
       owns = !this.closed && !this.active;
@@ -188,17 +190,11 @@ export class ApprovalController {
         : owns
           ? await this.decide(input)
           : { approved: false, reason: "busy" };
-      const parsed = ApprovalOperationSchema.safeParse(input);
       const evaluation = result.evaluation;
       const canonical = evaluation && "target" in evaluation ? evaluation : null;
-      const operation = canonical?.operation ?? (parsed.success ? parsed.data.kind : null);
+      const operation = canonical?.operation ?? input?.kind ?? null;
       const target =
-        canonical?.target ??
-        (parsed.success
-          ? parsed.data.kind === "shell"
-            ? parsed.data.cwd
-            : parsed.data.target
-          : null);
+        canonical?.target ?? (input ? (input.kind === "shell" ? input.cwd : input.target) : null);
       const digest = (value: string) => createHash("sha256").update(value).digest("hex");
       const event = ApprovalAuditEventSchema.parse({
         event_id: randomUUID(),
@@ -213,9 +209,7 @@ export class ApprovalController {
         root_hash: digest(ctx.root),
         target_hash: target === null ? null : digest(target),
         target_basis: target === null ? "none" : canonical ? "canonical" : "requested",
-        ...(parsed.success && parsed.data.kind === "shell"
-          ? { command_hash: digest(parsed.data.command) }
-          : {}),
+        ...(input?.kind === "shell" ? { command_hash: digest(input.command) } : {}),
       });
       await this.audit(Object.freeze(event));
       const denyAfterAudit = async (
@@ -235,10 +229,10 @@ export class ApprovalController {
         );
         return { approved: false, reason };
       };
-      if (owns && result.approved && canonical && parsed.success) {
+      if (owns && result.approved && canonical && input) {
         const recheck = async (): Promise<"changed" | "cancelled" | null> => {
           if (epoch !== this.epoch || this.closed) return "cancelled";
-          const current = await this.assess(parsed.data);
+          const current = await this.assess(input);
           if (epoch !== this.epoch || this.closed) return "cancelled";
           return current.decision === "deny" ||
             current.operation !== canonical.operation ||
@@ -262,6 +256,9 @@ export class ApprovalController {
         }
         if (rejection) return await denyAfterAudit(rejection);
       }
+      // Commit the decision synchronously after the last awaited check. No await after this guard.
+      if (owns && result.approved && (epoch !== this.epoch || this.closed))
+        return await denyAfterAudit("cancelled");
       if (owns) this.newGrant = null;
       return result;
     } catch {
@@ -270,19 +267,17 @@ export class ApprovalController {
       return { approved: false, reason: "audit_error" };
     } finally {
       if (owns) {
-        await Promise.allSettled([...this.answers]);
         this.preparedGrant = null;
         this.active = false;
         this.emit();
       }
     }
   }
-  private async decide(input: unknown): Promise<ApprovalResult> {
-    const parsed = ApprovalOperationSchema.safeParse(input);
-    if (!parsed.success) return { approved: false, reason: "invalid_request" };
+  private async decide(input: ApprovalOperation | null): Promise<ApprovalResult> {
+    if (!input) return { approved: false, reason: "invalid_request" };
     const epoch = this.epoch;
     try {
-      const evaluation = await this.assess(parsed.data);
+      const evaluation = await this.assess(input);
       if (epoch !== this.epoch || this.closed) return { approved: false, reason: "cancelled" };
       if (evaluation.decision !== "ask")
         return {
@@ -296,9 +291,9 @@ export class ApprovalController {
             id: randomUUID(),
             evaluation,
             answering: false,
-            ...(parsed.data.kind === "shell" ? { command: parsed.data.command } : {}),
+            ...(input.kind === "shell" ? { command: input.command } : {}),
           },
-          operation: parsed.data,
+          operation: input,
           epoch,
           resolve,
         };

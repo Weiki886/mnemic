@@ -138,6 +138,55 @@ it("human shell confirmation records once and only a command digest", async () =
   });
   expect(JSON.stringify(audit.mock.calls)).not.toContain("DO_NOT_LOG");
 });
+it("caller mutation while confirming cannot substitute the displayed command in audit", async () => {
+  const { c, audit } = await create();
+  const input = { kind: "shell", cwd: ".", command: "echo APPROVED" };
+  const request = c.request(input),
+    p = await prompt(c);
+  expect(p.command).toBe("echo APPROVED");
+  input.command = "echo NOT_APPROVED";
+  await c.answer(p.id, "once");
+  expect(await request).toMatchObject({ approved: true });
+  expect(audit.mock.calls[0]![0].command_hash).toBe(hash("echo APPROVED"));
+});
+it("caller mutation cannot replace the approved target during the request lifecycle", async () => {
+  const { c, audit } = await create();
+  const input = { kind: "file.create", target: "new.ts" },
+    request = c.request(input),
+    p = await prompt(c);
+  input.kind = "file.delete";
+  input.target = "old.ts";
+  await c.answer(p.id, "once");
+  expect(await request).toMatchObject({
+    approved: true,
+    evaluation: { operation: "file.create", target: join(root, "new.ts") },
+  });
+  expect(audit.mock.calls[0]![0]).toMatchObject({
+    operation: "file.create",
+    target_hash: hash(join(root, "new.ts")),
+  });
+});
+it("mode cancellation queued after the last assessment still wins before approval commits", async () => {
+  const { c, audit } = await create("auto");
+  // Preserve real policy/FS work; only control the promise-resolution scheduling seam.
+  const seam = c as unknown as { assess: (input: unknown) => Promise<unknown> };
+  const original = seam.assess.bind(c);
+  let checks = 0;
+  vi.spyOn(seam, "assess").mockImplementation(
+    (input) =>
+      new Promise((resolve, reject) => {
+        original(input).then((value) => {
+          checks++;
+          resolve(value);
+          if (checks === 2) queueMicrotask(() => c.setMode("read-only"));
+        }, reject);
+      }),
+  );
+  const result = await c.request(op);
+  expect(c.mode).toBe("read-only");
+  expect(result).toMatchObject({ approved: false, reason: "cancelled" });
+  expect(audit.mock.calls.at(-1)![0]).toMatchObject({ decision: "deny", reason: "cancelled" });
+});
 it("dispose drains the cancellation record; malformed/closed attempts contain no raw inputs", async () => {
   const { c, audit } = await create();
   await c.request({ kind: "secret-invalid-kind", target: "sk-SECRET" });
