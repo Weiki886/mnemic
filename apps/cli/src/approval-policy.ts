@@ -22,7 +22,9 @@ async function inspectTarget(root: string, operation: ApprovalOperation): Promis
   const input = resolve(root, operation.kind === "shell" ? operation.cwd : operation.target);
   let exists = true;
   try {
-    await lstat(input);
+    const entry = await lstat(input);
+    // Unlinking a symlink and deleting its referent require different execution contracts.
+    if (operation.kind === "file.delete" && entry.isSymbolicLink()) return deny("invalid_target");
   } catch (error) {
     if (
       operation.kind !== "file.create" ||

@@ -215,6 +215,19 @@ describe("approval policy: owner-confirmed matrix and real filesystem boundaries
       await evaluate(context("auto"), { kind: "file.create", target: "file-link.ts" }),
     ).toMatchObject({ decision: "ask", operation: "file.overwrite" });
   });
+  it.each(["file-link.ts", "alias", "escape", "broken"])(
+    "deleting symlink %s is unsupported instead of assessing its referent",
+    async (target) => {
+      for (const mode of ["auto", "confirm", "read-only"])
+        expect(await evaluate(context(mode), { kind: "file.delete", target })).toEqual({
+          decision: "deny",
+          reason: "invalid_target",
+        });
+      expect((await lstat(join(root, target))).isSymbolicLink()).toBe(true);
+      expect(await readFile(join(root, "existing.ts"), "utf8")).toBe("unchanged");
+      expect(await readFile(join(sibling, "private.ts"), "utf8")).toBe("outside-secret");
+    },
+  );
   it("a symlink supplied as trusted root resolves to the same canonical scope", async () => {
     const alias = join(base, "root-alias");
     await symlink(root, alias);
