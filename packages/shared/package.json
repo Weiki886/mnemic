@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./approval": {
+      "types": "./dist/approval.d.ts",
+      "import": "./dist/approval.js"
+    },
     "./chat-stream": {
       "types": "./dist/chat-stream.d.ts",
       "import": "./dist/chat-stream.js"
