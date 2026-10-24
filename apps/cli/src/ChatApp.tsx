@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { ChatStreamReadError } from "@mnemic/shared/chat-stream";
 import { SessionStreamError, type ChatSession } from "./chat-session.js";
-import { chatFailure, formatReply, terminalText } from "./presentation.js";
+import { chatFailure, formatReply, terminalText, terminalLiteral } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
 import {
   runMemoryCommand,
@@ -80,10 +80,13 @@ export function ChatApp({
 
   useEffect(() => {
     mounted.current = true;
+    const unsubscribeIdentity = session.subscribeIdentity((id) => {
+      approval?.setSession(id);
+      if (mounted.current) setId(id);
+    });
     void (async () => {
       try {
         const row = await session.start();
-        approval?.setSession(row.id);
         appendHistory();
         if (mounted.current) setId(row.id);
       } catch (error) {
@@ -95,6 +98,7 @@ export function ChatApp({
     })();
     return () => {
       mounted.current = false;
+      unsubscribeIdentity();
       session.interrupt();
       approval?.dispose();
     };
@@ -123,14 +127,21 @@ export function ChatApp({
     const prompt = approval?.pending;
     if (prompt) {
       if (prompt.answering) return;
+      const plain =
+        !key.ctrl &&
+        !key.meta &&
+        !key.shift &&
+        !key.super &&
+        !key.hyper &&
+        (key.eventType === undefined || key.eventType === "press");
       const choice =
         key.escape || (key.ctrl && value === "c") || value === "n"
           ? "deny"
-          : value === "1"
+          : plain && value === "1"
             ? "once"
-            : value === "2"
+            : plain && value === "2"
               ? "session"
-              : value === "3"
+              : plain && value === "3"
                 ? "permanent"
                 : null;
       if (choice) void approval!.answer(prompt.id, choice);
@@ -186,12 +197,10 @@ export function ChatApp({
     try {
       if (parsed.kind === "command" && parsed.name === "new") {
         const row = await session.newConversation();
-        approval?.setSession(row.id);
         if (mounted.current) setId(row.id);
         append("新会话", "旧会话已提交；后台记忆提取可能仍在处理。", "gray");
       } else if (parsed.kind === "command" && parsed.name === "resume") {
         const row = await session.resume(parsed.argument);
-        approval?.setSession(row.id);
         if (mounted.current) setId(row.id);
         append("续聊会话", "已引用目标会话历史；原会话与切换前会话保持只读。", "gray");
         appendHistory();
@@ -319,9 +328,7 @@ export function ChatApp({
             审批确认 · {approval.pending.evaluation.operation}
           </Text>
           <Text>{terminalText(approval.pending.evaluation.target)}</Text>
-          {approval.pending.command && (
-            <Text>{terminalText(JSON.stringify(approval.pending.command))}</Text>
-          )}
+          {approval.pending.command && <Text>{terminalLiteral(approval.pending.command)}</Text>}
           <Text>
             {approval.pending.answering
               ? "正在复核并保存选择…"

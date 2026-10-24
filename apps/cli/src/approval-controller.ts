@@ -101,8 +101,8 @@ export class ApprovalController {
     this.ctx.mode = parsed;
     this.emit();
   }
-  setSession(id: string) {
-    const ctx = ApprovalContextSchema.parse({ ...this.ctx, session_id: id });
+  setSession(id: string | null) {
+    const ctx = ApprovalContextSchema.parse({ ...this.ctx, session_id: id ?? randomUUID() });
     if (ctx.session_id === this.ctx.session_id) return;
     this.cancel();
     this.ctx = ctx;
@@ -229,6 +229,7 @@ export class ApprovalController {
         });
       this.finish(waiting, { approved: true, reason: "confirmed", evaluation: current });
     } catch {
+      if (saved) await this.store.remove(saved).catch(() => {});
       this.finish(waiting, { approved: false, reason: "storage_error" });
     }
     return true;

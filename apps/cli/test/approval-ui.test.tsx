@@ -58,6 +58,56 @@ function setup() {
   );
   return { view, api };
 }
+it.each(["\u001b1", "\u001b3", "\u001b[49;1:2u", "\u001b[49;1:3u", "\u001b[51;5u", "\u001b[51;9u"])(
+  "modified confirmation %j never authorizes or persists a rule",
+  async (key) => {
+    const { view } = setup();
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${project}`));
+    const request = approval.request({ kind: "file.create", target: "new.ts" });
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("审批确认"));
+    view.stdin.write(key);
+    // A deny acts as a processing barrier; neither modified key may finish the approval.
+    view.stdin.write("n");
+    expect(await request).toMatchObject({ approved: false });
+    expect(await approval.list()).toEqual([]);
+  },
+);
+it("failed /new followed by send never reuses the archived conversation's grants", async () => {
+  const { view, api } = setup();
+  await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${project}`));
+  const request = approval.request({ kind: "file.create", target: "new.ts" });
+  await vi.waitFor(() => expect(view.lastFrame()).toContain("审批确认"));
+  view.stdin.write("2");
+  await request;
+  await vi.waitFor(() => expect(view.lastFrame()).not.toContain("审批确认"));
+  api.createConversation.mockRejectedValueOnce(new Error("temporary creation error"));
+  view.stdin.write("/new");
+  await vi.waitFor(() => expect(view.lastFrame()).toContain("> /new"));
+  view.stdin.write("\r");
+  await vi.waitFor(() => expect(api.createConversation).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(view.lastFrame()).not.toContain("处理中"));
+  const next = "01920000-0000-7000-8000-000000000002";
+  api.createConversation.mockResolvedValueOnce({
+    id: next,
+    project_id: project,
+    title: null,
+    started_at: new Date(0).toISOString(),
+    ended_at: null,
+  });
+  let grantsAtSend: unknown;
+  api.sendMessage.mockImplementationOnce(async () => {
+    // The boundary must be cleared BEFORE any future Tool runs during this request.
+    grantsAtSend = await approval.list();
+    return { message_id: next, answer: "ok", abstained: true, memories: [] };
+  });
+  view.stdin.write("recover");
+  await vi.waitFor(() => expect(view.lastFrame()).toContain("> recover"));
+  view.stdin.write("\r");
+  await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${next}`));
+  await vi.waitFor(() => expect(view.frames.join("\n")).toContain("不记得"));
+  expect(grantsAtSend).toEqual([]);
+  expect(await approval.list()).toEqual([]);
+});
 it("lists and revokes session rules locally and drops them on /new", async () => {
   const { view, api } = setup();
   await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${project}`));
@@ -127,10 +177,11 @@ it.each(["\u001b", "\u0003"])(
     const request = approval.request({
       kind: "shell",
       cwd: ".",
-      command: "echo NEVER_EXECUTE\nsecond line",
+      command: "echo NEVER_EXECUTE\nsecond line\u0085\u202e",
     });
     await vi.waitFor(() => expect(view.lastFrame()).toContain("审批确认"));
     expect(view.lastFrame()).toContain("echo NEVER_EXECUTE\\nsecond line");
+    expect(view.lastFrame()).toContain("\\u0085\\u202e");
     expect(view.lastFrame()).not.toContain("3 永久");
     view.stdin.write("3");
     view.stdin.write(key);

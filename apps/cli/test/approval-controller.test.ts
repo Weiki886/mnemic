@@ -213,3 +213,20 @@ it("repeated confirmation while rechecking cannot create duplicate permanent rec
   expect(await request).toMatchObject({ approved: true });
   expect(await store.list()).toHaveLength(1);
 });
+it("a failed post-publication check rolls back the permanent record before returning denied", async () => {
+  const c = await create(),
+    request = c.request(op),
+    p = await prompt(c);
+  const add = store.add.bind(store);
+  vi.spyOn(store, "add").mockImplementationOnce(async (value) => {
+    const id = await add(value);
+    vi.spyOn(store, "list").mockRejectedValueOnce(new Error("temporary list failure"));
+    return id;
+  });
+  await c.answer(p.id, "permanent");
+  expect(await request).toEqual({ approved: false, reason: "storage_error" });
+  expect(await store.list()).toEqual([]);
+  const again = c.request(op);
+  await c.answer((await prompt(c)).id, "deny");
+  expect(await again).toMatchObject({ approved: false });
+});

@@ -52,6 +52,7 @@ export class ChatSession {
   private inherited: ConversationMessage[] = [];
   private active: ActiveTurn | undefined;
   private uncertain = false;
+  private identityListeners = new Set<(id: string | null) => void>();
 
   constructor(
     private readonly api: ChatApi,
@@ -61,6 +62,18 @@ export class ChatSession {
   }
   get id(): string | null {
     return this.conversation?.id ?? null;
+  }
+  /** Synchronous boundary notification, including failed transitions before another send can run. */
+  subscribeIdentity(listener: (id: string | null) => void): () => void {
+    this.identityListeners.add(listener);
+    listener(this.id);
+    return () => {
+      this.identityListeners.delete(listener);
+    };
+  }
+  private setConversation(row: ChatConversation | undefined) {
+    this.conversation = row;
+    for (const listener of this.identityListeners) listener(this.id);
   }
   get history(): readonly ConversationMessage[] {
     return this.inherited;
@@ -115,7 +128,8 @@ export class ChatSession {
       const row = ChatConversationSchema.parse(await this.api.createConversation(this.projectId));
       if (row.project_id !== this.projectId || row.ended_at !== null)
         throw new SessionError("服务端会话与项目不匹配或已提交");
-      this.conversation = row;
+      this.setConversation(row);
+      return row;
     }
     return this.conversation;
   }
@@ -158,7 +172,7 @@ export class ChatSession {
         row.id === this.id
       )
         throw new SessionError("服务端未确认项目内的新续聊会话");
-      this.conversation = row;
+      this.setConversation(row);
       this.inherited = row.messages;
       this.uncertain = false;
       return row;
@@ -229,7 +243,7 @@ export class ChatSession {
   newConversation(): Promise<ChatConversation> {
     return this.run(async () => {
       await this.commit();
-      this.conversation = undefined;
+      this.setConversation(undefined);
       this.inherited = [];
       return this.ensureConversation();
     });
