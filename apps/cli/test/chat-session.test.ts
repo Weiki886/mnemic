@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ChatSession } from "../src/chat-session.js";
-import { formatReply, formatMemory, renderAnswerChunks } from "../src/presentation.js";
+import { formatReply, formatMemory } from "../src/presentation.js";
 import { ApiError, type BeliefDetail } from "@mnemic/shared";
 
 const project = "01920000-0000-7000-8000-000000000001";
@@ -24,6 +24,11 @@ const answer = (value = "PostgreSQL") => ({
   ],
 });
 const fixture = () => ({
+  getConversation: vi.fn(async () => ({
+    ...conversation(),
+    ended_at: "2026-10-16T01:00:00.000Z",
+    messages: [],
+  })),
   resumeConversation: vi.fn(async () => ({ ...conversation(), resumed_from: c2, messages: [] })),
   createConversation: vi.fn(async () => conversation()),
   sendMessage: vi.fn(async () => answer()),
@@ -208,17 +213,5 @@ describe("CLI 只读展示", () => {
     } as BeliefDetail;
     const text = formatMemory(detail);
     for (const value of [belief, "MySQL", c1, c2, project]) expect(text).toContain(value);
-  });
-
-  it("回答按客户端片段显示，保留 Unicode 与换行，去除终端控制符", async () => {
-    const raw = "🙂".repeat(500) + "\n第二行\u001b\u202e";
-    const frames: string[] = [];
-    await renderAnswerChunks(raw, (s) => {
-      frames.push(s);
-    });
-    expect(frames.length).toBeGreaterThan(1);
-    expect(frames[0]!.length).toBeLessThan(raw.length);
-    expect(frames.at(-1)).toBe("🙂".repeat(500) + "\n第二行  ");
-    expect(frames.every((s) => !s.includes("\ufffd"))).toBe(true);
   });
 });

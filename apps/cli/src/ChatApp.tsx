@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Static, Text, useApp, useInput } from "ink";
-import type { ChatReply } from "@mnemic/shared";
-import type { ChatSession } from "./chat-session.js";
-import { chatFailure, formatReply, renderAnswerChunks, terminalText } from "./presentation.js";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { ChatStreamReadError } from "@mnemic/shared/chat-stream";
+import { SessionStreamError, type ChatSession } from "./chat-session.js";
+import { chatFailure, formatReply, terminalText } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
 import {
   runMemoryCommand,
@@ -30,6 +30,7 @@ export function ChatApp({
   onDone: (code: number) => void;
 }) {
   const { exit } = useApp();
+  const { write } = useStdout();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [line, setLine] = useState<LineState>({ text: "", cursor: 0 });
   const lineRef = useRef(line);
@@ -44,7 +45,8 @@ export function ChatApp({
   const [id, setId] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [closing, setClosing] = useState(false);
-  const [preview, setPreview] = useState<ChatReply | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [partial, setPartial] = useState("");
   const busyRef = useRef(true);
   const closingRef = useRef(false);
@@ -60,7 +62,7 @@ export function ChatApp({
   const appendHistory = () => {
     for (const m of session.history)
       append(
-        `历史 · ${m.speaker === "user" ? "用户" : m.speaker === "tool" ? "工具" : "助手"}`,
+        `历史 · ${m.speaker === "user" ? "用户" : m.speaker === "tool" ? "工具" : "助手"}${m.generation_status === "interrupted" ? " · 已中断" : m.generation_status === "failed" ? " · 生成失败" : ""}`,
         formatReply({
           message_id: m.id,
           answer: m.raw_text,
@@ -87,6 +89,7 @@ export function ChatApp({
     })();
     return () => {
       mounted.current = false;
+      session.interrupt();
     };
   }, [session]);
 
@@ -102,12 +105,18 @@ export function ChatApp({
       append("会话已提交", "记忆提取在后台完成，提交不等于已完成索引。", "gray");
     } catch (error) {
       code = 1;
-      append("提交未确认", chatFailure(error), "red");
+      // A queued React block may never render after exit(); emit the final diagnostic directly.
+      write(`提交未确认\n${terminalText(chatFailure(error), true)}\n`);
     }
     onDone(code);
     exit();
   };
   useInput((value, key) => {
+    if ((key.escape || (key.ctrl && value === "c")) && session.generating) {
+      session.interrupt();
+      setCancelling(true);
+      return;
+    }
     if (key.ctrl && value === "c") {
       void finish();
       return;
@@ -178,23 +187,44 @@ export function ChatApp({
         append(parsed.name === "recall" ? "手动召回" : "记忆", await job, "gray");
       } else if (parsed.kind === "message") {
         append("你", text, "cyan");
-        const reply = await session.send(text);
+        setStreaming(true);
+        const reply = await session.send(text, (event) => {
+          if (event.type === "delta") {
+            const chunk = terminalText(event.text, true);
+            if (mounted.current) setPartial((answer) => answer + chunk);
+          }
+        });
         if (!mounted.current || closingRef.current) return;
         setId(session.id);
-        setPreview(reply);
-        await renderAnswerChunks(reply.answer, (chunk) => {
-          if (mounted.current && !closingRef.current) setPartial(chunk);
-        });
-        append("回答", formatReply(reply), reply.abstained ? "yellow" : "white");
+        append(
+          reply.generation_status === "interrupted" ? "已中断 · 已保存" : "回答",
+          formatReply(reply),
+          reply.abstained ? "yellow" : "white",
+        );
       }
     } catch (error) {
+      if (error instanceof ChatStreamReadError) {
+        const failed =
+          error.progress.terminal?.type === "error" &&
+          error.progress.terminal.code === "GENERATION_FAILED";
+        append(
+          failed
+            ? "生成失败 · 已保存片段"
+            : error instanceof SessionStreamError && error.saved
+              ? "已保存 · 输出未完成"
+              : "保存未确认",
+          error.progress.answer || "未收到回答片段；不会自动重发。",
+          "yellow",
+        );
+      }
       append("错误", chatFailure(error), "red");
     } finally {
       pendingCommand.current = undefined;
       busyRef.current = false;
       if (mounted.current) {
         setBusy(false);
-        setPreview(null);
+        setStreaming(false);
+        setCancelling(false);
         setPartial("");
       }
     }
@@ -218,14 +248,20 @@ export function ChatApp({
       </Text>
       <Text dimColor>
         会话 {id ?? "未创建"} · /new 新会话 · /resume UUID 续聊 · /exit 提交退出 · Ctrl+C
-        等待请求后退出
+        生成中打断，空闲时提交退出
       </Text>
-      <Text dimColor>对话将调用服务端模型，可能计费。回答收到后按段显示。</Text>
+      <Text dimColor>实时流式回答，可能计费。ESC / Ctrl+C 中断后等待保存确认，可继续对话。</Text>
       <Text dimColor>/help 命令帮助 · Tab 补全命令名（不执行）</Text>
       {candidates.length > 0 && <Text dimColor>候选：{candidates.join(" ")}</Text>}
-      {preview && <Text>{formatReply(preview, partial)}</Text>}
+      {streaming && partial && <Text>{partial}</Text>}
       {(busy || closing) && (
-        <Text color="yellow">{closing ? "等待请求结束并提交退出…" : "处理中…"}</Text>
+        <Text color="yellow">
+          {closing
+            ? "等待请求结束并提交退出…"
+            : cancelling
+              ? "处理中：正在请求中断并等待保存确认…"
+              : "处理中…"}
+        </Text>
       )}
       <Box>
         <Text color="cyan">{"> "}</Text>

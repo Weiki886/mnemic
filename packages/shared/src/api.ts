@@ -5,6 +5,7 @@
 
 import type { ErrorCode, FieldError } from "./errors.js";
 import type { DoctorReport } from "./doctor.js";
+import type { ChatStreamCancel } from "./stream-protocol.js";
 import type { BeliefListItem, MemoryListQuery, RecallResult } from "./memory.js";
 import type { ServerConfig, ProjectStatus, ProviderPatch, ProviderConfig } from "./management.js";
 export type { BeliefListItem } from "./memory.js";
@@ -128,15 +129,23 @@ export function createApiClient(options: ApiClientOptions) {
   const base = options.baseUrl.replace(/\/+$/, "");
   const doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
 
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  async function requestResponse(
+    path: string,
+    init?: RequestInit,
+    timeoutMs = options.timeoutMs,
+  ): Promise<Response> {
     const headers = new Headers(init?.headers);
     if (options.token) headers.set("authorization", `Bearer ${options.token}`);
+    const signals = [
+      init?.signal,
+      timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
+    ].filter((signal): signal is AbortSignal => signal != null);
+    const signal = signals.length ? AbortSignal.any(signals) : undefined;
+    signal?.throwIfAborted();
     const res = await doFetch(`${base}${path}`, {
       ...init,
       headers,
-      ...(options.timeoutMs !== undefined
-        ? { signal: AbortSignal.timeout(options.timeoutMs) }
-        : {}),
+      ...(signal ? { signal } : {}),
     });
     if (!res.ok) {
       const text = await res.text();
@@ -158,7 +167,10 @@ export function createApiClient(options: ApiClientOptions) {
       }
       throw new ApiError(res.status, null, text || res.statusText);
     }
-    return (await res.json()) as T;
+    return res;
+  }
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    return (await (await requestResponse(path, init)).json()) as T;
   }
 
   const post = <T>(path: string, body?: unknown): Promise<T> =>
@@ -174,6 +186,38 @@ export function createApiClient(options: ApiClientOptions) {
     );
 
   return {
+    openMessageStream: (
+      projectId: string,
+      conversationId: string,
+      text: string,
+      signal?: AbortSignal,
+    ) =>
+      requestResponse(
+        `/projects/${projectId}/conversations/${conversationId}/messages/stream`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text }),
+          ...(signal ? { signal } : {}),
+        },
+        600_000,
+      ),
+    cancelMessageStream: async (
+      projectId: string,
+      conversationId: string,
+      generationId: string,
+    ): Promise<ChatStreamCancel> =>
+      (await (
+        await requestResponse(
+          `/projects/${projectId}/conversations/${conversationId}/generations/${generationId}/cancel`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          },
+          10_000,
+        )
+      ).json()) as ChatStreamCancel,
     createConversation: (projectId: string, title?: string) =>
       post<ChatConversation>("/v1/conversations", {
         project_id: projectId,
