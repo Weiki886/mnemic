@@ -69,6 +69,7 @@ it("session grant matches canonical target only and is cleared on conversation s
   await c.answer((await prompt(c)).id, "deny");
   await other;
   c.setSession(nextId);
+  expect(await c.list()).toEqual([]);
   const next = c.request(op);
   await c.answer((await prompt(c)).id, "deny");
   expect(await next).toMatchObject({ approved: false });
