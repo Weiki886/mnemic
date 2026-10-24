@@ -9,6 +9,7 @@ const Path = z
   .min(1)
   .max(4096)
   .refine((value) => !/[\p{Cc}\u202a-\u202e\u2066-\u2069]/u.test(value));
+export { Path as ApprovalPathSchema };
 const FileKind = z.enum(["file.read", "file.create", "file.overwrite", "file.delete"]);
 export const ApprovalOperationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("file.read"), target: Path }).strict(),

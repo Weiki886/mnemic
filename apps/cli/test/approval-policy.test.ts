@@ -242,6 +242,32 @@ describe("approval policy: owner-confirmed matrix and real filesystem boundaries
       reason: "invalid_target",
     });
   });
+  it("canonical target paths reached via innocent aliases must satisfy the path contract too", async () => {
+    const hidden = join(root, "hidden\nfolder");
+    await mkdir(hidden);
+    await writeFile(join(hidden, "file.ts"), "unchanged");
+    await symlink(hidden, join(root, "clean-alias"));
+    for (const op of [
+      { kind: "file.read", target: "clean-alias/file.ts" },
+      { kind: "file.create", target: "clean-alias/new.ts" },
+    ])
+      expect(await evaluate(context("auto"), op)).toEqual({
+        decision: "deny",
+        reason: "invalid_target",
+      });
+  });
+  it("a canonical root with control characters cannot bypass validation through an alias", async () => {
+    const hidden = join(base, "hidden\nroot"),
+      alias = join(base, "clean-root");
+    await mkdir(hidden);
+    await symlink(hidden, alias);
+    expect(
+      await evaluate(
+        { ...context("auto"), root: alias },
+        { kind: "file.create", target: "new.ts" },
+      ),
+    ).toEqual({ decision: "deny", reason: "invalid_root" });
+  });
   it("invalid roots fail closed (relative, missing, file, filesystem root)", async () => {
     for (const invalid of [
       "relative",

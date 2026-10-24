@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } fr
 import {
   ApprovalContextSchema,
   ApprovalOperationSchema,
+  ApprovalPathSchema,
   type ApprovalEvaluation,
   type ApprovalOperation,
 } from "@mnemic/shared/approval";
@@ -72,6 +73,7 @@ export async function evaluateApproval(
   try {
     if (!isAbsolute(ctx.root)) return deny("invalid_root");
     root = await realpath(ctx.root);
+    if (!ApprovalPathSchema.safeParse(root).success) return deny("invalid_root");
     if (root === parse(root).root || !(await stat(root)).isDirectory()) return deny("invalid_root");
   } catch {
     return deny("invalid_root");
@@ -84,6 +86,7 @@ export async function evaluateApproval(
     return deny("invalid_target");
   }
   if ("decision" in target) return target;
+  if (!ApprovalPathSchema.safeParse(target.target).success) return deny("invalid_target");
   if (target.operation === "file.read")
     return { decision: "allow", reason: "read_allowed", ...target };
   if (ctx.mode === "read-only") return deny("read_only");
