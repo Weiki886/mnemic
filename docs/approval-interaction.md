@@ -32,6 +32,10 @@ mnemic resume CONVERSATION_UUID --project PROJECT_UUID --approval-mode read-only
 /permissions revoke UUID        按列表中的 ID 撤销，不能删除其他项目的规则
 ```
 
+`/permissions` 会显示完整授权目录，不读取其中的记录；即使有坏记录也能查看位置。
+list/revoke 因权限或记录损坏失败时，同样给出完整目录并提示手动检查，不回显坏记录内容，
+也不会自动跳过或删除记录。修复前审批继续拒绝。
+
 auto 仅免新建确认，覆盖/删除/shell 仍逐次询问；只读拒绝写操作。
 最终路径分量为符号链接的删除仍不支持，返回 invalid_target。
 

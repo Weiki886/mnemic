@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render, cleanup } from "ink-testing-library";
@@ -58,6 +58,60 @@ function setup() {
   );
   return { view, api };
 }
+it.each(["list", "revoke"])(
+  "corrupt store %s failure identifies the directory without exposing or deleting records",
+  async (action) => {
+    const store = new ApprovalStore(join(root, "grants"));
+    const id = await store.add({
+      project_id: project,
+      root,
+      target: join(root, "new.ts"),
+      operation: "file.create",
+      scope: "permanent",
+    });
+    const file = join(root, "grants", `${id}.json`),
+      corrupt = "{SECRET_BAD_RECORD_BODY";
+    await writeFile(file, corrupt);
+    const { view, api } = setup();
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${project}`));
+    const command = `/permissions ${action}${action === "revoke" ? ` ${id}` : ""}`;
+    view.stdin.write(command);
+    await vi.waitFor(() => expect(view.lastFrame()).toContain(`> ${command}`));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.frames.join("\n")).toContain("请手动检查授权目录"));
+    // Ink may wrap a long absolute path; remove display line breaks only.
+    const text = view.frames.join("\n").replace(/\n/g, "");
+    expect(text).toContain(JSON.stringify(join(root, "grants")));
+    expect(text).not.toContain("SECRET_BAD_RECORD_BODY");
+    expect(await readFile(file, "utf8")).toBe(corrupt);
+    expect(await approval.request({ kind: "file.create", target: "new.ts" })).toEqual({
+      approved: false,
+      reason: "storage_error",
+    });
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(api.commitConversation).not.toHaveBeenCalled();
+  },
+);
+it("permissions status exposes the local store directory without loading a corrupt record", async () => {
+  const store = new ApprovalStore(join(root, "grants"));
+  const id = await store.add({
+    project_id: project,
+    root,
+    target: join(root, "new.ts"),
+    operation: "file.create",
+    scope: "permanent",
+  });
+  await writeFile(join(root, "grants", `${id}.json`), "{bad-json");
+  const { view, api } = setup();
+  await vi.waitFor(() => expect(view.lastFrame()).toContain(`会话 ${project}`));
+  view.stdin.write("/permissions");
+  await vi.waitFor(() => expect(view.lastFrame()).toContain("> /permissions"));
+  view.stdin.write("\r");
+  await vi.waitFor(() => expect(view.frames.join("\n")).toContain("授权目录"));
+  expect(view.frames.join("\n")).not.toContain("权限错误");
+  expect(view.frames.join("\n").replace(/\n/g, "")).toContain(JSON.stringify(join(root, "grants")));
+  expect(api.sendMessage).not.toHaveBeenCalled();
+});
 it.each(["\u001b1", "\u001b3", "\u001b[49;1:2u", "\u001b[49;1:3u", "\u001b[51;5u", "\u001b[51;9u"])(
   "modified confirmation %j never authorizes or persists a rule",
   async (key) => {

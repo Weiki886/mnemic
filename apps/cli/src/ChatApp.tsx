@@ -230,7 +230,7 @@ export function ChatApp({
         } else
           append(
             "权限",
-            `${approval.mode} · ${approval.root}\n仅控制未来文件/命令 Tools，当前没有执行器。`,
+            `${approval.mode} · ${approval.root}\n授权目录 ${terminalLiteral(approval.storageDirectory)}\n仅控制未来文件/命令 Tools，当前没有执行器。`,
             "gray",
           );
       } else if (
@@ -282,7 +282,13 @@ export function ChatApp({
           "yellow",
         );
       }
-      append("错误", chatFailure(error), "red");
+      if (parsed.kind === "command" && parsed.name === "permissions" && approval)
+        append(
+          "权限错误",
+          `请手动检查授权目录 ${terminalLiteral(approval.storageDirectory)} 中的目录/文件权限或损坏记录；不会自动忽略或删除记录。`,
+          "red",
+        );
+      else append("错误", chatFailure(error), "red");
     } finally {
       pendingCommand.current = undefined;
       busyRef.current = false;

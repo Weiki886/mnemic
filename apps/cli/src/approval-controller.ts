@@ -70,6 +70,9 @@ export class ApprovalController {
   get root() {
     return this.ctx.root;
   }
+  get storageDirectory() {
+    return this.store.directory;
+  }
   get busy() {
     return this.active;
   }
