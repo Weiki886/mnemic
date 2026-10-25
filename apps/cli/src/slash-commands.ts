@@ -7,6 +7,7 @@ import {
 import { parseArgs } from "node:util";
 import { ProviderPatchSchema, type ProviderPatch } from "@mnemic/shared/management";
 import { ApprovalModeSchema } from "@mnemic/shared/approval";
+import { ApprovalAuditQuerySchema, type ApprovalAuditQuery } from "@mnemic/shared/approval-audit";
 
 /** 只注册已经实现的命令；解析、帮助与补全共用，不从网络或历史加载命令。 */
 export const SLASH_COMMANDS = [
@@ -48,7 +49,7 @@ export const SLASH_COMMANDS = [
   },
   {
     name: "permissions",
-    usage: "/permissions [read-only|confirm|auto|list|revoke UUID]",
+    usage: "/permissions [read-only|confirm|auto|list|revoke UUID|history [--limit N --offset N]]",
     description: "本地文件/命令审批模式与精确授权；默认只读，不控制聊天/记忆 API",
   },
 ] as const;
@@ -76,6 +77,7 @@ type ChatInput =
   | ManagementCommand
   | { kind: "command"; name: "recall"; query: string }
   | { kind: "command"; name: "permissions"; action: "show" | "list" }
+  | { kind: "command"; name: "permissions"; action: "history"; query: ApprovalAuditQuery }
   | { kind: "command"; name: "permissions"; action: "mode"; mode: "read-only" | "confirm" | "auto" }
   | { kind: "command"; name: "permissions"; action: "revoke"; id: string }
   | { kind: "error"; message: string };
@@ -88,6 +90,28 @@ export function parseChatInput(text: string): ChatInput {
   const command = SLASH_COMMANDS.find((entry) => `/${entry.name}` === token);
   if (!command) return { kind: "error", message: "未知斜杠命令；输入 /help 查看已支持命令。" };
   if (command.name === "permissions") {
+    if (args[0] === "history") {
+      try {
+        const parsed = parseArgs({
+          args: args.slice(1),
+          tokens: true,
+          options: { limit: { type: "string" }, offset: { type: "string" } },
+        });
+        const names = parsed.tokens.filter((t) => t.kind === "option").map((t) => t.name);
+        if (new Set(names).size !== names.length) throw new Error("重复参数");
+        return {
+          kind: "command",
+          name: "permissions",
+          action: "history",
+          query: ApprovalAuditQuerySchema.parse(parsed.values),
+        };
+      } catch {
+        return {
+          kind: "error",
+          message: "用法：/permissions history [--limit 1–200] [--offset 非负整数]",
+        };
+      }
+    }
     if (!args.length) return { kind: "command", name: "permissions", action: "show" };
     if (args.length === 1 && args[0] === "list")
       return { kind: "command", name: "permissions", action: "list" };

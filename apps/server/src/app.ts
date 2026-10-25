@@ -18,6 +18,7 @@ import { registerRecallRoutes } from "./retrieval/routes.js";
 import { registerManagementRoutes } from "./providers/management-routes.js";
 import { registerBearerAuth } from "./auth.js";
 import { resolveAuthToken } from "./config.js";
+import { registerApprovalAuditRoutes } from "./approval/routes.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
 const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -125,6 +126,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory);
   }
   if (options.db) {
+    registerApprovalAuditRoutes(app, options.db);
     registerManagementRoutes(app, options.db);
     registerGateRoutes(app, options.db);
     registerBeliefRoutes(app, options.db);

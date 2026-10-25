@@ -54,6 +54,7 @@ function fixture() {
       extraction_triggered: false,
     })),
     resumeConversation: vi.fn(),
+    listApprovalAudits: vi.fn(),
     getConfig: vi.fn(),
     getProjectStatus: vi.fn(),
     updateProvider: vi.fn(),

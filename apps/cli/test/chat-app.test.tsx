@@ -28,6 +28,7 @@ const reply = {
   ],
 };
 const fixture = () => ({
+  listApprovalAudits: vi.fn(),
   getConfig: vi.fn(async () => {
     throw new Error("unexpected config");
   }),

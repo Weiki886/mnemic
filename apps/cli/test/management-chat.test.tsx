@@ -52,6 +52,7 @@ function fixture(startFails = false) {
     recallBeliefs: vi.fn(async () => {
       throw new Error("no recall");
     }),
+    listApprovalAudits: vi.fn(),
     getConfig: vi.fn(async () => config),
     getProjectStatus: vi.fn(async () => status),
     updateProvider: vi.fn(async (): Promise<ProviderConfig> => provider),
