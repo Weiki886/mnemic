@@ -14,6 +14,18 @@ const privateNames = new Set([
   "id_ecdsa",
   "id_ed25519",
 ]);
+/** Common sensitive/generated names only; not complete secret detection or a gitignore engine. */
+export function isBlockedProjectPath(path: string): boolean {
+  return path.split("/").some((part) => {
+    const name = part.toLowerCase();
+    return (
+      privateNames.has(name) ||
+      name === ".env" ||
+      name.startsWith(".env.") ||
+      /\.(pem|key|p12|pfx)$/i.test(name)
+    );
+  });
+}
 /** Canonical relative paths only. This validates client declarations, never reads server paths. */
 const Path = z
   .string()
@@ -25,19 +37,9 @@ const Path = z
       !path.startsWith("/") &&
       !path.startsWith("~") &&
       !/^[a-z]:/i.test(path) &&
+      !isBlockedProjectPath(path) &&
       (path === "." ||
-        path.split("/").every((part) => {
-          const name = part.toLowerCase();
-          return (
-            part !== "" &&
-            part !== "." &&
-            part !== ".." &&
-            !privateNames.has(name) &&
-            name !== ".env" &&
-            !name.startsWith(".env.") &&
-            !/\.(pem|key|p12|pfx)$/i.test(name)
-          );
-        })),
+        path.split("/").every((part) => part !== "" && part !== "." && part !== "..")),
     "非法项目相对路径",
   );
 const fields = {

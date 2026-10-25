@@ -6,6 +6,13 @@ async function api() {
   return import(url.href) as Promise<typeof import("../src/file-context.js")>;
 }
 const file = { kind: "file", path: "src/index.ts", content: "project data", truncated: false };
+it("uses a single sensitive-path policy shared by HTTP and the local loader", async () => {
+  const { isBlockedProjectPath } = await api();
+  for (const path of ["id_rsa", "src/ID_ED25519", ".env.local", ".git/config", "private.pem"])
+    expect(isBlockedProjectPath(path)).toBe(true);
+  for (const path of ["id_rsa.pub", "README.md", "src/index.ts"])
+    expect(isBlockedProjectPath(path)).toBe(false);
+});
 it("accepts legacy messages and bounded file/directory attachments", async () => {
   const { ChatMessageInputSchema } = await api();
   expect(ChatMessageInputSchema.parse({ text: "hi" })).toEqual({ text: "hi" });

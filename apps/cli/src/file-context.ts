@@ -2,6 +2,7 @@ import { constants, type Stats } from "node:fs";
 import { lstat, open, opendir, realpath } from "node:fs/promises";
 import { isAbsolute, join, parse, posix, relative, sep } from "node:path";
 import { ApprovalPathSchema } from "@mnemic/shared/approval";
+import { isBlockedProjectPath as blocked } from "@mnemic/shared/file-context";
 import {
   FileReferenceError,
   normalizeReferencePath,
@@ -43,20 +44,6 @@ const KEY_FILES = [
   "index.ts",
   "main.py",
 ] as const;
-const OMIT_DIRS = new Set([".git", ".ssh", ".aws", ".gnupg", "node_modules", "dist", "coverage"]);
-const PRIVATE_KEY_NAMES = new Set(["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]);
-function blocked(path: string): boolean {
-  return path.split("/").some((part) => {
-    const name = part.toLowerCase();
-    return (
-      OMIT_DIRS.has(name) ||
-      PRIVATE_KEY_NAMES.has(name) ||
-      name === ".env" ||
-      name.startsWith(".env.") ||
-      /\.(pem|key|p12|pfx)$/i.test(name)
-    );
-  });
-}
 function safeError(error: unknown): FileReferenceError {
   return error instanceof FileReferenceError ? error : new FileReferenceError("unavailable");
 }
