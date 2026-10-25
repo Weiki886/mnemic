@@ -59,10 +59,12 @@ describe("两路混合检索（#6）", () => {
   };
 
   const opts = { factory: bagEmbeddingFactory };
+  // The project UUID already isolates rows. Keep embedded text stable: UUID tokens can collide
+  // in the tiny hash-vector fake and change its cosine score as wall-clock time advances.
 
   it("语义向量路召回：关键词 AND 不命中时，词袋重叠的事实仍被向量路命中", async () => {
     await seedFact({
-      subject: `sem-${uuidv7().slice(0, 8)}`,
+      subject: "semantic-project",
       attribute: "db",
       value: "database choice is PostgreSQL",
       indexed: true,
@@ -82,7 +84,7 @@ describe("两路混合检索（#6）", () => {
 
   it("关键词路召回：无 embedding 索引的事实也能被 tsvector 命中", async () => {
     await seedFact({
-      subject: `kw-${uuidv7().slice(0, 8)}`,
+      subject: "keyword-project",
       attribute: "db",
       value: "数据库改用 PostgreSQL",
       indexed: false,
@@ -105,7 +107,7 @@ describe("两路混合检索（#6）", () => {
 
   it("每次检索 trace 落库：查询/候选 ID/各路得分/融合分/入选与原因", async () => {
     await seedFact({
-      subject: `trace-${uuidv7().slice(0, 8)}`,
+      subject: "trace-project",
       attribute: "cache",
       value: "Redis for cache",
       indexed: true,
@@ -132,7 +134,7 @@ describe("两路混合检索（#6）", () => {
   it("Top-K 入选/落选：超出 K 的候选 reason=below_topk", async () => {
     for (let i = 0; i < 3; i += 1) {
       await seedFact({
-        subject: `bulk-${uuidv7().slice(0, 8)}`,
+        subject: "bulk-project",
         attribute: `attr${i}`,
         value: `bulk item common token ${i}`,
         indexed: true,
@@ -152,7 +154,7 @@ describe("两路混合检索（#6）", () => {
 
   it("最高融合分低于阈值 → 拒答，trace 中候选 reason=below_threshold", async () => {
     await seedFact({
-      subject: `weak-${uuidv7().slice(0, 8)}`,
+      subject: "weak-project",
       attribute: "misc",
       value: "alpha beta gamma",
       indexed: true,
@@ -172,7 +174,7 @@ describe("两路混合检索（#6）", () => {
 
   it("读时强化钩子：reinforce 开启时入选 belief 的 salience 提升（封顶 1）且开关状态入 trace", async () => {
     const { beliefId } = await seedFact({
-      subject: `rf-${uuidv7().slice(0, 8)}`,
+      subject: "reinforcement-project",
       attribute: "db",
       value: "reinforce target postgresql",
       indexed: true,
@@ -194,7 +196,7 @@ describe("两路混合检索（#6）", () => {
 
   it("默认关闭时读取不改变任一强度字段（salience 不变，trace 记录开关关闭）", async () => {
     const { beliefId } = await seedFact({
-      subject: `norf-${uuidv7().slice(0, 8)}`,
+      subject: "plain-read-project",
       attribute: "db",
       value: "plain read postgresql",
       indexed: true,
