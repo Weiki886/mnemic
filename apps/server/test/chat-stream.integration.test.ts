@@ -305,8 +305,8 @@ describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", (
   });
   it("concurrent stream, JSON, commit and resume mutations conflict until persistence finishes", async () => {
     const s = await seed();
-    const foreign = uuidv7();
-    await t.sql`insert into projects(id,name) values(${foreign},'foreign JSON scope')`;
+    const foreignProject = uuidv7();
+    await t.sql`insert into projects(id,name) values(${foreignProject},'foreign JSON scope')`;
     await consumeChatStream(await open(s), {
       conversationId: s.c,
       onEvent: async (e) => {
@@ -315,7 +315,7 @@ describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", (
           (
             await app.inject({
               method: "POST",
-              url: `/projects/${foreign}/conversations/${s.c}/messages`,
+              url: `/projects/${foreignProject}/conversations/${s.c}/messages`,
               headers: auth,
               payload: { text: "foreign" },
             })
