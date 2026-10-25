@@ -105,7 +105,10 @@ async function diagnose(options: DoctorOptions, probe: boolean): Promise<DoctorR
     for (const name of SLOTS) checks.push({ name, status: "skipped", detail: "未解析槽位配置" });
     return finish();
   }
-  const modelOptions = options.factory ? { factory: options.factory } : {};
+  const modelOptions = {
+    ...(options.factory ? { factory: options.factory } : {}),
+    usageContext: { projectId: null, conversationId: null, purpose: "probe" as const },
+  };
   const inspect = async (slot: Slot): Promise<{ check: DoctorCheck; configured: boolean }> => {
     let configured = false;
     let metadata: { provider: string; model: string } | undefined;

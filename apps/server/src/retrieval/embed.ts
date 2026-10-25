@@ -1,7 +1,15 @@
 import { embed } from "ai";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
-import { memoryEmbeddings } from "../db/schema.js";
+import {
+  beliefs,
+  beliefVersions,
+  conversations,
+  messages,
+  observations,
+  memoryEmbeddings,
+} from "../db/schema.js";
+import { eq } from "drizzle-orm";
 import { resolveModel, type ResolveOptions } from "../providers/slots.js";
 
 /**
@@ -18,7 +26,20 @@ export async function indexBeliefVersion(
   const text = `${args.subject} ${args.attribute}: ${
     typeof args.value === "string" ? args.value : JSON.stringify(args.value)
   }`;
-  const { model, modelId } = await resolveModel(db, masterKey, "embedding", options);
+  const [scope] = await db
+    .select({ projectId: beliefs.projectId, conversationId: conversations.id })
+    .from(beliefVersions)
+    .innerJoin(beliefs, eq(beliefVersions.beliefId, beliefs.id))
+    .leftJoin(observations, eq(beliefVersions.sourceObservationId, observations.id))
+    .leftJoin(messages, eq(observations.evidenceId, messages.id))
+    .leftJoin(conversations, eq(messages.conversationId, conversations.id))
+    .where(eq(beliefVersions.id, args.beliefVersionId))
+    .limit(1);
+  if (!scope) throw new Error("invalid embedding usage scope");
+  const { model, modelId } = await resolveModel(db, masterKey, "embedding", {
+    ...options,
+    usageContext: { ...scope, purpose: "embedding_index" },
+  });
   const { embedding } = await embed({ model, value: text });
   await db.insert(memoryEmbeddings).values({
     id: uuidv7(),

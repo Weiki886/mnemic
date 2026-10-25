@@ -6,6 +6,8 @@ import { decrypt } from "./crypto.js";
 import { realProviderFactory, type ProviderFactory } from "./factory.js";
 import type { ModelSlots, ProviderWithKey } from "./repository.js";
 import { selectSlotProvider } from "./selection.js";
+import { observeEmbedding, observeLanguage } from "../usage/models.js";
+import { writeModelUsage, type UsageContext, type UsageRecord } from "../usage/repository.js";
 
 /** 模型三槽位（ADR-005）：调用方只按用途取模型，不感知厂商与协议 */
 export type Slot = keyof Required<ModelSlots>;
@@ -15,6 +17,8 @@ export interface ResolveOptions {
   providerName?: string;
   /** 测试注入 Fake；生产默认真实双协议工厂 */
   factory?: ProviderFactory;
+  /** Trusted server context only. Never spread HTTP bodies into model options. */
+  usageContext?: UsageContext;
 }
 
 export interface ResolvedModel<M = LanguageModel | EmbeddingModel> {
@@ -66,9 +70,21 @@ export async function resolveModel(
     createdAt: row.createdAt,
   };
   const modelId = config.models[slot]!;
-  const model =
+  const rawModel =
     slot === "embedding"
       ? factory.embeddingModel(config, modelId)
       : factory.languageModel(config, modelId);
+  if (typeof rawModel === "string") throw new Error("ProviderFactory must return a model instance");
+  const context = options.usageContext ?? {
+    projectId: null,
+    conversationId: null,
+    purpose: slot === "embedding" ? "embedding_query" : slot,
+  };
+  const base = { ...context, providerName: row.name, modelId, slot };
+  const sink = (record: UsageRecord) => writeModelUsage(db, record);
+  const model =
+    slot === "embedding"
+      ? observeEmbedding(rawModel as Exclude<EmbeddingModel, string>, base, sink)
+      : observeLanguage(rawModel as Exclude<LanguageModel, string>, base, sink);
   return { model, modelId, providerName: row.name, slot };
 }

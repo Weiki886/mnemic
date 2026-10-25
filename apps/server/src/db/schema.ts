@@ -17,7 +17,9 @@
  * > DOCUMENT=30 > WEB_CONTENT=20 > AGENT_INFERENCE=10（步进 10，预留插入位）。
  */
 import {
+  bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -341,3 +343,40 @@ export const pendingCandidates = pgTable("pending_candidates", {
   createdAt: ts("created_at").notNull().defaultNow(),
   decidedAt: ts("decided_at"),
 });
+
+/** #36: one row per actual SDK provider invocation (including retries), never content snapshots.
+ * Null tokens mean not reported; provider total is independent of input + output. */
+export const modelUsage = pgTable(
+  "model_usage",
+  {
+    id: id(),
+    projectId: uuid("project_id").references(() => projects.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id),
+    providerName: text("provider_name").notNull(),
+    modelId: text("model_id").notNull(),
+    slot: text("slot").notNull(),
+    purpose: text("purpose").notNull(),
+    status: text("status").notNull(),
+    startedAt: ts("started_at").notNull(),
+    durationMs: bigint("duration_ms", { mode: "number" }).notNull(),
+    promptTokens: bigint("prompt_tokens", { mode: "number" }),
+    completionTokens: bigint("completion_tokens", { mode: "number" }),
+    totalTokens: bigint("total_tokens", { mode: "number" }),
+    reasoningTokens: bigint("reasoning_tokens", { mode: "number" }),
+    cachedInputTokens: bigint("cached_input_tokens", { mode: "number" }),
+  },
+  (t) => [
+    index("model_usage_project_time_idx").on(t.projectId, t.startedAt, t.id),
+    index("model_usage_conversation_time_idx").on(t.conversationId, t.startedAt, t.id),
+    check(
+      "model_usage_scope_check",
+      sql`${t.conversationId} is null or ${t.projectId} is not null`,
+    ),
+    check("model_usage_slot_check", sql`${t.slot} in ('chat','extraction','embedding')`),
+    check("model_usage_status_check", sql`${t.status} in ('success','error','aborted')`),
+    check(
+      "model_usage_counts_check",
+      sql`${t.durationMs} >= 0 and ${t.promptTokens} >= 0 and ${t.completionTokens} >= 0 and ${t.totalTokens} >= 0 and ${t.reasoningTokens} >= 0 and ${t.cachedInputTokens} >= 0`,
+    ),
+  ],
+);

@@ -62,7 +62,17 @@ export async function retrieve(
   // 1. 查询向量化（无 embedding 配置时降级为仅关键词路，向量路空集）
   let queryVec: number[] | null = null;
   try {
-    const { model } = await resolveModel(db, masterKey, "embedding", options);
+    const { model } = await resolveModel(db, masterKey, "embedding", {
+      ...options,
+      usageContext: {
+        projectId,
+        conversationId:
+          options.usageContext?.projectId === projectId
+            ? options.usageContext.conversationId
+            : null,
+        purpose: "embedding_query",
+      },
+    });
     queryVec = (
       await embed({
         model,

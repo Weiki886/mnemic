@@ -129,6 +129,14 @@ export async function prepareAnswer(
   options: RespondOptions,
 ) {
   // 检索（#6）；检索失败降级为无记忆回答，不阻塞对话
+  const scoped = {
+    ...options,
+    usageContext: {
+      projectId: entered.projectId,
+      conversationId: entered.conversationId,
+      purpose: "chat" as const,
+    },
+  };
   let candidates: RetrievalCandidate[] = [];
   let abstained = true;
   try {
@@ -137,7 +145,7 @@ export async function prepareAnswer(
       masterKey,
       entered.projectId,
       text,
-      options,
+      scoped,
     );
     candidates = r.candidates;
     abstained = r.abstained;
@@ -148,7 +156,7 @@ export async function prepareAnswer(
     );
   }
 
-  const { model } = await resolveModel(db, masterKey, "chat", options);
+  const { model } = await resolveModel(db, masterKey, "chat", scoped);
   const history = await modelHistory(db, entered.projectId, entered.history);
   return {
     model,
