@@ -4,6 +4,8 @@ import { uuidv7 } from "uuidv7";
 import { conversations, messages, projects } from "../db/schema.js";
 import type { ResolveOptions } from "../providers/slots.js";
 import { claimMessageForExtraction, runExtractionWriteback } from "./writeback.js";
+import { fileMetadata, validateFileParents } from "./attachments.js";
+import { ConversationContextError, loadConversationMessages } from "./context.js";
 
 /** 会话编排（#7）：创建/提交；消息应答在 respond.ts（Task B） */
 
@@ -44,6 +46,7 @@ export async function createConversation(
 
 export type CommitResult =
   | { kind: "not_found" }
+  | { kind: "context_invalid" }
   | { kind: "already_ended"; conversation: ConversationRow }
   | { kind: "committed"; conversation: ConversationRow; extractionTriggered: boolean };
 
@@ -67,6 +70,12 @@ export async function commitConversation(
     .where(eq(conversations.id, conversationId))
     .limit(1);
   if (!row) return { kind: "not_found" };
+  try {
+    await loadConversationMessages(db, row);
+  } catch (error) {
+    if (!(error instanceof ConversationContextError)) throw error;
+    return { kind: "context_invalid" };
+  }
 
   // 原子置 ended_at（并发 commit 只有一个成功；落选者即重复提交）
   const [updated] = await db
@@ -97,24 +106,21 @@ export async function scheduleConversationWriteback(
     logger?: { error: (obj: object, msg: string) => void };
   },
 ): Promise<boolean> {
-  // 只提取"未被提取过的 user 消息"（决策 6：同一句话不重复计数佐证；
-  // 助手回答不参与提取——模型自述不能成为事实来源）
+  // Only physical user directives and validated file Evidence; never assistants or inherited rows.
   const pendingMsgs = await db
-    .select({ id: messages.id, rawText: messages.rawText })
+    .select()
     .from(messages)
-    .where(
-      and(
-        eq(messages.conversationId, conversationId),
-        eq(messages.speaker, "user"),
-        isNull(messages.extractedAt),
-      ),
-    )
+    .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.msgTime));
+  validateFileParents(pendingMsgs);
+  const pendingEvidence = pendingMsgs.filter(
+    (msg) => !msg.extractedAt && (msg.speaker === "user" || msg.attachment),
+  );
 
-  const extractionTriggered = pendingMsgs.length > 0;
+  const extractionTriggered = pendingEvidence.length > 0;
   if (extractionTriggered) {
     options.onJob(async () => {
-      for (const msg of pendingMsgs) {
+      for (const msg of pendingEvidence) {
         // 先认领再提取：与并发单条路径互斥，认领失败者已被对方提取
         if (!(await claimMessageForExtraction(db, msg.id))) continue;
         try {
@@ -122,7 +128,12 @@ export async function scheduleConversationWriteback(
           await runExtractionWriteback(
             db,
             masterKey,
-            { projectId, text: msg.rawText, evidenceId: msg.id },
+            {
+              projectId,
+              text: msg.rawText,
+              evidenceId: msg.id,
+              ...(fileMetadata(msg) ? { channel: "project-file" as const } : {}),
+            },
             options,
           );
         } catch (err) {

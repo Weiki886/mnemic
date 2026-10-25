@@ -232,7 +232,7 @@ describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", (
     });
     const next = await app.inject({
       method: "POST",
-      url: `/v1/conversations/${s.c}/messages`,
+      url: base(s) + "/messages",
       headers: auth,
       payload: { text: "继续刚才的问题" },
     });
@@ -305,13 +305,25 @@ describe("server streaming with actual HTTP, SDK and PostgreSQL (#33 part 2)", (
   });
   it("concurrent stream, JSON, commit and resume mutations conflict until persistence finishes", async () => {
     const s = await seed();
+    const foreignProject = uuidv7();
+    await t.sql`insert into projects(id,name) values(${foreignProject},'foreign JSON scope')`;
     await consumeChatStream(await open(s), {
       conversationId: s.c,
       onEvent: async (e) => {
         if (e.type !== "delta") return;
+        expect(
+          (
+            await app.inject({
+              method: "POST",
+              url: `/projects/${foreignProject}/conversations/${s.c}/messages`,
+              headers: auth,
+              payload: { text: "foreign" },
+            })
+          ).statusCode,
+        ).toBe(404);
         for (const path of [
           base(s) + "/messages/stream",
-          `/v1/conversations/${s.c}/messages`,
+          base(s) + "/messages",
           `/v1/conversations/${s.c}/commit`,
           base(s) + "/resume",
         ]) {

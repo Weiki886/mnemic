@@ -137,7 +137,9 @@ describe("Ink 对话交互", () => {
     expect(view.lastFrame()).not.toContain("候选：");
     view.stdin.write("\t");
     view.stdin.write("\r");
-    await vi.waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(conv, "ordinary text"));
+    await vi.waitFor(() =>
+      expect(api.sendMessage).toHaveBeenCalledWith(project, conv, "ordinary text"),
+    );
   });
 
   it("补全后光标在结尾，非法参数和未知命令均不误发模型或退出", async () => {
@@ -173,7 +175,9 @@ describe("Ink 对话交互", () => {
     view.stdin.write("still usable");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("> still usable"));
     view.stdin.write("\r");
-    await vi.waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(conv, "still usable"));
+    await vi.waitFor(() =>
+      expect(api.sendMessage).toHaveBeenCalledWith(project, conv, "still usable"),
+    );
   });
 
   it.each(["/exit now", "/unknown", "/usr/bin/env node with a long explanation"])(
@@ -289,7 +293,7 @@ describe("Ink 对话交互", () => {
     await vi.waitFor(() => expect(view.lastFrame()).toContain("数据库是什么？"));
     view.stdin.write("\r");
     await vi.waitFor(() => expect(view.frames.join("\n")).toContain(belief));
-    expect(api.sendMessage).toHaveBeenCalledWith(conv, "数据库是什么？");
+    expect(api.sendMessage).toHaveBeenCalledWith(project, conv, "数据库是什么？");
     view.stdin.write("/new");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("> /new"));
     view.stdin.write("\r");

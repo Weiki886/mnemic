@@ -5,6 +5,7 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
+      "@mnemic/shared/file-context": ["../../packages/shared/src/file-context.ts"],
       "@mnemic/shared/approval-audit": ["../../packages/shared/src/approval-audit.ts"],
       "@mnemic/shared/approval": ["../../packages/shared/src/approval.ts"],
       "@mnemic/shared/chat-stream": ["../../packages/shared/src/chat-stream.ts"],

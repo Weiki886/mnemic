@@ -123,7 +123,7 @@ describe("CLI resume（#31）", () => {
     expect(session.id).toBe(fork);
     expect(api.createConversation).not.toHaveBeenCalled();
     await session.send("继续");
-    expect(api.sendMessage).toHaveBeenCalledWith(fork, "继续");
+    expect(api.sendMessage).toHaveBeenCalledWith(project, fork, "继续");
     await session.newConversation();
     expect(api.commitConversation).toHaveBeenCalledWith(fork);
     expect(session.history).toEqual([]);

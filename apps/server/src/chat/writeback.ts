@@ -5,6 +5,8 @@ import { processCandidate } from "../gate/pipeline.js";
 import { ingestCandidate, type IngestRoute } from "../ingest/ingest.js";
 import { resolveModel, type ResolveOptions } from "../providers/slots.js";
 import { indexBeliefVersion } from "../retrieval/embed.js";
+import { attachAuthority } from "../extraction/authority.js";
+import { SOURCE_BY_CHANNEL, type EvidenceChannel } from "./attachments.js";
 
 export interface WritebackArgs {
   projectId: string;
@@ -12,6 +14,8 @@ export interface WritebackArgs {
   text: string;
   /** Provenance 锚点：候选 Observation 的 evidence_id（消息 ID） */
   evidenceId: string;
+  /** Trusted caller channel, never inferred from model output or raw text. */
+  channel?: EvidenceChannel;
 }
 
 export interface WritebackResult {
@@ -68,7 +72,10 @@ export async function runExtractionWriteback(
     extracted: extraction.candidates.length,
     degraded: false,
   };
-  for (const candidate of extraction.candidates) {
+  for (const extracted of extraction.candidates) {
+    const candidate = args.channel
+      ? attachAuthority({ ...extracted, source_type: SOURCE_BY_CHANNEL[args.channel] })
+      : extracted;
     const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
     if (gate.decision === "SKIP") {
       result.skipped += 1;

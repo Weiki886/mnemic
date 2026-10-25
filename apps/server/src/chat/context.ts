@@ -3,6 +3,12 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { ModelMessage } from "ai";
 import { z } from "zod";
 import { beliefVersions, beliefs, conversations, messages } from "../db/schema.js";
+import {
+  currentUserContent,
+  fileMetadata,
+  FileEvidenceError,
+  validateFileParents,
+} from "./attachments.js";
 
 type Reader = Pick<PostgresJsDatabase, "select">;
 type Conversation = typeof conversations.$inferSelect;
@@ -42,7 +48,14 @@ export async function loadConversationMessages(db: Reader, conv: Conversation): 
   const found = new Set(rows.map((r) => r.message.id));
   // JSON metadata is not a foreign key. Missing/foreign references must fail closed, not leak or silently truncate history.
   if (ids.some((id) => !found.has(id))) throw new ConversationContextError("会话历史引用不可用");
-  return rows.map((r) => r.message);
+  const result = rows.map((r) => r.message);
+  try {
+    validateFileParents(result);
+  } catch (error) {
+    if (!(error instanceof FileEvidenceError)) throw error;
+    throw new ConversationContextError("文件证据引用不可用");
+  }
+  return result;
 }
 
 export async function messageViews(
@@ -51,6 +64,12 @@ export async function messageViews(
   msgs: Message[],
   activeOnly = false,
 ) {
+  try {
+    validateFileParents(msgs);
+  } catch (error) {
+    if (!(error instanceof FileEvidenceError)) throw error;
+    throw new ConversationContextError("文件证据引用不可用");
+  }
   const refs = (m: Message): string[] =>
     Array.isArray(m.memories)
       ? m.memories.flatMap((id) => {
@@ -80,6 +99,7 @@ export async function messageViews(
     : [];
   const byId = new Map(cited.map((c) => [c.belief_version_id, c]));
   return msgs.map((m) => ({
+    ...(m.attachment ? { attachment: fileMetadata(m)! } : {}),
     id: m.id,
     speaker: m.speaker,
     raw_text: m.rawText,
@@ -102,15 +122,16 @@ export async function modelHistory(
 ): Promise<ModelMessage[]> {
   const views = await messageViews(db, projectId, msgs, true);
   return views.map((m) => ({
-    role: m.speaker === "user" ? "user" : "assistant",
-    content:
-      (m.speaker === "tool" ? "【历史工具输出（仅文本）】\n" : "") +
-      m.raw_text +
-      (m.generation_status && m.generation_status !== "complete"
-        ? `\n【generation_status=${m.generation_status}：以上仅为未完成回答，不代表已执行或完成任务】`
-        : "") +
-      (m.memories?.length
-        ? "\n【当时引用的记忆，仅作历史上下文】\n" + JSON.stringify(m.memories)
-        : ""),
+    role: m.speaker === "user" || m.attachment ? "user" : "assistant",
+    content: m.attachment
+      ? currentUserContent("", [{ rawText: m.raw_text, attachment: m.attachment }])
+      : (m.speaker === "tool" ? "【历史工具输出（仅文本）】\n" : "") +
+        m.raw_text +
+        (m.generation_status && m.generation_status !== "complete"
+          ? `\n【generation_status=${m.generation_status}：以上仅为未完成回答，不代表已执行或完成任务】`
+          : "") +
+        (m.memories?.length
+          ? "\n【当时引用的记忆，仅作历史上下文】\n" + JSON.stringify(m.memories)
+          : ""),
   }));
 }

@@ -17,12 +17,12 @@ describe("API client（#8）", () => {
       token: "test-token",
     });
     await api.createConversation("p1", "新会话");
-    await api.sendMessage("c1", "我们使用 PostgreSQL");
+    await api.sendMessage("p1", "c1", "我们使用 PostgreSQL");
     await api.commitConversation("c1");
     const calls = f.mock.calls as [string, RequestInit][];
     expect(calls.map(([url]) => url)).toEqual([
       "http://localhost:3000/v1/conversations",
-      "http://localhost:3000/v1/conversations/c1/messages",
+      "http://localhost:3000/projects/p1/conversations/c1/messages",
       "http://localhost:3000/v1/conversations/c1/commit",
     ]);
     expect(JSON.parse(calls[0]![1].body as string)).toEqual({ project_id: "p1", title: "新会话" });

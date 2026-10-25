@@ -128,6 +128,9 @@ export const messages = pgTable("messages", {
   memories: jsonb("memories"),
   /** #33: null for legacy/user messages; partial text remains Evidence, never rewritten as a complete answer. */
   generationStatus: generationStatusEnum("generation_status"),
+  /** #35: strict file Evidence metadata only; content stays solely in raw_text.
+   * JSON parent is checked against the same physical conversation on every read. */
+  attachment: jsonb("attachment"),
 });
 
 /**

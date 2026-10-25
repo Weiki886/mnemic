@@ -107,7 +107,7 @@ export function createChatStream(
       const result = streamText({
         model: prepared.model,
         system: prepared.system,
-        messages: [...prepared.history, { role: "user", content: text }],
+        messages: [...prepared.history, { role: "user", content: prepared.userContent }],
         maxRetries: 0,
         abortSignal: signal,
         onError: () => {},

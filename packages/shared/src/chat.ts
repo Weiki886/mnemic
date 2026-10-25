@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FileEvidenceMetadataSchema } from "./file-context.js";
 
 export const ChatConversationSchema = z.object({
   id: z.string().uuid(),
@@ -37,6 +38,7 @@ export const ChatReplySchema = z.object({
   ),
 });
 export const ConversationMessageSchema = z.object({
+  attachment: FileEvidenceMetadataSchema.optional(),
   generation_status: z.enum(["complete", "interrupted", "failed"]).nullable().optional(),
   id: z.string().uuid(),
   speaker: z.enum(["user", "assistant", "tool"]),

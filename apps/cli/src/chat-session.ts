@@ -237,7 +237,7 @@ export class ChatSession {
         }
       }
       const row = await this.ensureConversation();
-      return ChatReplySchema.parse(await this.api.sendMessage(row.id, text));
+      return ChatReplySchema.parse(await this.api.sendMessage(this.projectId, row.id, text));
     });
   }
   newConversation(): Promise<ChatConversation> {

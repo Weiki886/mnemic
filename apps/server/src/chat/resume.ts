@@ -33,6 +33,8 @@ export async function resumeConversation(
     const source = rows.find((r) => r.id === sourceId)!;
     const history = await loadConversationMessages(tx, source);
     const views = await messageViews(tx, projectId, history);
+    // Switching away also archives/extracts the current conversation. Validate it before ANY mutation.
+    for (const row of rows) if (row.id !== source.id) await loadConversationMessages(tx, row);
     const archived = rows.filter((r) => !r.endedAt);
     if (archived.length)
       await tx

@@ -14,6 +14,7 @@ import { resumeConversation } from "./resume.js";
 import { ConversationContextError } from "./context.js";
 import { ChatGenerations } from "./generations.js";
 import { registerChatStreamRoutes } from "./stream-routes.js";
+import { ChatMessageInputSchema } from "@mnemic/shared/file-context";
 
 /** 对话闭环 API（#7）：会话创建/提交/消息应答 */
 
@@ -36,9 +37,7 @@ const CreateConversation = z.object({
     .optional(),
 });
 
-const PostMessage = z.object({
-  text: z.string().min(1).max(8000),
-});
+const PostMessage = ChatMessageInputSchema;
 
 export function registerChatRoutes(
   app: FastifyInstance,
@@ -218,7 +217,7 @@ export function registerChatRoutes(
             }),
           );
       }
-      if (result.kind === "already_ended") {
+      if (result.kind === "already_ended" || result.kind === "context_invalid") {
         return reply
           .code(409)
           .header("content-type", "application/problem+json")
@@ -226,7 +225,8 @@ export function registerChatRoutes(
             problem({
               status: 409,
               code: ErrorCode.CONFLICT,
-              detail: `会话已提交：${id}`,
+              detail:
+                result.kind === "context_invalid" ? "会话历史引用不可用" : `会话已提交：${id}`,
               requestId: request.id,
             }),
           );
@@ -238,34 +238,74 @@ export function registerChatRoutes(
     }),
   );
 
-  app.post(
-    "/v1/conversations/:id/messages",
-    generations.guard(async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const parsed = PostMessage.safeParse(request.body);
-      if (!parsed.success) {
-        return reply
-          .code(400)
-          .header("content-type", "application/problem+json")
-          .send(
-            problem({
-              status: 400,
-              code: ErrorCode.VALIDATION_FAILED,
-              detail: "消息参数非法",
-              errors: zodIssues(parsed.error),
-              requestId: request.id,
-            }),
-          );
-      }
-      const result = await respondToMessage(db, masterKey, id, parsed.data.text, {
-        ...modelOpts,
-        ...(deps.retrieveFn ? { retrieveFn: deps.retrieveFn } : {}),
-        onJob: (job) =>
-          trackJob(job, (err) =>
-            request.log.error({ err, conversationId: id }, "message writeback failed"),
-          ),
-        logger: { warn: (obj, msg) => request.log.warn(obj, msg) },
-      });
+  app.post("/projects/:projectId/conversations/:id/messages", async (request, reply) => {
+    const params = z
+      .object({ projectId: z.string().uuid().toLowerCase(), id: z.string().uuid().toLowerCase() })
+      .safeParse(request.params);
+    if (!params.success)
+      return reply
+        .code(400)
+        .type("application/problem+json")
+        .send(
+          problem({
+            status: 400,
+            code: ErrorCode.VALIDATION_FAILED,
+            detail: "会话路径参数非法",
+            errors: zodIssues(params.error),
+            requestId: request.id,
+          }),
+        );
+    const { id, projectId } = params.data;
+    const parsed = PostMessage.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .header("content-type", "application/problem+json")
+        .send(
+          problem({
+            status: 400,
+            code: ErrorCode.VALIDATION_FAILED,
+            detail: "消息参数非法",
+            errors: zodIssues(parsed.error),
+            requestId: request.id,
+          }),
+        );
+    }
+    const [scoped] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.projectId, projectId)))
+      .limit(1);
+    if (!scoped)
+      return reply
+        .code(404)
+        .type("application/problem+json")
+        .send(
+          problem({
+            status: 404,
+            code: ErrorCode.NOT_FOUND,
+            detail: "会话不存在",
+            requestId: request.id,
+          }),
+        );
+    return generations.guard(async () => {
+      const result = await respondToMessage(
+        db,
+        masterKey,
+        projectId,
+        id,
+        parsed.data.text,
+        {
+          ...modelOpts,
+          ...(deps.retrieveFn ? { retrieveFn: deps.retrieveFn } : {}),
+          onJob: (job) =>
+            trackJob(job, (err) =>
+              request.log.error({ err, conversationId: id }, "message writeback failed"),
+            ),
+          logger: { warn: (obj, msg) => request.log.warn(obj, msg) },
+        },
+        parsed.data.attachments,
+      );
       if (result.kind === "not_found") {
         return reply
           .code(404)
@@ -302,6 +342,6 @@ export function registerChatRoutes(
         abstained: result.abstained,
         history_included: result.historyIncluded,
       };
-    }),
-  );
+    })(request, reply);
+  });
 }

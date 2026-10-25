@@ -7,11 +7,12 @@ import { conversations, messages } from "../db/schema.js";
 import { enterMessage, type RespondOptions } from "./respond.js";
 import { ChatGenerations, generationConflict } from "./generations.js";
 import { createChatStream } from "./streaming.js";
+import { ChatMessageInputSchema } from "@mnemic/shared/file-context";
 
 const UUID = z.string().uuid().toLowerCase();
 const Params = z.object({ projectId: UUID, id: UUID });
 const CancelParams = Params.extend({ generationId: UUID });
-const Body = z.object({ text: z.string().min(1).max(8000) }).strict();
+const Body = ChatMessageInputSchema;
 function bad(reply: FastifyReply, requestId: string, error: z.ZodError) {
   return reply
     .code(400)
@@ -65,7 +66,7 @@ export function registerChatStreamRoutes(
     if (reply.raw.destroyed) closed();
     let admitted = false;
     try {
-      const entered = await enterMessage(db, id, body.data.text, projectId);
+      const entered = await enterMessage(db, id, body.data.text, projectId, body.data.attachments);
       if (entered.kind === "not_found") return missing(reply, request.id);
       if (entered.kind !== "ok")
         return reply
