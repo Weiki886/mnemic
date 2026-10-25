@@ -287,6 +287,9 @@ export class ChatSession {
             ...(files.attachments.length ? [files.attachments] : []),
           ),
         );
+      } catch (error) {
+        if (this.preparing?.signal.aborted) throw new FileReferenceError("cancelled");
+        throw error;
       } finally {
         this.preparing = undefined;
       }

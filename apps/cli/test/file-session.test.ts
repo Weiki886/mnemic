@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ChatSession } from "../src/chat-session.js";
 import { encodeChatStreamEvent } from "../../../packages/shared/src/stream-protocol.js";
 import { chatFailure } from "../src/presentation.js";
+import { ApiError } from "@mnemic/shared";
 const p = "01920000-0000-7000-8000-000000000001",
   c = "01920000-0000-7000-8000-000000000002";
 const reply = { message_id: c, answer: "answer", abstained: true, memories: [] };
@@ -148,4 +149,22 @@ it("JSON-only adapters also cancel a prepared file turn while conversation creat
   await expect(sent).rejects.toThrow("cancelled");
   expect(wasPreparing).toBe(true);
   expect(client.sendMessage).not.toHaveBeenCalled();
+});
+it("a cancelled JSON file turn keeps local cancellation when conversation creation later rejects", async () => {
+  let fail!: (error: Error) => void;
+  const client = api();
+  client.createConversation.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  const session = new ChatSession(client, p, root);
+  const sent = session.send("@README.md");
+  await vi.waitFor(() => expect(fail).toBeTypeOf("function"));
+  session.interrupt();
+  fail(new ApiError(500, "INTERNAL_ERROR", "private startup failure"));
+  await expect(sent).rejects.toThrow("cancelled");
+  expect(client.sendMessage).not.toHaveBeenCalled();
+  await expect(session.close()).resolves.toBeUndefined();
 });
