@@ -110,6 +110,10 @@ describe("bounded local project context", () => {
     "node_modules/pkg/x.ts",
     "secret.pem",
     "private.key",
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
   ])("blocks sensitive or generated path %s even when directly referenced", async (path) => {
     const { loadFileContext } = await api();
     await mkdir(join(root, path, ".."), { recursive: true });
@@ -231,6 +235,15 @@ describe("bounded local project context", () => {
 });
 
 describe("metadata-only file reference completion", () => {
+  it("omits extensionless private-key names while keeping public-key files usable", async () => {
+    const { completeReferencePath, loadFileContext } = await api();
+    await writeFile(join(root, "id_rsa"), "PRIVATE");
+    await writeFile(join(root, "id_ed25519"), "PRIVATE");
+    await writeFile(join(root, "id_rsa.pub"), "ssh-rsa PUBLIC");
+    expect(await completeReferencePath(root, "id_")).toEqual(["id_rsa.pub"]);
+    expect((await loadFileContext(root, "@.")).directories[0]?.entries).not.toContain("id_rsa");
+    expect((await loadFileContext(root, "@id_rsa.pub")).files[0]?.content).toBe("ssh-rsa PUBLIC");
+  });
   it("lists project-relative candidates and marks directories without reading file contents", async () => {
     const { completeReferencePath } = await api();
     await writeFile(join(root, "binary.bin"), Buffer.from([0, 1]));

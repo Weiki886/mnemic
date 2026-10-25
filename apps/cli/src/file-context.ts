@@ -44,11 +44,13 @@ const KEY_FILES = [
   "main.py",
 ] as const;
 const OMIT_DIRS = new Set([".git", ".ssh", ".aws", ".gnupg", "node_modules", "dist", "coverage"]);
+const PRIVATE_KEY_NAMES = new Set(["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]);
 function blocked(path: string): boolean {
   return path.split("/").some((part) => {
     const name = part.toLowerCase();
     return (
       OMIT_DIRS.has(name) ||
+      PRIVATE_KEY_NAMES.has(name) ||
       name === ".env" ||
       name.startsWith(".env.") ||
       /\.(pem|key|p12|pfx)$/i.test(name)
