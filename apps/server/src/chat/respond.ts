@@ -230,12 +230,13 @@ export async function scheduleMessageWriteback(
 export async function respondToMessage(
   db: PostgresJsDatabase,
   masterKey: Buffer,
+  projectId: string,
   conversationId: string,
   text: string,
   options: RespondOptions,
   attachments: ProjectAttachment[] = [],
 ): Promise<RespondResult> {
-  const entered = await enterMessage(db, conversationId, text, undefined, attachments);
+  const entered = await enterMessage(db, conversationId, text, projectId, attachments);
   if (entered.kind !== "ok") return { kind: entered.kind };
   const { model, candidates, abstained, history, system, userContent } = await prepareAnswer(
     db,

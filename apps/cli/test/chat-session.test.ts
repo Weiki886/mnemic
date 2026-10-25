@@ -60,7 +60,7 @@ describe("CLI 对话会话（#19 2/2）", () => {
     api.sendMessage.mockResolvedValueOnce(answer("MySQL"));
     expect((await session.send("改成 MySQL")).answer).toContain("MySQL");
     expect(api.createConversation).toHaveBeenCalledOnce();
-    expect(api.sendMessage).toHaveBeenNthCalledWith(1, c1, "  数据库用 PostgreSQL  ");
+    expect(api.sendMessage).toHaveBeenNthCalledWith(1, project, c1, "  数据库用 PostgreSQL  ");
   });
 
   it("新会话先提交旧会话；失败不偷偷换会话或自动重试", async () => {
@@ -75,7 +75,7 @@ describe("CLI 对话会话（#19 2/2）", () => {
     await session.newConversation();
     await session.send("database？");
     expect(api.commitConversation).toHaveBeenCalledTimes(2);
-    expect(api.sendMessage).toHaveBeenCalledWith(c2, "database？");
+    expect(api.sendMessage).toHaveBeenCalledWith(project, c2, "database？");
   });
 
   it("提交响应丢失后，用户再次新建收到 409 仍能进入新会话", async () => {
@@ -90,7 +90,7 @@ describe("CLI 对话会话（#19 2/2）", () => {
     api.createConversation.mockResolvedValueOnce(conversation(c2));
     await expect(session.newConversation()).resolves.toMatchObject({ id: c2 });
     await session.send("新会话消息");
-    expect(api.sendMessage).toHaveBeenCalledWith(c2, "新会话消息");
+    expect(api.sendMessage).toHaveBeenCalledWith(project, c2, "新会话消息");
     expect(api.createConversation).toHaveBeenCalledTimes(2);
     expect(api.commitConversation).toHaveBeenCalledTimes(2);
   });

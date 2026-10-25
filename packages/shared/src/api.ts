@@ -240,8 +240,13 @@ export function createApiClient(options: ApiClientOptions) {
         project_id: projectId,
         ...(title !== undefined ? { title } : {}),
       }),
-    sendMessage: (conversationId: string, text: string, attachments?: ProjectAttachment[]) =>
-      post<ChatReply>(`/v1/conversations/${conversationId}/messages`, {
+    sendMessage: (
+      projectId: string,
+      conversationId: string,
+      text: string,
+      attachments?: ProjectAttachment[],
+    ) =>
+      post<ChatReply>(`/projects/${projectId}/conversations/${conversationId}/messages`, {
         text,
         ...(attachments ? { attachments } : {}),
       }),

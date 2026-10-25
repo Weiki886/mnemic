@@ -119,8 +119,14 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
         payload: { project_id: projectId },
       })
     ).json().id as string;
-  const postMessage = (convId: string, text: string) =>
-    app.inject({ method: "POST", url: `/v1/conversations/${convId}/messages`, payload: { text } });
+  const postMessage = async (convId: string, text: string) => {
+    const [row] = await t.sql`select project_id from conversations where id=${convId}`;
+    return app.inject({
+      method: "POST",
+      url: `/projects/${row?.project_id ?? uuidv7()}/conversations/${convId}/messages`,
+      payload: { text },
+    });
+  };
 
   it("非法消息体 → 400 带结构化 errors", async () => {
     const res = await postMessage(uuidv7(), "");
@@ -259,7 +265,7 @@ describe("对话闭环：消息应答（#7 Task B）", () => {
     ).json().id as string;
     const res = await degraded.inject({
       method: "POST",
-      url: `/v1/conversations/${conv}/messages`,
+      url: `/projects/${projectId}/conversations/${conv}/messages`,
       payload: { text: "随便聊聊" },
     });
     expect(res.statusCode).toBe(200);

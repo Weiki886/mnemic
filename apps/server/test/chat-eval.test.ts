@@ -107,7 +107,7 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
     for (const tell of tells) {
       const res = await app.inject({
         method: "POST",
-        url: `/v1/conversations/${conv1}/messages`,
+        url: `/projects/${projectId}/conversations/${conv1}/messages`,
         payload: { text: tell },
       });
       expect(res.statusCode).toBe(200);
@@ -122,7 +122,7 @@ describe.skipIf(!deepseekKey || !dashscopeKey)("真实模型对话闭环评测�
     ).json().id as string;
     const asked = await app.inject({
       method: "POST",
-      url: `/v1/conversations/${conv2}/messages`,
+      url: `/projects/${projectId}/conversations/${conv2}/messages`,
       payload: { text: ask },
     });
     expect(asked.statusCode).toBe(200);

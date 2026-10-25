@@ -9,10 +9,11 @@ it("carries attachments through JSON and stream transport without changing exist
     async (_url: string | URL | Request, _init?: RequestInit) => new Response("{}"),
   );
   const api = createApiClient({ baseUrl: "http://local", token: "test", fetch });
-  await api.sendMessage(id, "explain", files);
+  await api.sendMessage(id, id, "explain", files);
   const signal = new AbortController().signal;
   await api.openMessageStream(id, id, "explain", signal, files);
   expect(fetch.mock.calls).toHaveLength(2);
+  expect(fetch.mock.calls[0]![0]).toBe(`http://local/projects/${id}/conversations/${id}/messages`);
   for (const [, init] of fetch.mock.calls) {
     expect(JSON.parse(init!.body as string)).toEqual({ text: "explain", attachments: files });
     expect(new Headers(init!.headers).get("authorization")).toBe("Bearer test");
@@ -24,7 +25,7 @@ it("keeps old message payloads unchanged when attachments are omitted", async ()
     async (_url: string | URL | Request, _init?: RequestInit) => new Response("{}"),
   );
   const api = createApiClient({ baseUrl: "http://local", fetch });
-  await api.sendMessage(id, "hi");
+  await api.sendMessage(id, id, "hi");
   await api.openMessageStream(id, id, "hi");
   expect(fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string))).toEqual([
     { text: "hi" },

@@ -40,8 +40,8 @@ Refs #35。本轮接在 [本地引用组件](file-context.md) 之后：实现共
 }
 ```
 
-- `POST /v1/conversations/:id/messages` 保留既有个人服务端点；流式为
-  `POST /projects/:projectId/conversations/:id/messages/stream`，项目和会话同时匹配。
+- JSON 为 `POST /projects/:projectId/conversations/:id/messages`；流式为同一路径加 `/stream`，
+  项目和会话同时匹配；旧的无项目 JSON 消息端点返回 404，不做静默回退。
   复用既有全局 Bearer，不宣称多用户租户权限。服务器只接受数据，绝不会按 path 读取自己的磁盘。
 - attachments 可省略或为空，旧调用的 JSON 形状不变；不接受客户端指定 source_type、authority、
   Evidence ID、parent 或 tool-output 通道。严格校验失败为带结构化 errors 的 400，入库前拒绝。
@@ -51,7 +51,7 @@ Refs #35。本轮接在 [本地引用组件](file-context.md) 之后：实现共
 - 路径敏感名称规则由 CLI 与 HTTP 共享 `isBlockedProjectPath`，不维护第二份私钥名单。
   路径与内容字段均在保存前经过已有 Secret 扫描；命中字段替换为 `[REDACTED]`，审计只记录
   Evidence ID、模式名和命中数，不含密钥、原始路径或正文。审计与用户/附件消息同事务提交。
-- `createApiClient.sendMessage` 第三个参数为可选附件数组；`openMessageStream` 第五个参数为附件，
+- `createApiClient.sendMessage(projectId, conversationId, text, attachments?)` 第四个参数为可选附件数组；`openMessageStream` 第五个参数为附件，
   保留第四个参数的 AbortSignal 位置。传输不增加自动重试或额外模型调用。
 
 本轮限制作用于附件总正文，包含目录清单；3/3 若目录 JSON 超过预算，必须明确提示并阻断发送或由用户

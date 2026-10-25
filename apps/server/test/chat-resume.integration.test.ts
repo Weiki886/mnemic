@@ -71,8 +71,14 @@ describe("会话续聊与历史上下文（#31）", () => {
   }
   const resume = (p: string, c: string, body: Record<string, unknown> = {}) =>
     app.inject({ method: "POST", url: `/projects/${p}/conversations/${c}/resume`, payload: body });
-  const send = (c: string, text = "接着昨天的工作") =>
-    app.inject({ method: "POST", url: `/v1/conversations/${c}/messages`, payload: { text } });
+  const send = async (c: string, text = "接着昨天的工作") => {
+    const [row] = await t.sql`select project_id from conversations where id=${c}`;
+    return app.inject({
+      method: "POST",
+      url: `/projects/${row?.project_id ?? uuidv7()}/conversations/${c}/messages`,
+      payload: { text },
+    });
+  };
   async function cite(s: Awaited<ReturnType<typeof seed>>, value = "旧的注入记忆") {
     const b = uuidv7(),
       v = uuidv7();
