@@ -17,6 +17,8 @@ import {
   ChatStreamReadError,
   type ChatStreamEvent,
 } from "@mnemic/shared/chat-stream";
+import { prepareFileMessage } from "./file-input.js";
+import { FileReferenceError, parseFileReferences } from "./file-references.js";
 
 type ChatApi = Pick<
   ApiClient,
@@ -40,6 +42,8 @@ interface ActiveTurn {
   cancellation?: Promise<void>;
   timer?: ReturnType<typeof setTimeout>;
   confirmed: boolean;
+  sending: boolean;
+  hasFiles: boolean;
 }
 export type SessionReply = ChatReply & { generation_status?: "complete" | "interrupted" };
 
@@ -51,12 +55,14 @@ export class ChatSession {
   private closed = false;
   private inherited: ConversationMessage[] = [];
   private active: ActiveTurn | undefined;
+  private preparing: AbortController | undefined;
   private uncertain = false;
   private identityListeners = new Set<(id: string | null) => void>();
 
   constructor(
     private readonly api: ChatApi,
     readonly projectId: string,
+    readonly fileRoot?: string,
   ) {
     this.projectId = projectId.toLowerCase();
   }
@@ -79,13 +85,21 @@ export class ChatSession {
     return this.inherited;
   }
   get generating(): boolean {
-    return this.active !== undefined;
+    return this.active !== undefined || this.preparing !== undefined;
   }
   /** Do not abort the reader until the server has had a chance to save and acknowledge. */
   interrupt(): void {
     const turn = this.active;
+    if (this.preparing) {
+      this.preparing.abort();
+      return;
+    }
     if (!turn || turn.requested) return;
     turn.requested = true;
+    if (!turn.sending && turn.hasFiles) {
+      turn.controller.abort();
+      return;
+    }
     turn.timer = setTimeout(() => turn.controller.abort(), 10_000);
     this.cancelTurn(turn);
   }
@@ -178,28 +192,50 @@ export class ChatSession {
       return row;
     });
   }
-  async send(text: string, onEvent?: (event: ChatStreamEvent) => void): Promise<SessionReply> {
+  async send(
+    text: string,
+    onEvent?: (event: ChatStreamEvent) => void,
+    onPrepared?: (notice: string) => void,
+  ): Promise<SessionReply> {
     if (!text.trim() || text.length > 8000) throw new SessionError("消息不能为空或超过 8000 字符");
     return this.run(async () => {
       this.requireConfirmed();
+      let files: Awaited<ReturnType<typeof prepareFileMessage>> = { attachments: [], notice: "" };
+      if (parseFileReferences(text).length) {
+        const preparation = new AbortController();
+        this.preparing = preparation;
+        try {
+          files = await prepareFileMessage(this.fileRoot, text, preparation.signal);
+          onPrepared?.(files.notice);
+          if (preparation.signal.aborted) throw new FileReferenceError("cancelled");
+        } catch (error) {
+          this.preparing = undefined;
+          throw error;
+        }
+      } else onPrepared?.("");
       // Legacy embedding adapters may expose JSON only; HTTP stream errors never fall back or replay.
       if (onEvent && this.api.openMessageStream && this.api.cancelMessageStream) {
         const turn: ActiveTurn = {
           controller: new AbortController(),
           requested: false,
           confirmed: false,
+          sending: false,
+          hasFiles: files.attachments.length > 0,
         };
         this.active = turn;
+        this.preparing = undefined;
         let sending = false;
         try {
           const row = await this.ensureConversation();
           turn.controller.signal.throwIfAborted();
           sending = true;
+          turn.sending = true;
           const response = await this.api.openMessageStream(
             this.projectId,
             row.id,
             text,
             turn.controller.signal,
+            ...(files.attachments.length ? [files.attachments] : []),
           );
           const result = await consumeChatStream(response, {
             conversationId: row.id,
@@ -229,6 +265,8 @@ export class ChatSession {
           this.uncertain =
             sending &&
             !(saved || (error instanceof ApiError && error.status >= 400 && error.status < 500));
+          if (!sending && turn.hasFiles && turn.controller.signal.aborted)
+            throw new FileReferenceError("cancelled");
           if (error instanceof ChatStreamReadError) throw new SessionStreamError(error, saved);
           throw error;
         } finally {
@@ -236,8 +274,25 @@ export class ChatSession {
           this.active = undefined;
         }
       }
-      const row = await this.ensureConversation();
-      return ChatReplySchema.parse(await this.api.sendMessage(this.projectId, row.id, text));
+      try {
+        const row = await this.ensureConversation();
+        if (this.preparing?.signal.aborted) throw new FileReferenceError("cancelled");
+        // No await between the last cancellation check and JSON dispatch.
+        this.preparing = undefined;
+        return ChatReplySchema.parse(
+          await this.api.sendMessage(
+            this.projectId,
+            row.id,
+            text,
+            ...(files.attachments.length ? [files.attachments] : []),
+          ),
+        );
+      } catch (error) {
+        if (this.preparing?.signal.aborted) throw new FileReferenceError("cancelled");
+        throw error;
+      } finally {
+        this.preparing = undefined;
+      }
     });
   }
   newConversation(): Promise<ChatConversation> {

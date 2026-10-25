@@ -14,6 +14,8 @@ import { editLine, type LineState } from "./line-input.js";
 import { runManagementCommand, type ManagementApi } from "./management-commands.js";
 import type { ApprovalController } from "./approval-controller.js";
 import { runApprovalHistory, type ApprovalHistoryApi } from "./approval-audit.js";
+import { completeFileInput } from "./file-input.js";
+import { FileReferenceError } from "./file-references.js";
 
 interface Block {
   id: number;
@@ -59,6 +61,7 @@ export function ChatApp({
   const mounted = useRef(true);
   const sequence = useRef(0);
   const pendingCommand = useRef<Promise<string> | undefined>(undefined);
+  const completionSequence = useRef(0);
   const append = (label: string, text: string, color: Block["color"]) => {
     if (mounted.current) {
       const block = { id: sequence.current++, label, text: terminalText(text, true), color };
@@ -68,7 +71,7 @@ export function ChatApp({
   const appendHistory = () => {
     for (const m of session.history)
       append(
-        `历史 · ${m.speaker === "user" ? "用户" : m.speaker === "tool" ? "工具" : "助手"}${m.generation_status === "interrupted" ? " · 已中断" : m.generation_status === "failed" ? " · 生成失败" : ""}`,
+        `历史 · ${m.attachment ? `项目文件 ${m.attachment.path}${m.attachment.truncated ? " · 已截断" : ""}` : m.speaker === "user" ? "用户" : m.speaker === "tool" ? "工具" : "助手"}${m.generation_status === "interrupted" ? " · 已中断" : m.generation_status === "failed" ? " · 生成失败" : ""}`,
         formatReply({
           message_id: m.id,
           answer: m.raw_text,
@@ -166,9 +169,28 @@ export function ChatApp({
     }
     if (busyRef.current || closingRef.current) return;
     if (key.tab && !key.shift && !key.ctrl && !key.meta) {
-      const completion = completeSlash(lineRef.current.text);
-      setCandidates(completion.candidates.length > 1 ? completion.candidates : []);
-      if (completion.value !== lineRef.current.text) setInput(completion.value);
+      const snapshot = lineRef.current;
+      const sequence = ++completionSequence.current;
+      if (snapshot.text.trimStart().startsWith("/")) {
+        const completion = completeSlash(snapshot.text);
+        setCandidates(completion.candidates.length > 1 ? completion.candidates : []);
+        if (completion.value !== snapshot.text) setInput(completion.value);
+      } else if (session.fileRoot) {
+        void completeFileInput(session.fileRoot, snapshot)
+          .then((completion) => {
+            if (
+              !mounted.current ||
+              busyRef.current ||
+              closingRef.current ||
+              lineRef.current !== snapshot ||
+              completionSequence.current !== sequence
+            )
+              return;
+            setCandidates(completion.candidates);
+            if (completion.line !== snapshot) updateLine(completion.line);
+          })
+          .catch(() => {});
+      }
     } else if (key.return) {
       void submit(lineRef.current.text);
     } else {
@@ -200,7 +222,7 @@ export function ChatApp({
     }
     busyRef.current = true;
     setBusy(true);
-    setInput("");
+    if (parsed.kind !== "message") setInput("");
     try {
       if (parsed.kind === "command" && parsed.name === "new") {
         const row = await session.newConversation();
@@ -262,23 +284,39 @@ export function ChatApp({
         pendingCommand.current = job;
         append(parsed.name === "recall" ? "手动召回" : "记忆", await job, "gray");
       } else if (parsed.kind === "message") {
-        append("你", text, "cyan");
-        setStreaming(true);
-        const reply = await session.send(text, (event) => {
-          if (event.type === "delta") {
-            const chunk = terminalText(event.text, true);
-            if (mounted.current) setPartial((answer) => answer + chunk);
-          }
-        });
+        let hasFiles = false;
+        const reply = await session.send(
+          text,
+          (event) => {
+            if (event.type === "delta") {
+              const chunk = terminalText(event.text, true);
+              if (mounted.current) setPartial((answer) => answer + chunk);
+            }
+          },
+          (notice) => {
+            setInput("");
+            append("你", text, "cyan");
+            hasFiles = notice.length > 0;
+            if (notice) append("文件引用", notice, "gray");
+            setStreaming(true);
+          },
+        );
         if (!mounted.current || closingRef.current) return;
         setId(session.id);
         append(
           reply.generation_status === "interrupted" ? "已中断 · 已保存" : "回答",
-          formatReply(reply),
+          formatReply(reply, reply.answer, hasFiles),
           reply.abstained ? "yellow" : "white",
         );
       }
     } catch (error) {
+      if (
+        parsed.kind === "message" &&
+        error instanceof FileReferenceError &&
+        mounted.current &&
+        !closingRef.current
+      )
+        setInput(text);
       if (error instanceof ChatStreamReadError) {
         const failed =
           error.progress.terminal?.type === "error" &&
@@ -336,7 +374,7 @@ export function ChatApp({
         生成中打断，空闲时提交退出
       </Text>
       <Text dimColor>实时流式回答，可能计费。ESC / Ctrl+C 中断后等待保存确认，可继续对话。</Text>
-      <Text dimColor>/help 命令帮助 · Tab 补全命令名（不执行）</Text>
+      <Text dimColor>/help 命令帮助 · Tab 补全命令或 @文件路径（不发送）</Text>
       {approval && (
         <Text dimColor>
           权限 {approval.mode} · 项目根 {terminalText(approval.root)}
