@@ -33,23 +33,21 @@ export async function writeModelUsage(db: PostgresJsDatabase, r: UsageRecord): P
     if (!conv) throw new Error("invalid usage scope");
   }
   // Explicit allowlist: never persist provider responses, error objects, credentials or prompts.
-  await db
-    .insert(modelUsage)
-    .values({
-      id: uuidv7(),
-      projectId: r.projectId,
-      conversationId: r.conversationId,
-      providerName: r.providerName,
-      modelId: r.modelId,
-      slot: r.slot,
-      purpose: r.purpose,
-      status: r.status,
-      startedAt: r.startedAt,
-      durationMs: r.durationMs,
-      promptTokens: r.promptTokens,
-      completionTokens: r.completionTokens,
-      totalTokens: r.totalTokens,
-      reasoningTokens: r.reasoningTokens,
-      cachedInputTokens: r.cachedInputTokens,
-    });
+  await db.insert(modelUsage).values({
+    id: uuidv7(),
+    projectId: r.projectId,
+    conversationId: r.conversationId,
+    providerName: r.providerName,
+    modelId: r.modelId,
+    slot: r.slot,
+    purpose: r.purpose,
+    status: r.status,
+    startedAt: r.startedAt,
+    durationMs: r.durationMs,
+    promptTokens: r.promptTokens,
+    completionTokens: r.completionTokens,
+    totalTokens: r.totalTokens,
+    reasoningTokens: r.reasoningTokens,
+    cachedInputTokens: r.cachedInputTokens,
+  });
 }

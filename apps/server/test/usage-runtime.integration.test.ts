@@ -11,7 +11,8 @@ import { TEST_MASTER_KEY } from "./test-keys.js";
 import { bagOfWordsVector } from "./fixtures/bag-embedding.js";
 
 const token = "offline-usage-runtime-0000000000",
-  project = uuidv7();
+  project = uuidv7(),
+  providerName = `runtime-usage-${uuidv7()}`;
 let t: TestDb,
   app: ReturnType<typeof buildApp>,
   api: ReturnType<typeof createApiClient>,
@@ -81,7 +82,7 @@ beforeAll(async () => {
   await t.sql`delete from provider_configs`;
   await t.sql`insert into projects(id,name) values(${project},'usage-runtime')`;
   await createProvider(t.db, TEST_MASTER_KEY, {
-    name: "runtime-usage",
+    name: providerName,
     protocol: "openai-compatible",
     baseUrl: "https://example.invalid",
     apiKey: "NEVER-STORED-PLAIN",
@@ -155,13 +156,13 @@ it("manual recall is project-scoped with no conversation and rejected requests r
   expect(row).toMatchObject({ conversation_id: null, purpose: "embedding_query" });
 });
 it("plain doctor resolves without charging; explicit probe records all three invocations outside project totals", async () => {
-  const before = (await t.sql`select id from model_usage where provider_name='runtime-usage'`)
+  const before = (await t.sql`select id from model_usage where provider_name=${providerName}`)
     .length;
   expect(
     (await app.inject({ url: "/v1/doctor", headers: { authorization: `Bearer ${token}` } }))
       .statusCode,
   ).toBe(200);
-  expect(await t.sql`select id from model_usage where provider_name='runtime-usage'`).toHaveLength(
+  expect(await t.sql`select id from model_usage where provider_name=${providerName}`).toHaveLength(
     before,
   );
   const res = await app.inject({
@@ -172,7 +173,7 @@ it("plain doctor resolves without charging; explicit probe records all three inv
   });
   expect(res.statusCode).toBe(200);
   const rows =
-    await t.sql`select * from model_usage where provider_name='runtime-usage' and purpose='probe'`;
+    await t.sql`select * from model_usage where provider_name=${providerName} and purpose='probe'`;
   expect(rows).toHaveLength(3);
   expect(rows.every((r) => r.project_id === null && r.conversation_id === null)).toBe(true);
 });
