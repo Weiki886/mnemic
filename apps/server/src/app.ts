@@ -19,6 +19,8 @@ import { registerManagementRoutes } from "./providers/management-routes.js";
 import { registerBearerAuth } from "./auth.js";
 import { resolveAuthToken } from "./config.js";
 import { registerApprovalAuditRoutes } from "./approval/routes.js";
+import { registerUsageRoutes } from "./usage/routes.js";
+import type { UsagePricing } from "./usage/pricing.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
 const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -30,6 +32,7 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 };
 
 export interface BuildAppOptions {
+  usagePricing?: UsagePricing;
   /** 默认必须提供 Token；仅隔离测试夹具可显式 auth:false。正式入口没有关闭开关。 */
   authToken?: string | undefined;
   auth?: boolean | undefined;
@@ -126,6 +129,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory);
   }
   if (options.db) {
+    registerUsageRoutes(app, options.db, options.usagePricing);
     registerApprovalAuditRoutes(app, options.db);
     registerManagementRoutes(app, options.db);
     registerGateRoutes(app, options.db);

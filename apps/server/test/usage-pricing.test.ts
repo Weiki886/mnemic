@@ -25,6 +25,7 @@ it("rejects duplicate effective rates, invalid decimals and unknown fields witho
     [{ ...rate, output_per_million: "1e9" }],
     [{ ...rate, cached_input_per_million: "0.1234567" }],
     [{ ...rate, api_key: "PRIVATE" }],
+    [{ ...rate, effective_from: "2026-01-01T00:00:00.000001Z" }],
   ])
     expect(() => parseUsagePricing(JSON.stringify({ currency: "USD", rates }))).toThrow(
       "MNEMIC_USAGE_PRICES_JSON invalid",

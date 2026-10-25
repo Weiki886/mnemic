@@ -1,10 +1,15 @@
 import { z } from "zod";
 const uuid = z.string().uuid().toLowerCase();
 const date = z.string().datetime({ offset: true });
+const filterDate = date.refine((s) => !/\.\d{4}/.test(s), "查询时间最多支持毫秒精度");
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const integer = z.string().regex(/^\d+$/);
 const amount = z.string().regex(/^\d+\.\d{12}$/);
-const filters = { conversation_id: uuid.optional(), from: date.optional(), to: date.optional() };
+const filters = {
+  conversation_id: uuid.optional(),
+  from: filterDate.optional(),
+  to: filterDate.optional(),
+};
 export const UsageQuerySchema = z
   .object({
     ...filters,

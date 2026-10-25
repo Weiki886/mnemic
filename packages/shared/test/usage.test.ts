@@ -6,6 +6,7 @@ it("validates explicit ISO dates, UUID scope and bounded pagination without acce
   for (const query of [
     { group_by: "sql" },
     { from: "2026-02-30T00:00:00Z" },
+    { from: "2026-10-01T00:00:00.000001Z" },
     { conversation_id: "x" },
     { from: "yesterday" },
     { provider_key: "x" },
