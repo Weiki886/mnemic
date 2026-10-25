@@ -22,7 +22,9 @@ export type FileReferenceErrorCode =
   | "binary"
   | "too_many_entries"
   | "too_many_files"
-  | "budget_exceeded";
+  | "budget_exceeded"
+  | "invalid_context"
+  | "cancelled";
 
 /** Only stable local codes; raw filesystem errors/absolute paths are never exposed. */
 export class FileReferenceError extends Error {
@@ -34,6 +36,7 @@ export class FileReferenceError extends Error {
 export function normalizeReferencePath(path: string): string {
   if (
     !ApprovalPathSchema.safeParse(path).success ||
+    /\p{Cs}/u.test(path) ||
     path.includes("\\") ||
     path.startsWith("/") ||
     path.startsWith("~") ||

@@ -8,6 +8,13 @@ async function api() {
 }
 
 describe("explicit file reference syntax", () => {
+  it.each(["@bad\ud800.txt", "@bad\udc00.txt"])(
+    "rejects an isolated Unicode surrogate before local IO",
+    async (text) => {
+      const { parseFileReferences } = await api();
+      expect(() => parseFileReferences(text)).toThrow("invalid_path");
+    },
+  );
   it("recognizes bare and quoted references with original UTF-16 offsets", async () => {
     const { parseFileReferences } = await api();
     const text = '🙂 看 @README.md 和 @"src/a b.ts"，然后继续';
