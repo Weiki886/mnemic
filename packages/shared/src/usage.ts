@@ -1,7 +1,11 @@
 import { z } from "zod";
 const uuid = z.string().uuid().toLowerCase();
 const date = z.string().datetime({ offset: true });
-const filterDate = date.refine((s) => !/\.\d{4}/.test(s), "查询时间最多支持毫秒精度");
+export const UsageTimeSchema = date.refine((s) => {
+  const year = new Date(s).getUTCFullYear();
+  return !s.startsWith("0000-") && year >= 1 && year <= 9999 && !/\.\d{4}/.test(s);
+}, "时间须在 UTC 年份0001–9999内，最多毫秒精度");
+const filterDate = UsageTimeSchema;
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const integer = z.string().regex(/^\d+$/);
 const amount = z.string().regex(/^\d+\.\d{12}$/);

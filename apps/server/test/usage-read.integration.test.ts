@@ -265,3 +265,48 @@ it("cached pricing refuses missing or inconsistent cache counts even with known 
     unpriced_calls: 2,
   });
 });
+
+it("captures the default end time once so scope lookup cannot turn a valid 366-day window into 500", async () => {
+  const now = new Date("2026-10-25T00:00:00Z"),
+    from = new Date(now.getTime() - 366 * 86400000).toISOString();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(now);
+  const original = t.db.execute.bind(t.db),
+    execute = vi.spyOn(t.db, "execute").mockImplementation((query) => {
+      vi.setSystemTime(new Date(now.getTime() + 1000));
+      return original(query);
+    });
+  try {
+    for (const path of ["usage", "usage/export"]) {
+      vi.setSystemTime(now);
+      const res = await app.inject({
+        url: `/projects/${p}/${path}?from=${encodeURIComponent(from)}`,
+        headers,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().to).toBe(now.toISOString());
+    }
+  } finally {
+    execute.mockRestore();
+    vi.useRealTimers();
+  }
+});
+it("rejects PostgreSQL-incompatible year zero and timezone overflow before SQL, while valid boundary years work", async () => {
+  for (const range of [
+    "from=0000-01-01T00:00:00Z&to=0000-01-02T00:00:00Z",
+    "from=0001-01-01T00:00:00%2B01:00&to=0001-01-02T00:00:00Z",
+    "from=9999-12-31T23:00:00-02:00&to=9999-12-31T23:30:00-02:00",
+  ])
+    expect((await app.inject({ url: `/projects/${p}/usage?${range}`, headers })).statusCode).toBe(
+      400,
+    );
+  for (const year of ["0001", "9999"])
+    expect(
+      (
+        await app.inject({
+          url: `/projects/${p}/usage?from=${year}-06-01T00:00:00Z&to=${year}-06-02T00:00:00Z`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(200);
+});

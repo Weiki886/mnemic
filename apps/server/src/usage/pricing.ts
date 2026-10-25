@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { UsageTimeSchema } from "@mnemic/shared/usage";
 const decimal = z.string().regex(/^(?:0|[1-9]\d{0,8})(?:\.\d{1,6})?$/);
 const PriceSchema = z
   .object({
@@ -11,10 +12,7 @@ const PriceSchema = z
             provider_name: z.string().min(1).max(200),
             model_id: z.string().min(1).max(200),
             slot: z.enum(["chat", "extraction", "embedding"]),
-            effective_from: z
-              .string()
-              .datetime({ offset: true })
-              .refine((s) => !/\.\d{4}/.test(s)),
+            effective_from: UsageTimeSchema,
             input_per_million: decimal,
             output_per_million: decimal,
             cached_input_per_million: decimal.optional(),
@@ -57,5 +55,11 @@ export function usageWindow(
   const span = end.getTime() - start.getTime();
   if (!Number.isFinite(span) || span <= 0 || span > 366 * 86400000)
     throw new Error("invalid usage window");
-  return { from: start.toISOString(), to: end.toISOString() };
+  const bounds = { from: start.toISOString(), to: end.toISOString() };
+  if (
+    !UsageTimeSchema.safeParse(bounds.from).success ||
+    !UsageTimeSchema.safeParse(bounds.to).success
+  )
+    throw new Error("invalid usage window");
+  return bounds;
 }

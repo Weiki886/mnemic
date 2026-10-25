@@ -39,8 +39,9 @@ export function registerUsageRoutes(
         request.query,
       );
       if (!parsed.success) return fail(reply, request.id, 400, parsed.error);
+      let window: ReturnType<typeof usageWindow>;
       try {
-        usageWindow(parsed.data);
+        window = usageWindow(parsed.data);
       } catch {
         return fail(
           reply,
@@ -57,13 +58,13 @@ export function registerUsageRoutes(
           return await readUsageReport(
             db,
             params.data.projectId,
-            UsageQuerySchema.parse(parsed.data),
+            UsageQuerySchema.parse({ ...parsed.data, ...window }),
             pricing,
           );
         const page = await readUsageExport(
           db,
           params.data.projectId,
-          UsageExportQuerySchema.parse(parsed.data),
+          UsageExportQuerySchema.parse({ ...parsed.data, ...window }),
           pricing,
         );
         if (page.next_after) reply.header("x-next-after", page.next_after);

@@ -16,8 +16,9 @@
 | group_limit     | 默认 200，上限 1000；只限制分组详情，始终保留完整 totals                |
 
 默认 to 为查询时刻，from 为 to 前 30 天；有 to 无 from 时也向前取 30 天。
-范围必须大于 0 且不超过 366 天；非法 UUID、时间、逆序、额外字段、超限参数返回带
-`errors` 的 problem+json 400。项目/会话/游标不在当前范围返回 404，鉴权先于参数与数据访问。
+范围必须大于 0 且不超过 366 天；from/to 及默认派生边界均须在归一化 UTC 年份 0001–9999 内，
+窗口在查询入口固定一次。非法 UUID、时间、逆序、额外字段、超限参数返回带 errors 的
+problem+json 400。项目/会话/游标不在当前范围返回 404，鉴权先于参数与数据访问。
 
 响应含实际 UTC 窗口、币种/价格配置指纹、totals 与 groups。`groups_truncated` 明示截断，
 完整 totals 与已返回分组来自同一个 SQL statement snapshot；聚合在 PostgreSQL 执行，
