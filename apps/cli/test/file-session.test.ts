@@ -130,3 +130,22 @@ it("cancelling while conversation creation is pending is still a local unsent fi
   expect(client.openMessageStream).not.toHaveBeenCalled();
   expect(client.sendMessage).not.toHaveBeenCalled();
 });
+it("JSON-only adapters also cancel a prepared file turn while conversation creation is pending", async () => {
+  let finish!: (value: typeof row) => void;
+  const client = api();
+  client.createConversation.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const session = new ChatSession(client, p, root);
+  const sent = session.send("@README.md");
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  const wasPreparing = session.generating;
+  session.interrupt();
+  finish(row);
+  await expect(sent).rejects.toThrow("cancelled");
+  expect(wasPreparing).toBe(true);
+  expect(client.sendMessage).not.toHaveBeenCalled();
+});

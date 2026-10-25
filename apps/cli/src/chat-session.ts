@@ -208,8 +208,9 @@ export class ChatSession {
           files = await prepareFileMessage(this.fileRoot, text, preparation.signal);
           onPrepared?.(files.notice);
           if (preparation.signal.aborted) throw new FileReferenceError("cancelled");
-        } finally {
+        } catch (error) {
           this.preparing = undefined;
+          throw error;
         }
       } else onPrepared?.("");
       // Legacy embedding adapters may expose JSON only; HTTP stream errors never fall back or replay.
@@ -222,6 +223,7 @@ export class ChatSession {
           hasFiles: files.attachments.length > 0,
         };
         this.active = turn;
+        this.preparing = undefined;
         let sending = false;
         try {
           const row = await this.ensureConversation();
@@ -272,15 +274,22 @@ export class ChatSession {
           this.active = undefined;
         }
       }
-      const row = await this.ensureConversation();
-      return ChatReplySchema.parse(
-        await this.api.sendMessage(
-          this.projectId,
-          row.id,
-          text,
-          ...(files.attachments.length ? [files.attachments] : []),
-        ),
-      );
+      try {
+        const row = await this.ensureConversation();
+        if (this.preparing?.signal.aborted) throw new FileReferenceError("cancelled");
+        // No await between the last cancellation check and JSON dispatch.
+        this.preparing = undefined;
+        return ChatReplySchema.parse(
+          await this.api.sendMessage(
+            this.projectId,
+            row.id,
+            text,
+            ...(files.attachments.length ? [files.attachments] : []),
+          ),
+        );
+      } finally {
+        this.preparing = undefined;
+      }
     });
   }
   newConversation(): Promise<ChatConversation> {

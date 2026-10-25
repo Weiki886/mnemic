@@ -117,3 +117,12 @@ it("ignores email, escaped @ and slash command arguments", async () => {
     expect(await completeFileInput(root, line)).toEqual({ line, candidates: [] });
   }
 });
+it("quotes a leading @ filename so completion cannot silently become an escaped reference", async () => {
+  const { completeFileInput, prepareFileMessage } = await api();
+  await writeFile(join(root, "@file.txt"), "literal-at-name");
+  const completed = await completeFileInput(root, { text: '@"@fi', cursor: 5 });
+  expect(completed.line.text).toBe('@"@file.txt"');
+  expect((await prepareFileMessage(root, completed.line.text)).attachments).toEqual([
+    { kind: "file", path: "@file.txt", content: "literal-at-name", truncated: false },
+  ]);
+});

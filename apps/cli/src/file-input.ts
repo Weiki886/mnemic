@@ -90,7 +90,7 @@ function activeReference(
   return null;
 }
 function referenceText(path: string): string {
-  return /\s/u.test(path) ? `@"${path}"` : `@${path}`;
+  return path.startsWith("@") || /\s/u.test(path) ? `@"${path}"` : `@${path}`;
 }
 /** Only explicit Tab invokes filesystem enumeration; cursor offsets remain Unicode code points. */
 export async function completeFileInput(
