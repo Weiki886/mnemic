@@ -112,3 +112,21 @@ it("stream transport carries the same attachments in fifth position without JSON
   );
   expect(client.sendMessage).not.toHaveBeenCalled();
 });
+it("cancelling while conversation creation is pending is still a local unsent file cancellation", async () => {
+  let finish!: (value: typeof row) => void;
+  const client = { ...api(), openMessageStream: vi.fn(), cancelMessageStream: vi.fn() };
+  client.createConversation.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const session = new ChatSession(client, p, root);
+  const sent = session.send("@README.md", () => {});
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  session.interrupt();
+  finish(row);
+  await expect(sent).rejects.toThrow("cancelled");
+  expect(client.openMessageStream).not.toHaveBeenCalled();
+  expect(client.sendMessage).not.toHaveBeenCalled();
+});

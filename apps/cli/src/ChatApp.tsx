@@ -15,6 +15,7 @@ import { runManagementCommand, type ManagementApi } from "./management-commands.
 import type { ApprovalController } from "./approval-controller.js";
 import { runApprovalHistory, type ApprovalHistoryApi } from "./approval-audit.js";
 import { completeFileInput } from "./file-input.js";
+import { FileReferenceError } from "./file-references.js";
 
 interface Block {
   id: number;
@@ -309,6 +310,13 @@ export function ChatApp({
         );
       }
     } catch (error) {
+      if (
+        parsed.kind === "message" &&
+        error instanceof FileReferenceError &&
+        mounted.current &&
+        !closingRef.current
+      )
+        setInput(text);
       if (error instanceof ChatStreamReadError) {
         const failed =
           error.progress.terminal?.type === "error" &&

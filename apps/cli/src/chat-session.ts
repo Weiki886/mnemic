@@ -263,6 +263,8 @@ export class ChatSession {
           this.uncertain =
             sending &&
             !(saved || (error instanceof ApiError && error.status >= 400 && error.status < 500));
+          if (!sending && turn.hasFiles && turn.controller.signal.aborted)
+            throw new FileReferenceError("cancelled");
           if (error instanceof ChatStreamReadError) throw new SessionStreamError(error, saved);
           throw error;
         } finally {
