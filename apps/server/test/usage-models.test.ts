@@ -328,3 +328,28 @@ it("embedding failures and stream-open failures retain the original error with u
   expect(rows.every((r) => r.status === "error" && r.totalTokens === null)).toBe(true);
   expect(JSON.stringify(rows)).not.toContain("private error body");
 });
+
+it("a slow usage sink never delays forwarding direct stream cancellation to the provider", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const cancelled = vi.fn();
+  const model = observeLanguage(
+    new MockLanguageModelV2({
+      doStream: async () => ({ stream: new ReadableStream<Part>({ cancel: cancelled }) }),
+    }),
+    base,
+    () => pending,
+  );
+  const { stream } = await model.doStream(params);
+  const cancellation = stream.cancel();
+  try {
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(cancelled).toHaveBeenCalledTimes(1);
+  } finally {
+    release();
+    await cancellation;
+  }
+});

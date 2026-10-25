@@ -112,9 +112,9 @@ export function observeLanguage(model: Language, base: Base, sink: Sink): Langua
                 }
               },
               async cancel(reason) {
-                await finish("aborted");
                 try {
-                  await reader.cancel(reason);
+                  // Stop the provider immediately, even when telemetry storage is slow.
+                  await Promise.all([finish("aborted"), reader.cancel(reason)]);
                 } finally {
                   reader.releaseLock();
                 }
