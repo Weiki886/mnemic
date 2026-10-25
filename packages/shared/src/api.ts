@@ -4,6 +4,7 @@
  *  - fetch 可注入（默认全局 fetch），便于单测与非浏览器环境。 */
 
 import type { ErrorCode, FieldError } from "./errors.js";
+import type { ProjectAttachment } from "./file-context.js";
 import type {
   ApprovalAuditEvent,
   ApprovalAuditRecord,
@@ -206,13 +207,14 @@ export function createApiClient(options: ApiClientOptions) {
       conversationId: string,
       text: string,
       signal?: AbortSignal,
+      attachments?: ProjectAttachment[],
     ) =>
       requestResponse(
         `/projects/${projectId}/conversations/${conversationId}/messages/stream`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, ...(attachments ? { attachments } : {}) }),
           ...(signal ? { signal } : {}),
         },
         600_000,
@@ -238,8 +240,11 @@ export function createApiClient(options: ApiClientOptions) {
         project_id: projectId,
         ...(title !== undefined ? { title } : {}),
       }),
-    sendMessage: (conversationId: string, text: string) =>
-      post<ChatReply>(`/v1/conversations/${conversationId}/messages`, { text }),
+    sendMessage: (conversationId: string, text: string, attachments?: ProjectAttachment[]) =>
+      post<ChatReply>(`/v1/conversations/${conversationId}/messages`, {
+        text,
+        ...(attachments ? { attachments } : {}),
+      }),
     commitConversation: (conversationId: string) =>
       post<ChatCommit>(`/v1/conversations/${conversationId}/commit`),
     resumeConversation: (

@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./file-context": {
+      "types": "./dist/file-context.d.ts",
+      "import": "./dist/file-context.js"
+    },
     "./approval-audit": {
       "types": "./dist/approval-audit.d.ts",
       "import": "./dist/approval-audit.js"
