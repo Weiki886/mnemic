@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { sanitizeText } from "../src/gate/secrets.js";
 
 describe("Secret 检测与脱敏（#15，安全没有第二阶段）", () => {
+  it("masks a private-key block truncated before its closing marker", () => {
+    expect(
+      sanitizeText("note -----BEGIN OPENSSH PRIVATE KEY-----\nPARTIAL_PRIVATE_MATERIAL").text,
+    ).toBe("note [REDACTED]");
+  });
   it("GitHub token（ghp_/github_pat_）命中并替换为 [REDACTED]", () => {
     const r = sanitizeText("我的 token 是 ghp_AbCdEfGhIjKlMnOpQrStUvWxYz123456 别外传");
     expect(r.text).toBe("我的 token 是 [REDACTED] 别外传");

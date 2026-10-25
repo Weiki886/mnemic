@@ -14,6 +14,7 @@ import { resumeConversation } from "./resume.js";
 import { ConversationContextError } from "./context.js";
 import { ChatGenerations } from "./generations.js";
 import { registerChatStreamRoutes } from "./stream-routes.js";
+import { ChatMessageInputSchema } from "@mnemic/shared/file-context";
 
 /** 对话闭环 API（#7）：会话创建/提交/消息应答 */
 
@@ -36,9 +37,7 @@ const CreateConversation = z.object({
     .optional(),
 });
 
-const PostMessage = z.object({
-  text: z.string().min(1).max(8000),
-});
+const PostMessage = ChatMessageInputSchema;
 
 export function registerChatRoutes(
   app: FastifyInstance,
@@ -218,7 +217,7 @@ export function registerChatRoutes(
             }),
           );
       }
-      if (result.kind === "already_ended") {
+      if (result.kind === "already_ended" || result.kind === "context_invalid") {
         return reply
           .code(409)
           .header("content-type", "application/problem+json")
@@ -226,7 +225,8 @@ export function registerChatRoutes(
             problem({
               status: 409,
               code: ErrorCode.CONFLICT,
-              detail: `会话已提交：${id}`,
+              detail:
+                result.kind === "context_invalid" ? "会话历史引用不可用" : `会话已提交：${id}`,
               requestId: request.id,
             }),
           );
@@ -257,15 +257,22 @@ export function registerChatRoutes(
             }),
           );
       }
-      const result = await respondToMessage(db, masterKey, id, parsed.data.text, {
-        ...modelOpts,
-        ...(deps.retrieveFn ? { retrieveFn: deps.retrieveFn } : {}),
-        onJob: (job) =>
-          trackJob(job, (err) =>
-            request.log.error({ err, conversationId: id }, "message writeback failed"),
-          ),
-        logger: { warn: (obj, msg) => request.log.warn(obj, msg) },
-      });
+      const result = await respondToMessage(
+        db,
+        masterKey,
+        id,
+        parsed.data.text,
+        {
+          ...modelOpts,
+          ...(deps.retrieveFn ? { retrieveFn: deps.retrieveFn } : {}),
+          onJob: (job) =>
+            trackJob(job, (err) =>
+              request.log.error({ err, conversationId: id }, "message writeback failed"),
+            ),
+          logger: { warn: (obj, msg) => request.log.warn(obj, msg) },
+        },
+        parsed.data.attachments,
+      );
       if (result.kind === "not_found") {
         return reply
           .code(404)

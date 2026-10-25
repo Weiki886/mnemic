@@ -14,7 +14,10 @@ export interface AuditEntry {
   meta?: Record<string, unknown>;
 }
 
-export async function writeAuditLog(db: PostgresJsDatabase, entry: AuditEntry): Promise<void> {
+export async function writeAuditLog(
+  db: Pick<PostgresJsDatabase, "insert">,
+  entry: AuditEntry,
+): Promise<void> {
   await db.insert(auditLog).values({
     id: uuidv7(),
     actor: entry.actor,

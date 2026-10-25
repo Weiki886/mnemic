@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@mnemic/shared/file-context": fileURLToPath(
+        new URL("../../packages/shared/src/file-context.ts", import.meta.url),
+      ),
       "@mnemic/shared/approval-audit": fileURLToPath(
         new URL("../../packages/shared/src/approval-audit.ts", import.meta.url),
       ),

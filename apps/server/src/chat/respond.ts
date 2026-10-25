@@ -8,6 +8,9 @@ import { retrieve, type RetrievalCandidate } from "../retrieval/search.js";
 import { buildChatSystemPrompt } from "./prompt.js";
 import { claimMessageForExtraction, runExtractionWriteback } from "./writeback.js";
 import { ConversationContextError, loadConversationMessages, modelHistory } from "./context.js";
+import type { ProjectAttachment } from "@mnemic/shared/file-context";
+import { currentUserContent, prepareFileEvidence } from "./attachments.js";
+import { writeAuditLog } from "../gate/audit.js";
 
 /** 消息应答编排（#7）：存消息 → 检索注入 → 模型回答 → 存回答 → 异步写记忆 */
 
@@ -54,6 +57,7 @@ export async function enterMessage(
   conversationId: string,
   text: string,
   projectId?: string,
+  attachments: ProjectAttachment[] = [],
 ) {
   const userMessageId = uuidv7();
   // 会话行锁内完成"未提交检查 + 写入消息"：与并发 commit 互斥，
@@ -81,12 +85,35 @@ export async function enterMessage(
       rawText: text,
       msgTime: new Date(),
     });
+    const files = [];
+    for (const input of attachments) {
+      const file = prepareFileEvidence(input, userMessageId);
+      const id = uuidv7();
+      await tx.insert(messages).values({
+        id,
+        conversationId,
+        speaker: "tool",
+        rawText: file.rawText,
+        attachment: file.attachment,
+        msgTime: new Date(),
+      });
+      for (const hit of file.hits)
+        await writeAuditLog(tx, {
+          actor: "gate",
+          action: "redact",
+          target: id,
+          decision: "redacted",
+          meta: { pattern: hit.pattern, count: hit.count },
+        });
+      files.push({ id, rawText: file.rawText, attachment: file.attachment });
+    }
     return {
       kind: "ok" as const,
       projectId: conv.projectId,
       conversationId,
       history,
       userMessageId,
+      files,
     };
   });
   return entered;
@@ -128,7 +155,8 @@ export async function prepareAnswer(
     candidates,
     abstained,
     history,
-    system: buildChatSystemPrompt(candidates, history.length > 0),
+    system: buildChatSystemPrompt(candidates, history.length > 0, entered.files.length > 0),
+    userContent: currentUserContent(text, entered.files),
   };
 }
 
@@ -173,15 +201,29 @@ export async function scheduleMessageWriteback(
 ) {
   // 异步写记忆：先认领再提取（认领失败 = 并发 commit 已接管，无需重复提取）
   const projectId = entered.projectId;
-  if (await claimMessageForExtraction(db, entered.userMessageId)) {
-    options.onJob(() =>
-      runExtractionWriteback(
-        db,
-        masterKey,
-        { projectId, text, evidenceId: entered.userMessageId },
-        options,
-      ).then(() => undefined),
-    );
+  for (const evidence of [
+    { id: entered.userMessageId, text, channel: undefined },
+    ...entered.files.map((file) => ({
+      id: file.id,
+      text: file.rawText,
+      channel: "project-file" as const,
+    })),
+  ]) {
+    if (await claimMessageForExtraction(db, evidence.id)) {
+      options.onJob(() =>
+        runExtractionWriteback(
+          db,
+          masterKey,
+          {
+            projectId,
+            text: evidence.text,
+            evidenceId: evidence.id,
+            ...(evidence.channel ? { channel: evidence.channel } : {}),
+          },
+          options,
+        ).then(() => undefined),
+      );
+    }
   }
 }
 
@@ -191,10 +233,11 @@ export async function respondToMessage(
   conversationId: string,
   text: string,
   options: RespondOptions,
+  attachments: ProjectAttachment[] = [],
 ): Promise<RespondResult> {
-  const entered = await enterMessage(db, conversationId, text);
+  const entered = await enterMessage(db, conversationId, text, undefined, attachments);
   if (entered.kind !== "ok") return { kind: entered.kind };
-  const { model, candidates, abstained, history, system } = await prepareAnswer(
+  const { model, candidates, abstained, history, system, userContent } = await prepareAnswer(
     db,
     masterKey,
     text,
@@ -204,7 +247,7 @@ export async function respondToMessage(
   const { text: answer } = await generateText({
     model,
     system,
-    messages: [...history, { role: "user", content: text }],
+    messages: [...history, { role: "user", content: userContent }],
   });
   const assistantMessageId = uuidv7();
   if (!(await saveAnswer(db, conversationId, assistantMessageId, answer, candidates)))

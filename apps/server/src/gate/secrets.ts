@@ -30,7 +30,7 @@ const PATTERNS: SecretPattern[] = [
   },
   {
     name: "private_key_block",
-    regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
   },
 ];
 
