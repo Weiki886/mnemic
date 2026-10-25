@@ -203,6 +203,8 @@ it("rejects malformed, oversized and invented provenance before writing messages
     { ...file(), source_type: "USER_CORRECTION" },
     file("x", "../private"),
     file("x".repeat(16385)),
+    file("x", "bad\ud800.txt"),
+    file("x", "bad\udc00.txt"),
   ]) {
     for (const url of [
       `/v1/conversations/${s.c}/messages`,
@@ -365,4 +367,30 @@ it("corrupt or cross-conversation file parent metadata fails closed on read, res
 it("logs contain neither attachment secrets nor source text", () => {
   expect(logs).not.toContain(secret);
   expect(logs).not.toContain("FILE_FACT");
+});
+it("validates corrupt current-conversation file metadata before archiving either side of resume", async () => {
+  const source = await seed(),
+    current = uuidv7();
+  await t.sql`insert into conversations(id,project_id) values(${current},${source.p})`;
+  const metadata = {
+    version: 1,
+    kind: "file",
+    path: "README.md",
+    truncated: false,
+    source_type: "PROJECT_FILE",
+    parent_message_id: uuidv7(),
+  };
+  await t.sql`insert into messages(id,conversation_id,speaker,raw_text,msg_time,attachment) values(${uuidv7()},${current},'tool','FILE_FACT',now(),${JSON.stringify(metadata)}::jsonb)`;
+  const before = chatPrompts.length;
+  const result = await app.inject({
+    method: "POST",
+    url: `/projects/${source.p}/conversations/${source.c}/resume`,
+    headers,
+    payload: { current_conversation_id: current },
+  });
+  expect(result.statusCode).toBe(409);
+  const rows = await t.sql`select ended_at from conversations where project_id=${source.p}`;
+  expect(rows).toHaveLength(2);
+  expect(rows.every((row) => row.ended_at === null)).toBe(true);
+  expect(chatPrompts).toHaveLength(before);
 });

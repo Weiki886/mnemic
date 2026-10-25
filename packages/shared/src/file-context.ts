@@ -33,7 +33,7 @@ const Path = z
   .max(4096)
   .refine(
     (path) =>
-      !/[\p{Cc}\u202a-\u202e\u2066-\u2069\\]/u.test(path) &&
+      !/[\p{Cc}\p{Cs}\u202a-\u202e\u2066-\u2069\\]/u.test(path) &&
       !path.startsWith("/") &&
       !path.startsWith("~") &&
       !/^[a-z]:/i.test(path) &&

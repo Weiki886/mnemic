@@ -34,6 +34,10 @@ it("accepts legacy messages and bounded file/directory attachments", async () =>
     file,
   ]);
   expect(
+    ChatMessageInputSchema.safeParse({ text: "hi", attachments: [{ ...file, path: "src/🙂.ts" }] })
+      .success,
+  ).toBe(true);
+  expect(
     ChatMessageInputSchema.safeParse({
       text: "hi",
       attachments: [{ ...file, kind: "directory", path: "." }],
@@ -50,6 +54,8 @@ it.each([
   ".git/config",
   "src\\file",
   "bad\u202epath",
+  "bad\ud800.txt",
+  "bad\udc00.txt",
 ])("rejects path %s", async (path) => {
   const { ChatMessageInputSchema } = await api();
   expect(
