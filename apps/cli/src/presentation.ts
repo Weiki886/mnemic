@@ -1,5 +1,6 @@
 import { ApiError, type ChatReply, type BeliefDetail } from "@mnemic/shared";
 import { SessionError } from "./chat-session.js";
+import { FileReferenceError } from "./file-references.js";
 
 export function terminalText(text: string, multiline = false): string {
   return text.replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, (char) =>
@@ -17,12 +18,14 @@ export function valueText(value: unknown): string {
   return typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "未提供");
 }
 
-export function formatReply(reply: ChatReply, answer = reply.answer): string {
+export function formatReply(reply: ChatReply, answer = reply.answer, hasFiles = false): string {
   const lines = [
     reply.abstained
-      ? reply.history_included
-        ? "未召回跨会话记忆；已提供会话历史。"
-        : "不记得：没有足够的相关记忆。"
+      ? hasFiles
+        ? "未召回跨会话记忆；已提供项目文件上下文。"
+        : reply.history_included
+          ? "未召回跨会话记忆；已提供会话历史。"
+          : "不记得：没有足够的相关记忆。"
       : "",
     terminalText(answer, true),
   ];
@@ -59,6 +62,10 @@ export function formatMemory(memory: BeliefDetail): string {
   return lines.join("\n");
 }
 export function chatFailure(error: unknown): string {
+  if (error instanceof FileReferenceError)
+    return error.code === "cancelled"
+      ? "已取消文件引用，本次未发送。"
+      : `文件引用失败（${error.code}），本次未发送；请检查项目根、路径、文件类型或减少引用，输入已保留。`;
   if (error instanceof SessionError) return error.message;
   if (error instanceof ApiError) {
     if (error.status === 401 || error.status === 403) return "鉴权被拒绝，请检查 MNEMIC_AUTH_TOKEN";

@@ -13,13 +13,13 @@ export async function startChat(
   options?: ChatApprovalOptions,
 ): Promise<number> {
   let code = 0;
-  const session = new ChatSession(api, projectId);
   const approval = await ApprovalController.create({
     projectId,
     root: options?.root ?? process.cwd(),
     ...(options ? { mode: options.mode } : {}),
     audit: createApprovalAuditSink(api, projectId),
   });
+  const session = new ChatSession(api, projectId, approval.root);
   // Fail before rendering: no fallback creation or implicit retry on a lost resume response.
   if (resumeId) await session.resume(resumeId);
   const instance = render(
