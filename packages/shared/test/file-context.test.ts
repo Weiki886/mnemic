@@ -13,6 +13,20 @@ it("uses a single sensitive-path policy shared by HTTP and the local loader", as
   for (const path of ["id_rsa.pub", "README.md", "src/index.ts"])
     expect(isBlockedProjectPath(path)).toBe(false);
 });
+it("rejects binary controls before PG", async () => {
+  const { ChatMessageInputSchema: schema } = await api();
+  for (const content of ["bad\0text", "bad\u001btext", "bad\u007ftext"])
+    expect(schema.safeParse({ text: "hi", attachments: [{ ...file, content }] }).success).toBe(
+      false,
+    );
+});
+it("accepts valid Unicode BOM and text whitespace", async () => {
+  const { ChatMessageInputSchema: schema } = await api();
+  for (const content of ["\ufeffvalid", "line\n\ttext\r\n"])
+    expect(schema.safeParse({ text: "hi", attachments: [{ ...file, content }] }).success).toBe(
+      true,
+    );
+});
 it("accepts legacy messages and bounded file/directory attachments", async () => {
   const { ChatMessageInputSchema } = await api();
   expect(ChatMessageInputSchema.parse({ text: "hi" })).toEqual({ text: "hi" });

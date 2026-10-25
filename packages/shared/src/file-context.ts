@@ -56,7 +56,13 @@ export const ProjectAttachmentSchema = z
       .string()
       .max(16_384)
       .refine(
-        (text) => utf8(text).length <= 16_384 && new TextDecoder().decode(utf8(text)) === text,
+        (text) =>
+          utf8(text).length <= 16_384 &&
+          new TextDecoder("utf-8", { ignoreBOM: true }).decode(utf8(text)) === text &&
+          !Array.from(text).some((char) => {
+            const code = char.codePointAt(0)!;
+            return code === 127 || (code < 32 && code !== 9 && code !== 10 && code !== 13);
+          }),
         "文件须为合法 Unicode 且不超过 16 KiB",
       ),
   })
