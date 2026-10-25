@@ -3,6 +3,7 @@
 本轮交付服务端记录基座：迁移 0011 新增 `model_usage`，三槽位 `resolveModel`
 统一包装模型实例，在实际调用 SDK provider 时记录。仅解析配置不会产生记录。
 后续 PR 交付项目/会话/时间聚合、CSV/JSON 导出、显式价格配置及 CLI/Web 展示；本轮不关闭 #36。
+后续已实现的读取与估价口径见 [用量查询与导出](usage-reports.md)。
 
 ## 口径
 

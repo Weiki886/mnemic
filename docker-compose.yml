@@ -42,6 +42,7 @@ services:
       HOST: 0.0.0.0
       PORT: "3000"
       CORS_ORIGIN: https://${MNEMIC_DOMAIN:?set the public hostname}
+      MNEMIC_USAGE_PRICES_JSON: ${MNEMIC_USAGE_PRICES_JSON:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

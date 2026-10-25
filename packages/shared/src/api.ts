@@ -12,6 +12,7 @@ import type {
   ApprovalAuditQuery,
 } from "./approval-audit.js";
 import type { DoctorReport } from "./doctor.js";
+import type { UsageQuery, UsageExportQuery, UsageReport, UsageExportPage } from "./usage.js";
 import type { ChatStreamCancel } from "./stream-protocol.js";
 import type { BeliefListItem, MemoryListQuery, RecallResult } from "./memory.js";
 import type { ServerConfig, ProjectStatus, ProviderPatch, ProviderConfig } from "./management.js";
@@ -194,6 +195,12 @@ export function createApiClient(options: ApiClientOptions) {
     );
 
   return {
+    getUsageReport: (projectId: string, query: UsageQuery = {}) =>
+      request<UsageReport>(`/projects/${projectId}/usage${toQuery(query)}`),
+    exportUsage: (projectId: string, query: Omit<UsageExportQuery, "format"> = {}) =>
+      request<UsageExportPage>(
+        `/projects/${projectId}/usage/export${toQuery({ ...query, format: "json" })}`,
+      ),
     recordApproval: (projectId: string, event: ApprovalAuditEvent) =>
       post<ApprovalAuditRecord>(`/projects/${projectId}/approvals`, event, 5000),
     listApprovalAudits: (projectId: string, params: Partial<ApprovalAuditQuery> = {}) =>

@@ -4,12 +4,14 @@ import { createDb } from "./db/client.js";
 import { assertEmbeddingDimensions } from "./providers/dimension-guard.js";
 import { parseMasterKey } from "./providers/crypto.js";
 import { resolveAuthToken, resolveCorsOrigin, resolveHost, resolvePort } from "./config.js";
+import { parseUsagePricing } from "./usage/pricing.js";
 
 // 必须先校验鉴权配置再连接 DB/监听端口；不存在“空 Token 时放开接口”的启动模式。
 const authToken = resolveAuthToken(process.env.MNEMIC_AUTH_TOKEN);
 const port = resolvePort(process.env.PORT);
 const host = resolveHost(process.env.HOST);
 const corsOrigin = resolveCorsOrigin(process.env.CORS_ORIGIN);
+const usagePricing = parseUsagePricing(process.env.MNEMIC_USAGE_PRICES_JSON || undefined);
 
 // embedding 维度守卫（#14）：配置了 DATABASE_URL 时启动即校验，
 // 部署维度与库中向量列不一致则拒绝启动（提示 REEMBED）
@@ -23,7 +25,7 @@ const masterKey = process.env.MNEMIC_MASTER_KEY
   ? parseMasterKey(process.env.MNEMIC_MASTER_KEY)
   : undefined;
 
-const app = buildApp({ db, masterKey, corsOrigin, authToken });
+const app = buildApp({ db, masterKey, corsOrigin, authToken, usagePricing });
 if (db) {
   app.log.info("embedding 维度守卫通过");
 }

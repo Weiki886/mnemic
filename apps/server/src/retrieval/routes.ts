@@ -83,6 +83,7 @@ export function registerRecallRoutes(
       if (!project) return fail(reply, request.id, 404, ErrorCode.NOT_FOUND, "项目不存在");
       try {
         const result = await retrieve(db, masterKey, projectId, body.data.query, {
+          usageLogger: app.log,
           ...(factory ? { factory } : {}),
           topK: 5,
           reinforce: false,

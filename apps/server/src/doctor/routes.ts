@@ -9,6 +9,7 @@ import type { ProviderFactory } from "../providers/factory.js";
 import { assertDimensionMatch, embeddingDimensionsFromEnv } from "../providers/dimension-guard.js";
 
 interface DoctorOptions {
+  usageLogger?: { warn(message: string): void };
   authenticated?: boolean | undefined;
   db?: PostgresJsDatabase | undefined;
   masterKey?: Buffer | undefined;
@@ -106,6 +107,7 @@ async function diagnose(options: DoctorOptions, probe: boolean): Promise<DoctorR
     return finish();
   }
   const modelOptions = {
+    ...(options.usageLogger ? { usageLogger: options.usageLogger } : {}),
     ...(options.factory ? { factory: options.factory } : {}),
     usageContext: { projectId: null, conversationId: null, purpose: "probe" as const },
   };
@@ -195,7 +197,7 @@ export function registerDoctorRoutes(app: FastifyInstance, options: DoctorOption
           }),
         );
     reply.header("cache-control", "no-store");
-    return diagnose(options, false);
+    return diagnose({ ...options, usageLogger: app.log }, false);
   });
 
   app.post(
@@ -248,7 +250,7 @@ export function registerDoctorRoutes(app: FastifyInstance, options: DoctorOption
             }),
           );
       reply.header("cache-control", "no-store");
-      return diagnose(options, true);
+      return diagnose({ ...options, usageLogger: app.log }, true);
     },
   );
 }
