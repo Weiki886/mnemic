@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import pino from "pino";
 import { generateText, embed, streamText } from "ai";
 import { MockLanguageModelV2, MockEmbeddingModelV2 } from "ai/test";
 import { observeLanguage, observeEmbedding } from "../src/usage/models.js";
@@ -142,19 +143,29 @@ it("unknown or invalid token counters stay null rather than zero or fabricated t
   });
 });
 it("usage sink failures do not replay a successful model request or leak their payload", async () => {
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => {}),
+  let logs = "";
+  const logger = pino(
+      { base: null },
+      {
+        write: (chunk) => {
+          logs += chunk;
+        },
+      },
+    ),
     call = vi.fn(async () => result());
-  try {
-    const model = observeLanguage(new MockLanguageModelV2({ doGenerate: call }), base, async () => {
+  const model = observeLanguage(
+    new MockLanguageModelV2({ doGenerate: call }),
+    base,
+    async () => {
       throw new Error("DB-secret");
-    });
-    expect((await generateText({ model, prompt: "x" })).text).toBe("answer");
-    expect(call).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith("model usage persistence failed");
-    expect(JSON.stringify(warn.mock.calls)).not.toContain("DB-secret");
-  } finally {
-    warn.mockRestore();
-  }
+    },
+    logger,
+  );
+  expect((await generateText({ model, prompt: "x" })).text).toBe("answer");
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(logs).toContain("model usage persistence failed");
+  expect(JSON.parse(logs)).toMatchObject({ level: 40, msg: "model usage persistence failed" });
+  expect(logs).not.toContain("DB-secret");
 });
 it("streamText preserves deltas and records terminal usage once, after real completion", async () => {
   const rows: UsageRecord[] = [];

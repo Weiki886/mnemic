@@ -1,4 +1,5 @@
 import { wrapLanguageModel, type LanguageModel, type EmbeddingModel } from "ai";
+import pino from "pino";
 import type { UsageRecord } from "./repository.js";
 
 type Language = Exclude<LanguageModel, string>;
@@ -9,10 +10,14 @@ type Base = Pick<
   "projectId" | "conversationId" | "providerName" | "modelId" | "slot" | "purpose"
 >;
 type Sink = (record: UsageRecord) => Promise<void>;
+export interface UsageLogger {
+  warn(message: string): void;
+}
+const defaultLogger = pino({ name: "model-usage", level: process.env.LOG_LEVEL ?? "info" });
 const count = (n: number | undefined): number | null =>
   Number.isSafeInteger(n) && n! >= 0 ? n! : null;
 
-function attempt(base: Base, sink: Sink, signal?: AbortSignal) {
+function attempt(base: Base, sink: Sink, signal: AbortSignal | undefined, logger: UsageLogger) {
   signal?.throwIfAborted(); // No provider invocation means no usage row.
   const snapshot = { ...base },
     startedAt = new Date(),
@@ -36,7 +41,11 @@ function attempt(base: Base, sink: Sink, signal?: AbortSignal) {
         )
         .catch(() => {
           // Telemetry failure must not trigger SDK retries of a successful paid call. No raw DB payload.
-          console.warn("model usage persistence failed");
+          try {
+            logger.warn("model usage persistence failed");
+          } catch {
+            /* Logging cannot trigger a paid retry. */
+          }
         });
     }
     return saved;
@@ -45,12 +54,17 @@ function attempt(base: Base, sink: Sink, signal?: AbortSignal) {
 }
 
 /** Observe actual SDK invocations, not high-level extraction attempts or HTTP requests. */
-export function observeLanguage(model: Language, base: Base, sink: Sink): Language {
+export function observeLanguage(
+  model: Language,
+  base: Base,
+  sink: Sink,
+  logger: UsageLogger = defaultLogger,
+): Language {
   return wrapLanguageModel({
     model,
     middleware: {
       wrapGenerate: async ({ doGenerate, params }) => {
-        const a = attempt(base, sink, params.abortSignal);
+        const a = attempt(base, sink, params.abortSignal, logger);
         try {
           const result = await doGenerate();
           await a.finish(
@@ -69,7 +83,7 @@ export function observeLanguage(model: Language, base: Base, sink: Sink): Langua
       },
       wrapStream: async ({ doStream, params }) => {
         const signal = params.abortSignal,
-          a = attempt(base, sink, signal);
+          a = attempt(base, sink, signal, logger);
         let usage: Usage | undefined,
           status: UsageRecord["status"] = "error";
         const finish = (s = status) => {
@@ -131,7 +145,12 @@ export function observeLanguage(model: Language, base: Base, sink: Sink): Langua
 }
 
 /** Embedding V2 has no middleware API. Preserve its capability getters and receiver. */
-export function observeEmbedding(model: Embedding, base: Base, sink: Sink): Embedding {
+export function observeEmbedding(
+  model: Embedding,
+  base: Base,
+  sink: Sink,
+  logger: UsageLogger = defaultLogger,
+): Embedding {
   return {
     specificationVersion: model.specificationVersion,
     provider: model.provider,
@@ -143,7 +162,7 @@ export function observeEmbedding(model: Embedding, base: Base, sink: Sink): Embe
       return model.supportsParallelCalls;
     },
     async doEmbed(params) {
-      const a = attempt(base, sink, params.abortSignal);
+      const a = attempt(base, sink, params.abortSignal, logger);
       try {
         const result = await model.doEmbed(params);
         await a.finish(params.abortSignal?.aborted ? "aborted" : "success", {

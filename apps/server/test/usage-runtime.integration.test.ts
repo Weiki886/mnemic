@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { modelUsage } from "../src/db/schema.js";
 import { uuidv7 } from "uuidv7";
 import { MockLanguageModelV2, MockEmbeddingModelV2 } from "ai/test";
 import { createApiClient } from "../../../packages/shared/src/api.js";
@@ -13,6 +14,7 @@ import { bagOfWordsVector } from "./fixtures/bag-embedding.js";
 const token = "offline-usage-runtime-0000000000",
   project = uuidv7(),
   providerName = `runtime-usage-${uuidv7()}`;
+let logs = "";
 let t: TestDb,
   app: ReturnType<typeof buildApp>,
   api: ReturnType<typeof createApiClient>,
@@ -93,7 +95,11 @@ beforeAll(async () => {
     masterKey: TEST_MASTER_KEY,
     authToken: token,
     providerFactory: factory,
-    logStream: { write: () => {} },
+    logStream: {
+      write: (chunk) => {
+        logs += chunk;
+      },
+    },
   });
   api = createApiClient({ baseUrl: await app.listen({ host: "127.0.0.1", port: 0 }), token });
 }, 180000);
@@ -176,4 +182,31 @@ it("plain doctor resolves without charging; explicit probe records all three inv
     await t.sql`select * from model_usage where provider_name=${providerName} and purpose='probe'`;
   expect(rows).toHaveLength(3);
   expect(rows.every((r) => r.project_id === null && r.conversation_id === null)).toBe(true);
+});
+
+it("HTTP model usage failures reach application pino as fixed warnings without breaking a successful answer", async () => {
+  const original = t.db.insert.bind(t.db),
+    insert = vi.spyOn(t.db, "insert").mockImplementation((...args) => {
+      if (args[0] === modelUsage) throw new Error("PRIVATE SQL CREDENTIALS");
+      return original(...args);
+    });
+  logs = "";
+  try {
+    const conv = await api.createConversation(project);
+    expect((await api.sendMessage(project, conv.id, "offline log fault")).answer).toBe(
+      "USAGE ANSWER",
+    );
+    await waitForChatJobs();
+    const rows = logs
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(rows.filter((r) => r.msg === "model usage persistence failed")).toHaveLength(4);
+    expect(
+      rows.filter((r) => r.msg === "model usage persistence failed").every((r) => r.level === 40),
+    ).toBe(true);
+    expect(logs).not.toContain("PRIVATE SQL CREDENTIALS");
+  } finally {
+    insert.mockRestore();
+  }
 });

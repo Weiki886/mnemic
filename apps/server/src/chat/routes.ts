@@ -45,7 +45,7 @@ export function registerChatRoutes(
   masterKey: Buffer,
   deps: ChatRouteDeps = {},
 ): void {
-  const modelOpts = deps.factory ? { factory: deps.factory } : {};
+  const modelOpts = { ...(deps.factory ? { factory: deps.factory } : {}), usageLogger: app.log };
   const generations = new ChatGenerations();
   registerChatStreamRoutes(
     app,

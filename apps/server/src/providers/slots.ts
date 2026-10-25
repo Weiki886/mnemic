@@ -6,7 +6,7 @@ import { decrypt } from "./crypto.js";
 import { realProviderFactory, type ProviderFactory } from "./factory.js";
 import type { ModelSlots, ProviderWithKey } from "./repository.js";
 import { selectSlotProvider } from "./selection.js";
-import { observeEmbedding, observeLanguage } from "../usage/models.js";
+import { observeEmbedding, observeLanguage, type UsageLogger } from "../usage/models.js";
 import { writeModelUsage, type UsageContext, type UsageRecord } from "../usage/repository.js";
 
 /** 模型三槽位（ADR-005）：调用方只按用途取模型，不感知厂商与协议 */
@@ -19,6 +19,7 @@ export interface ResolveOptions {
   factory?: ProviderFactory;
   /** Trusted server context only. Never spread HTTP bodies into model options. */
   usageContext?: UsageContext;
+  usageLogger?: UsageLogger;
 }
 
 export interface ResolvedModel<M = LanguageModel | EmbeddingModel> {
@@ -84,7 +85,17 @@ export async function resolveModel(
   const sink = (record: UsageRecord) => writeModelUsage(db, record);
   const model =
     slot === "embedding"
-      ? observeEmbedding(rawModel as Exclude<EmbeddingModel, string>, base, sink)
-      : observeLanguage(rawModel as Exclude<LanguageModel, string>, base, sink);
+      ? observeEmbedding(
+          rawModel as Exclude<EmbeddingModel, string>,
+          base,
+          sink,
+          options.usageLogger,
+        )
+      : observeLanguage(
+          rawModel as Exclude<LanguageModel, string>,
+          base,
+          sink,
+          options.usageLogger,
+        );
   return { model, modelId, providerName: row.name, slot };
 }
