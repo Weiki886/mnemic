@@ -1,9 +1,12 @@
 import { expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import { generateText, embed, streamText } from "ai";
 import { MockLanguageModelV2, MockEmbeddingModelV2 } from "ai/test";
 import { observeLanguage, observeEmbedding } from "../src/usage/models.js";
 import type { UsageRecord } from "../src/usage/repository.js";
 import { extractCandidates } from "../src/extraction/extractor.js";
+import { realProviderFactory } from "../src/providers/factory.js";
 
 const base = {
   providerName: "provider",
@@ -238,4 +241,90 @@ it("an already-aborted request never invokes the provider and creates no phantom
   await expect(model.doGenerate({ ...params, abortSignal: controller.signal })).rejects.toThrow();
   expect(call).not.toHaveBeenCalled();
   expect(rows).toEqual([]);
+});
+
+it("SDK transport retries become separate error and success rows against a real offline HTTP endpoint", async () => {
+  const rows: UsageRecord[] = [];
+  let calls = 0;
+  const server = createServer((_req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (++calls === 1) {
+      res.writeHead(503);
+      res.end('{"error":{"message":"retry"}}');
+    } else
+      res.end(
+        JSON.stringify({
+          id: "local",
+          object: "chat.completion",
+          created: 0,
+          model: "model",
+          choices: [
+            { index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" },
+          ],
+          usage: { prompt_tokens: 13, completion_tokens: 2, total_tokens: 15 },
+        }),
+      );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("bad address");
+    const raw = realProviderFactory.languageModel(
+      {
+        id: "local",
+        name: "local",
+        protocol: "openai-compatible",
+        baseUrl: `http://127.0.0.1:${address.port}`,
+        apiKey: "offline",
+        models: {},
+        createdAt: new Date(),
+      },
+      "model",
+    );
+    if (typeof raw === "string") throw new Error("expected instance");
+    const model = observeLanguage(raw, base, async (r) => {
+      rows.push(r);
+    });
+    expect((await generateText({ model, prompt: "offline", maxRetries: 1 })).text).toBe("ok");
+    expect(calls).toBe(2);
+    expect(rows.map((r) => r.status)).toEqual(["error", "success"]);
+    expect(rows[0]!.totalTokens).toBeNull();
+    expect(rows[1]!.totalTokens).toBe(15);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
+  }
+});
+
+it("embedding failures and stream-open failures retain the original error with unknown counters", async () => {
+  const rows: UsageRecord[] = [],
+    error = new Error("private error body");
+  const embedding = observeEmbedding(
+    new MockEmbeddingModelV2({
+      doEmbed: async () => {
+        throw error;
+      },
+    }),
+    { ...base, slot: "embedding" },
+    async (r) => {
+      rows.push(r);
+    },
+  );
+  await expect(embed({ model: embedding, value: "x", maxRetries: 0 })).rejects.toBe(error);
+  const model = observeLanguage(
+    new MockLanguageModelV2({
+      doStream: async () => {
+        throw error;
+      },
+    }),
+    base,
+    async (r) => {
+      rows.push(r);
+    },
+  );
+  await expect(model.doStream(params)).rejects.toBe(error);
+  expect(rows).toHaveLength(2);
+  expect(rows.every((r) => r.status === "error" && r.totalTokens === null)).toBe(true);
+  expect(JSON.stringify(rows)).not.toContain("private error body");
 });

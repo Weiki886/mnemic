@@ -1,5 +1,6 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { conversations, messages } from "../db/schema.js";
 import { extractCandidates } from "../extraction/extractor.js";
 import { processCandidate } from "../gate/pipeline.js";
 import { ingestCandidate, type IngestRoute } from "../ingest/ingest.js";
@@ -63,7 +64,22 @@ export async function runExtractionWriteback(
     degraded: true,
   };
 
-  const { model } = await resolveModel(db, masterKey, "extraction", options);
+  const [evidence] = await db
+    .select({ conversationId: conversations.id })
+    .from(messages)
+    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+    .where(and(eq(messages.id, args.evidenceId), eq(conversations.projectId, args.projectId)))
+    .limit(1);
+  if (!evidence) throw new Error("invalid extraction usage scope");
+  const scoped: ResolveOptions = {
+    ...options,
+    usageContext: {
+      projectId: args.projectId,
+      conversationId: evidence.conversationId,
+      purpose: "extraction",
+    },
+  };
+  const { model } = await resolveModel(db, masterKey, "extraction", scoped);
   const extraction = await extractCandidates(model, args.text);
   if (extraction.degraded) return empty;
 
@@ -86,7 +102,7 @@ export async function runExtractionWriteback(
       continue;
     }
     const ingested = await ingestCandidate(db, args.projectId, gate.candidate, args.evidenceId, {
-      indexEmbedding: (a) => indexBeliefVersion(db, masterKey, a, options),
+      indexEmbedding: (a) => indexBeliefVersion(db, masterKey, a, scoped),
     });
     result.routes[ingested.route] += 1;
   }
