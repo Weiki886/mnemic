@@ -1,5 +1,6 @@
 import { wrapLanguageModel, type LanguageModel, type EmbeddingModel } from "ai";
 import pino from "pino";
+import type { ModelCapture, ModelDebugFactory } from "../debug/model-content.js";
 import type { UsageRecord } from "./repository.js";
 
 type Language = Exclude<LanguageModel, string>;
@@ -53,30 +54,58 @@ function attempt(base: Base, sink: Sink, signal: AbortSignal | undefined, logger
   return { finish, failed: () => (signal?.aborted ? ("aborted" as const) : ("error" as const)) };
 }
 
+// Optional observability must be unable to throw into SDK retry handling.
+function capture(
+  factory: ModelDebugFactory | undefined,
+  prompt: () => unknown,
+): ModelCapture | undefined {
+  if (!factory) return;
+  try {
+    const observer = factory(prompt());
+    const safe = (run: () => void) => {
+      try {
+        run();
+      } catch {
+        /* Isolated debug sink. */
+      }
+    };
+    return {
+      output: (content, reason) => safe(() => observer.output(content, reason)),
+      part: (part) => safe(() => observer.part(part)),
+      finish: (status) => safe(() => observer.finish(status)),
+    };
+  } catch {
+    return;
+  }
+}
+
 /** Observe actual SDK invocations, not high-level extraction attempts or HTTP requests. */
 export function observeLanguage(
   model: Language,
   base: Base,
   sink: Sink,
   logger: UsageLogger = defaultLogger,
+  debug?: ModelDebugFactory,
 ): Language {
   return wrapLanguageModel({
     model,
     middleware: {
       wrapGenerate: async ({ doGenerate, params }) => {
         const a = attempt(base, sink, params.abortSignal, logger);
+        const observer = capture(debug, () => params.prompt);
         try {
           const result = await doGenerate();
-          await a.finish(
-            params.abortSignal?.aborted
-              ? "aborted"
-              : result.finishReason === "error"
-                ? "error"
-                : "success",
-            result.usage,
-          );
+          const status = params.abortSignal?.aborted
+            ? "aborted"
+            : result.finishReason === "error"
+              ? "error"
+              : "success";
+          observer?.output(result.content, result.finishReason);
+          observer?.finish(status);
+          await a.finish(status, result.usage);
           return result;
         } catch (error) {
+          observer?.finish(a.failed());
           await a.finish(a.failed());
           throw error;
         }
@@ -84,10 +113,12 @@ export function observeLanguage(
       wrapStream: async ({ doStream, params }) => {
         const signal = params.abortSignal,
           a = attempt(base, sink, signal, logger);
+        const observer = capture(debug, () => params.prompt);
         let usage: Usage | undefined,
           status: UsageRecord["status"] = "error";
         const finish = (s = status) => {
           signal?.removeEventListener("abort", abort);
+          observer?.finish(s);
           return a.finish(s, usage);
         };
         const abort = () => {
@@ -110,6 +141,7 @@ export function observeLanguage(
                     controller.close();
                     return;
                   }
+                  observer?.part(part.value);
                   if (part.value.type === "error") {
                     errored = true;
                     status = "error";

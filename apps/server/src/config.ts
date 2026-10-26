@@ -45,3 +45,11 @@ export function resolveHost(raw: string | undefined): string {
 export function resolveCorsOrigin(raw: string | undefined): string {
   return raw ?? "http://localhost:5173";
 }
+
+/** Content capture requires a second operator opt-in; old debug mode stays metadata-only. */
+export function resolveDebugContent(raw: string | undefined, debugMode: boolean): boolean {
+  if (raw !== undefined && raw !== "0" && raw !== "1")
+    throw new Error("MNEMIC_DEBUG_CONTENT 必须为 0 或 1");
+  if (raw === "1" && !debugMode) throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
+  return raw === "1";
+}
