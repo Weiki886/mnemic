@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { modelUsage } from "../src/db/schema.js";
+import type { UsageRow } from "@mnemic/shared/usage";
 import { uuidv7 } from "uuidv7";
 import { MockLanguageModelV2, MockEmbeddingModelV2 } from "ai/test";
 import { createApiClient } from "../../../packages/shared/src/api.js";
@@ -135,6 +136,40 @@ it("JSON and SSE record chat, query embedding, background extraction and indexin
   ).toBe(true);
   expect(JSON.stringify(rows)).not.toMatch(
     /NEVER-STORED-PLAIN|USAGE ANSWER|persisted database decision/,
+  );
+  // #36 validation chain: real calls -> persisted counters -> HTTP aggregate -> HTTP export.
+  const report = await api.getUsageReport(project, {
+    conversation_id: conv.id,
+    group_by: "purpose",
+  });
+  expect(report.totals).toMatchObject({
+    calls: 8,
+    prompt_tokens: { reported: "92", missing_calls: 0 },
+    completion_tokens: { reported: "16", missing_calls: 4 },
+    total_tokens: { reported: "124", missing_calls: 0 },
+  });
+  const exported: UsageRow[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < 3; page++) {
+    const result = await api.exportUsage(project, {
+      conversation_id: conv.id,
+      from: report.from,
+      to: report.to,
+      limit: 3,
+      ...(after ? { after } : {}),
+    });
+    exported.push(...result.records);
+    if (result.next_after === null) {
+      after = undefined;
+      break;
+    }
+    after = result.next_after;
+  }
+  expect(after).toBeUndefined();
+  expect(exported).toHaveLength(8);
+  expect(new Set(exported.map((r) => r.id)).size).toBe(8);
+  expect(exported.reduce((sum, r) => sum + BigInt(r.total_tokens ?? "0"), 0n).toString()).toBe(
+    "124",
   );
 });
 it("manual recall is project-scoped with no conversation and rejected requests record no model calls", async () => {
