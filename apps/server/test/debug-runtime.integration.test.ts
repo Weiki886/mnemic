@@ -13,6 +13,7 @@ let t: TestDb,
   writes = 0,
   failIndex = false,
   degraded = false;
+let gateMode: "WRITE" | "SKIP" | "PENDING" = "WRITE";
 const token = "offline-debug-runtime-000000000000",
   secret = "sk-debugsecret012345678901234567890";
 const project = uuidv7();
@@ -39,7 +40,7 @@ const factory = {
                         assertion_intent: "ASSERT",
                         source_type: "USER_EXPLICIT",
                         importance: 0.99,
-                        confidence: 0.99,
+                        confidence: gateMode === "SKIP" ? 0.1 : gateMode === "PENDING" ? 0.5 : 0.99,
                         entities: ["debug-project"],
                         is_profile: true,
                       },
@@ -203,3 +204,30 @@ it("degraded extraction and index failures keep structured outcomes without logg
     await f.app.close();
   }
 });
+
+it.each(["SKIP", "PENDING"] as const)(
+  "records Gate %s without inventing a completed memory write",
+  async (decision) => {
+    gateMode = decision;
+    const f = await fixture(true);
+    try {
+      const conv = await f.api.createConversation(project);
+      await f.api.sendMessage(project, conv.id, "gate outcome");
+      await waitForChatJobs();
+      const row = f.traces().find((r) => r.event === "memory.gate.decided");
+      expect(row.detail.decision).toBe(decision);
+      expect(f.traces().some((r) => r.event === "memory.write.completed")).toBe(false);
+      expect(
+        await t.sql`select id from observations where evidence_id=${row.target_id}`,
+      ).toHaveLength(0);
+      if (decision === "PENDING")
+        expect(
+          await t.sql`select id from pending_candidates where id=${row.detail.pending_id} and evidence_id=${row.target_id}`,
+        ).toHaveLength(1);
+      expect(f.log()).not.toContain(secret);
+    } finally {
+      gateMode = "WRITE";
+      await f.app.close();
+    }
+  },
+);
