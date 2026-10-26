@@ -7,6 +7,7 @@ import { isProjectId, PROJECT_STORAGE_KEY } from "./lib/project.js";
 const links = [
   { to: "/memories", label: "记忆" },
   { to: "/conversations", label: "对话" },
+  { to: "/usage", label: "用量" },
 ];
 
 const stored =

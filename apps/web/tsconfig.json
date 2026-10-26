@@ -19,6 +19,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@mnemic/shared/usage": ["../../packages/shared/src/usage.ts"],
       "@/*": ["./src/*"],
       // 与 server 同模式：直接解析 workspace 源码，不要求 shared 先构建
       "@mnemic/shared": ["../../packages/shared/src/index.ts"]

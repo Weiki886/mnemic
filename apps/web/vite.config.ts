@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   resolve: {
     alias: {
+      "@mnemic/shared/usage": fileURLToPath(
+        new URL("../../packages/shared/src/usage.ts", import.meta.url),
+      ),
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       "@mnemic/shared": fileURLToPath(
         new URL("../../packages/shared/src/index.ts", import.meta.url),

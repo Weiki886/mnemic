@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { ChatStreamReadError } from "@mnemic/shared/chat-stream";
-import { SessionStreamError, type ChatSession } from "./chat-session.js";
+import { SessionError, SessionStreamError, type ChatSession } from "./chat-session.js";
 import { chatFailure, formatReply, terminalText, terminalLiteral } from "./presentation.js";
 import { completeSlash, parseChatInput, slashHelp } from "./slash-commands.js";
 import {
@@ -16,6 +16,7 @@ import type { ApprovalController } from "./approval-controller.js";
 import { runApprovalHistory, type ApprovalHistoryApi } from "./approval-audit.js";
 import { completeFileInput } from "./file-input.js";
 import { FileReferenceError } from "./file-references.js";
+import { runUsageCommand, type UsageApi } from "./usage-commands.js";
 
 interface Block {
   id: number;
@@ -31,7 +32,7 @@ export function ChatApp({
   onDone,
 }: {
   session: ChatSession;
-  memoryApi: MemoryApi & RecallApi & ManagementApi & ApprovalHistoryApi;
+  memoryApi: MemoryApi & RecallApi & ManagementApi & ApprovalHistoryApi & Partial<UsageApi>;
   approval?: ApprovalController;
   onDone: (code: number) => void;
 }) {
@@ -266,6 +267,17 @@ export function ChatApp({
             `${approval.mode} · ${approval.root}\n授权目录 ${terminalLiteral(approval.storageDirectory)}\n仅控制未来文件/命令 Tools，当前没有执行器。`,
             "gray",
           );
+      } else if (parsed.kind === "command" && parsed.name === "usage") {
+        if (typeof memoryApi.getUsageReport !== "function")
+          throw new SessionError("当前客户端未接入用量查询，未发送模型请求");
+        const job = runUsageCommand(
+          { getUsageReport: memoryApi.getUsageReport.bind(memoryApi) },
+          session.projectId,
+          session.id,
+          parsed,
+        );
+        pendingCommand.current = job;
+        append("用量", await job, "gray");
       } else if (
         parsed.kind === "command" &&
         (parsed.name === "status" || parsed.name === "config")

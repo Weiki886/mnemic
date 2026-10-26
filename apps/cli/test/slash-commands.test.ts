@@ -16,6 +16,7 @@ describe("local slash command registry (#32, 1/3)", () => {
       "status",
       "config",
       "permissions",
+      "usage",
     ]);
     for (const command of SLASH_COMMANDS) {
       expect(slashHelp()).toContain(command.usage);
@@ -83,6 +84,7 @@ describe("local slash command registry (#32, 1/3)", () => {
         "/status",
         "/config",
         "/permissions",
+        "/usage",
       ],
     });
     for (const text of ["plain", "/unknown", "/resume ", `/resume ${id}`, "/he extra", "/he\n"]) {
@@ -108,6 +110,7 @@ describe("local slash command registry (#32, 1/3)", () => {
         "/status",
         "/config",
         "/permissions",
+        "/usage",
       ],
     });
     for (const suffix of ["/unknown", "/resume ", "/he extra", "normal text"]) {
