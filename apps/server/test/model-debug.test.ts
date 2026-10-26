@@ -237,3 +237,14 @@ it("omits malformed streams and oversized block IDs without emitting provider me
     });
   }
 });
+
+it("rejects credential-shaped scope IDs and credentials split between provider labels", () => {
+  const rows: unknown[] = [],
+    idSecret = uuidv7();
+  const debug = createModelDebug({ debug: (r) => rows.push(r) }, [idSecret]);
+  expect(debug({ ...ctx, project_id: idSecret }, key)).toBeUndefined();
+  expect(
+    debug({ ...ctx, provider_name: key.slice(0, 10), model_id: key.slice(10) }, key),
+  ).toBeUndefined();
+  expect(rows).toEqual([]);
+});

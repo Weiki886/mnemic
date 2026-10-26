@@ -61,6 +61,15 @@ export function createModelDebug(logger?: Logger, credentials: readonly string[]
       for (const secret of secrets) text = text.split(secret).join(REDACTED);
       return sanitizeText(text).text;
     };
+    // UUID syntax alone does not prove an identifier is non-secret (tokens can also be UUIDs).
+    if (
+      [parsed.data.project_id, parsed.data.conversation_id, parsed.data.evidence_id].some(
+        (id) => scrub(id) !== id,
+      )
+    )
+      return;
+    const labels = [parsed.data.provider_name, parsed.data.model_id];
+    if (scrub(labels.join("")) !== labels.map(scrub).join("")) return;
     const context: ModelDebugContext = {
       ...parsed.data,
       provider_name: scrub(parsed.data.provider_name),
