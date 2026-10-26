@@ -114,6 +114,7 @@ export async function runExtractionWriteback(
         target_id: args.evidenceId,
         detail: {
           project_id: args.projectId,
+          conversation_id: evidence.conversationId,
           decision: gate.decision,
           ...(gate.decision === "PENDING" ? { pending_id: gate.pendingId } : {}),
         },
@@ -136,6 +137,7 @@ export async function runExtractionWriteback(
         target_id: args.evidenceId,
         detail: {
           project_id: args.projectId,
+          conversation_id: evidence.conversationId,
           route: ingested.route,
           observation_id: ingested.observationId,
           belief_id: ingested.beliefId,
@@ -148,7 +150,7 @@ export async function runExtractionWriteback(
     options.debugTrace?.({
       event: "memory.write.failed",
       target_id: args.evidenceId,
-      detail: { project_id: args.projectId, phase },
+      detail: { project_id: args.projectId, conversation_id: evidence.conversationId, phase },
     });
     throw error;
   }

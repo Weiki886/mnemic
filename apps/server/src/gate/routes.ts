@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
+import type { DebugTrace } from "../debug/trace.js";
 import { listPending, updatePendingStatus } from "./pending-repository.js";
 
 /** 待确认列表 API（#15）：PENDING 候选的人工确认/拒绝入口（记忆中心消费） */
@@ -11,7 +12,11 @@ const ListQuery = z.object({
   status: z.enum(["pending", "confirmed", "expired", "rejected", "promoted"]).optional(),
 });
 
-export function registerGateRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
+export function registerGateRoutes(
+  app: FastifyInstance,
+  db: PostgresJsDatabase,
+  debugTrace?: DebugTrace,
+): void {
   app.get("/pending", async (request, reply) => {
     const parsed = ListQuery.safeParse(request.query);
     if (!parsed.success) {
@@ -38,7 +43,7 @@ export function registerGateRoutes(app: FastifyInstance, db: PostgresJsDatabase)
     app.post(`/pending/:id/${action}`, async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
-        return await updatePendingStatus(db, id, status);
+        return await updatePendingStatus(db, id, status, debugTrace);
       } catch {
         return reply
           .code(404)

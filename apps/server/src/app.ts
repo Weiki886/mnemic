@@ -161,9 +161,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerUsageRoutes(app, options.db, options.usagePricing);
     registerApprovalAuditRoutes(app, options.db);
     registerManagementRoutes(app, options.db);
-    registerGateRoutes(app, options.db);
-    registerBeliefRoutes(app, options.db);
-    registerBeliefReadRoutes(app, options.db);
+    registerGateRoutes(app, options.db, debugTrace);
+    registerBeliefRoutes(app, options.db, debugTrace);
+    registerBeliefReadRoutes(app, options.db, debugTrace);
     registerConversationReadRoutes(app, options.db);
   }
   if (options.db && options.masterKey) {

@@ -139,8 +139,10 @@ export async function runDebugCommand(
       throw Error("limit");
     selection = DebugSelectionSchema.parse({
       project_id: parsed.values.project,
-      ...(parsed.values.conversation ? { conversation_id: parsed.values.conversation } : {}),
-      ...(parsed.values.target ? { target_id: parsed.values.target } : {}),
+      ...(parsed.values.conversation !== undefined
+        ? { conversation_id: parsed.values.conversation }
+        : {}),
+      ...(parsed.values.target !== undefined ? { target_id: parsed.values.target } : {}),
       include_content: parsed.values.content ?? false,
       limit: parsed.values.limit ?? 50,
     });

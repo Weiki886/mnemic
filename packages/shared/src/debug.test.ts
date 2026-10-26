@@ -108,3 +108,45 @@ it("accepts mutation metadata with IDs and enums only, rejects body snapshots", 
     }).success,
   ).toBe(true);
 });
+
+it("rejects impossible successful-content error responses", () => {
+  const invalid = {
+    ...prompt,
+    event: "model.response",
+    detail: {
+      ...scope,
+      status: "error",
+      complete: true,
+      omitted_reason: null,
+      content: [{ type: "text", text: "partial secret" }],
+    },
+  };
+  expect(ModelContentRecordSchema.safeParse(invalid).success).toBe(false);
+});
+it("rejects excessive total prompt parts", () => {
+  const parts = Array.from({ length: 1025 }, () => ({ type: "text", text: "" }));
+  expect(
+    ModelContentRecordSchema.safeParse({
+      ...prompt,
+      detail: {
+        ...prompt.detail,
+        content: [
+          { role: "user", content: parts },
+          { role: "assistant", content: parts },
+        ],
+      },
+    }).success,
+  ).toBe(false);
+});
+
+it("bounds a public parser line before JSON decoding, even if oversized bytes are in ignored envelope fields", () => {
+  expect(
+    parseDebugLine(
+      JSON.stringify({
+        ...prompt,
+        msg: "model debug content",
+        ignored: "x".repeat(16 * 1024 * 1024),
+      }),
+    ),
+  ).toBeNull();
+});

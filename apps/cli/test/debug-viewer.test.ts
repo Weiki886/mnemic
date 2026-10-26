@@ -150,6 +150,8 @@ it.each(
     ["--limit", "0"],
     ["--limit", "1001"],
     ["--conversation", "secret"],
+    ["--conversation="],
+    ["--target="],
     ["--target", "secret"],
     ["--server", "https://example.invalid"],
     ["--probe"],

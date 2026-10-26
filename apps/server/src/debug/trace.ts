@@ -18,3 +18,12 @@ export function createDebugTrace(logger?: DebugLogger): DebugTrace {
     }
   };
 }
+
+/** A custom observer is also unable to change the result of an already committed mutation. */
+export function emitDebugTrace(trace: DebugTrace | undefined, event: DebugEvent): void {
+  try {
+    trace?.(event);
+  } catch {
+    /* No fallback with raw business data. */
+  }
+}

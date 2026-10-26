@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
+import { emitDebugTrace, type DebugTrace } from "../debug/trace.js";
 import { pendingCandidates } from "../db/schema.js";
 
 /** PENDING 候选仓储（#15）：持久化保证重启不丢 */
@@ -67,6 +68,7 @@ export async function updatePendingStatus(
   db: Db,
   id: string,
   status: PendingStatus,
+  debugTrace?: DebugTrace,
 ): Promise<PendingRow> {
   const rows = await db
     .update(pendingCandidates)
@@ -74,5 +76,10 @@ export async function updatePendingStatus(
     .where(eq(pendingCandidates.id, id))
     .returning();
   if (!rows[0]) throw new Error(`PENDING 候选不存在：${id}`);
+  emitDebugTrace(debugTrace, {
+    event: "memory.pending.decided",
+    target_id: rows[0].id,
+    detail: { project_id: rows[0].projectId, evidence_id: rows[0].evidenceId, status },
+  });
   return toRow(rows[0]);
 }

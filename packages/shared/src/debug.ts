@@ -84,7 +84,7 @@ function payload<T extends z.ZodTypeAny>(content: T, response: boolean) {
   ]);
 }
 const timestamp = z.string().datetime({ offset: true });
-export const ModelContentRecordSchema = z.discriminatedUnion("event", [
+const ModelRecord = z.discriminatedUnion("event", [
   z
     .object({
       ts: timestamp,
@@ -102,12 +102,32 @@ export const ModelContentRecordSchema = z.discriminatedUnion("event", [
     })
     .strict(),
 ]);
+export const ModelContentRecordSchema = ModelRecord.superRefine((record, ctx) => {
+  if (
+    record.event === "model.response" &&
+    record.detail.complete &&
+    record.detail.status !== "success"
+  )
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "inconsistent response" });
+  if (record.event === "model.prompt" && record.detail.complete) {
+    const parts = record.detail.content.reduce(
+      (n, m) => n + (Array.isArray(m.content) ? m.content.length : 0),
+      0,
+    );
+    if (parts > 2048) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "too many parts" });
+  }
+});
 export type ParsedModelContentRecord = z.infer<typeof ModelContentRecordSchema>;
 export type DebugLogRecord = DebugRecord | ParsedModelContentRecord;
 
 /** Pino envelope is not trusted data: project only the known record, discard raw errors/headers. */
 export function parseDebugLine(line: string): DebugLogRecord | null {
   try {
+    if (
+      line.length > DEBUG_MAX_LINE_BYTES ||
+      new TextEncoder().encode(line).length > DEBUG_MAX_LINE_BYTES
+    )
+      return null;
     const raw: unknown = JSON.parse(line);
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
     const value = raw as Record<string, unknown>;

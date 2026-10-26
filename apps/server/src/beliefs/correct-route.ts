@@ -8,6 +8,7 @@ import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
 import { CORRECTIONS_CONVERSATION_TITLE } from "../chat/conversation-titles.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
+import { emitDebugTrace, type DebugTrace } from "../debug/trace.js";
 import { toApiNumber } from "./serialization.js";
 
 /** 人工修正入口（#17）：产生 USER_CORRECTION(70) 权威版本，provenance 锚到项目专用修正会话 */
@@ -15,7 +16,11 @@ import { toApiNumber } from "./serialization.js";
 const CorrectBody = z.object({ value: z.string().min(1) });
 const BeliefParams = z.object({ projectId: z.string().uuid(), id: z.string().uuid() });
 
-export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
+export function registerBeliefRoutes(
+  app: FastifyInstance,
+  db: PostgresJsDatabase,
+  debugTrace?: DebugTrace,
+): void {
   // 消解历史查询（#18）：UI 版本时间线与实验分析消费
   app.get("/projects/:projectId/beliefs/:id/resolutions", async (request, reply) => {
     const params = BeliefParams.safeParse(request.params);
@@ -133,7 +138,7 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
         },
         messageId,
       );
-      return { kind: "corrected" as const, result };
+      return { kind: "corrected" as const, result, conversationId };
     });
     if (outcome.kind === "missing") {
       return notFound(reply, request.id, id);
@@ -143,6 +148,17 @@ export function registerBeliefRoutes(app: FastifyInstance, db: PostgresJsDatabas
       return conflict(reply, request.id, "已删除的记忆必须先恢复，再进行修正");
     }
     const { result } = outcome;
+    emitDebugTrace(debugTrace, {
+      event: "memory.belief.corrected",
+      target_id: id,
+      detail: {
+        project_id: projectId,
+        conversation_id: outcome.conversationId,
+        observation_id: result.observationId,
+        route: result.route,
+        relation: result.relation,
+      },
+    });
     return { beliefId: result.beliefId, route: result.route, relation: result.relation };
   });
 }

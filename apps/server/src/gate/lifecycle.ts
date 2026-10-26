@@ -1,5 +1,6 @@
 import { and, eq, lt, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { emitDebugTrace, type DebugTrace } from "../debug/trace.js";
 import { pendingCandidates } from "../db/schema.js";
 import type { CandidateWithAuthority } from "../extraction/authority.js";
 import { evaluateGate } from "./gate.js";
@@ -20,6 +21,7 @@ export async function retryPendingGroup(
   projectId: string,
   subject: string,
   attribute: string,
+  debugTrace?: DebugTrace,
 ): Promise<PendingRow[]> {
   const rows = await db
     .select()
@@ -42,7 +44,7 @@ export async function retryPendingGroup(
     };
     const { decision } = evaluateGate(boosted, { beliefExists: true });
     if (decision === "WRITE") {
-      promoted.push(await updatePendingStatus(db, row.id, "promoted"));
+      promoted.push(await updatePendingStatus(db, row.id, "promoted", debugTrace));
     }
   }
   return promoted;
@@ -51,11 +53,22 @@ export async function retryPendingGroup(
 export async function expirePending(
   db: PostgresJsDatabase,
   now: Date = new Date(),
+  debugTrace?: DebugTrace,
 ): Promise<string[]> {
   const rows = await db
     .update(pendingCandidates)
     .set({ status: "expired", decidedAt: now })
     .where(and(eq(pendingCandidates.status, "pending"), lt(pendingCandidates.ttlExpiresAt, now)))
-    .returning({ id: pendingCandidates.id });
+    .returning({
+      id: pendingCandidates.id,
+      projectId: pendingCandidates.projectId,
+      evidenceId: pendingCandidates.evidenceId,
+    });
+  for (const row of rows)
+    emitDebugTrace(debugTrace, {
+      event: "memory.pending.decided",
+      target_id: row.id,
+      detail: { project_id: row.projectId, evidence_id: row.evidenceId, status: "expired" },
+    });
   return rows.map((r) => r.id);
 }
