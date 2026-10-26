@@ -1,3 +1,4 @@
+import { runDebugCommand, DEBUG_HELP } from "./debug-viewer.js";
 import { parseArgs } from "node:util";
 import { ApiError, createApiClient, type ApiClient, type DoctorReport } from "@mnemic/shared";
 import { DoctorReportSchema } from "@mnemic/shared/doctor";
@@ -30,7 +31,7 @@ sessions：只读当前项目的会话列表，不恢复会话、不调用模型
 --json   输出 JSON（doctor 诊断、memory 详情或 sessions 分页列表）。
 环境：MNEMIC_SERVER_URL（默认 http://localhost:3000）、MNEMIC_AUTH_TOKEN。
 退出码：0 未检测到错误（可能有 SKIP），1 诊断/网络错误，2 参数错误。
-`;
+${DEBUG_HELP}`;
 
 interface CliOptions {
   env?: Record<string, string | undefined>;
@@ -71,6 +72,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     ((text: string) => {
       process.stdout.write(text);
     });
+  if (args[0] === "debug") return runDebugCommand(args.slice(1), write);
   const env = options.env ?? process.env;
   let server: string;
   let probe: boolean;
