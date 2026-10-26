@@ -102,21 +102,42 @@ const ModelRecord = z.discriminatedUnion("event", [
     })
     .strict(),
 ]);
-export const ModelContentRecordSchema = ModelRecord.superRefine((record, ctx) => {
-  if (
-    record.event === "model.response" &&
-    record.detail.complete &&
-    record.detail.status !== "success"
-  )
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "inconsistent response" });
-  if (record.event === "model.prompt" && record.detail.complete) {
-    const parts = record.detail.content.reduce(
-      (n, m) => n + (Array.isArray(m.content) ? m.content.length : 0),
-      0,
-    );
-    if (parts > 2048) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "too many parts" });
+// z.array().max() still parses every element to collect errors. Enforce collection budgets first.
+function boundedModelRecord(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  if (!record.detail || typeof record.detail !== "object") return value;
+  const detail = record.detail as Record<string, unknown>;
+  if (!detail.complete || !Array.isArray(detail.content)) return value;
+  if (record.event === "model.response") return detail.content.length <= 2048 ? value : undefined;
+  if (record.event !== "model.prompt") return value;
+  if (detail.content.length > 256) return undefined;
+  let parts = 0;
+  for (const message of detail.content) {
+    if (!message || typeof message !== "object") continue;
+    const content = (message as Record<string, unknown>).content;
+    if (Array.isArray(content) && (parts += content.length) > 2048) return undefined;
   }
-});
+  return value;
+}
+export const ModelContentRecordSchema = z.preprocess(
+  boundedModelRecord,
+  ModelRecord.superRefine((record, ctx) => {
+    if (
+      record.event === "model.response" &&
+      record.detail.complete &&
+      record.detail.status !== "success"
+    )
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "inconsistent response" });
+    if (record.event === "model.prompt" && record.detail.complete) {
+      const parts = record.detail.content.reduce(
+        (n, m) => n + (Array.isArray(m.content) ? m.content.length : 0),
+        0,
+      );
+      if (parts > 2048) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "too many parts" });
+    }
+  }),
+);
 export type ParsedModelContentRecord = z.infer<typeof ModelContentRecordSchema>;
 export type DebugLogRecord = DebugRecord | ParsedModelContentRecord;
 

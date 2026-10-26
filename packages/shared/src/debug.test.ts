@@ -150,3 +150,32 @@ it("bounds a public parser line before JSON decoding, even if oversized bytes ar
     ),
   ).toBeNull();
 });
+
+it.each(["messages", "parts", "total"])(
+  "rejects oversized %s before Zod reads any text elements",
+  (mode) => {
+    let reads = 0;
+    const p = {
+      type: "text",
+      get text() {
+        reads++;
+        return "x";
+      },
+    };
+    const partList = Array.from({ length: mode === "total" ? 1025 : 10000 }, () => p);
+    const content =
+      mode === "messages"
+        ? Array.from({ length: 10000 }, () => ({ role: "user", content: [p] }))
+        : mode === "parts"
+          ? [{ role: "user", content: partList }]
+          : [
+              { role: "user", content: partList },
+              { role: "assistant", content: partList },
+            ];
+    expect(
+      ModelContentRecordSchema.safeParse({ ...prompt, detail: { ...prompt.detail, content } })
+        .success,
+    ).toBe(false);
+    expect(reads).toBe(0);
+  },
+);
