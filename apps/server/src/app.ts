@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { stdSerializers } from "pino";
 import { ErrorCode, problem } from "@mnemic/shared";
 import { registerProviderRoutes } from "./providers/routes.js";
 import { registerGateRoutes } from "./gate/routes.js";
@@ -21,6 +20,8 @@ import { resolveAuthToken } from "./config.js";
 import { registerApprovalAuditRoutes } from "./approval/routes.js";
 import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
+import { sanitizeText } from "./gate/secrets.js";
+import { createDebugTrace } from "./debug/trace.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
 const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -32,6 +33,8 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 };
 
 export interface BuildAppOptions {
+  /** Operator-only; forces debug-level output. LOG_LEVEL alone never enables memory traces. */
+  debugMode?: boolean;
   usagePricing?: UsagePricing;
   /** 默认必须提供 Token；仅隔离测试夹具可显式 auth:false。正式入口没有关闭开关。 */
   authToken?: string | undefined;
@@ -58,13 +61,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const app = Fastify({
     logger: {
-      level: process.env.LOG_LEVEL ?? "info",
+      level: options.debugMode ? "debug" : (process.env.LOG_LEVEL ?? "info"),
       // Fastify 默认 req 序列化不含 headers，redact 会落空；显式带上 headers，让脱敏真实生效
       serializers: {
         req: (req): Record<string, unknown> => ({
-          ...stdSerializers.req(req.raw),
+          method: req.method,
+          remoteAddress: req.raw.socket.remoteAddress,
+          // Do not serialize arbitrary headers: unknown credential names have no reliable regex.
+          headers: Object.fromEntries(
+            ["authorization", "cookie", "x-api-key"]
+              .filter((name) => req.headers[name] !== undefined)
+              .map((name) => [name, "[REDACTED]"]),
+          ),
           // 不记录任何查询值，避免误放进 URL 的 Token/凭据进入访问日志。
-          url: req.raw.url?.split("?")[0],
+          url: sanitizeText(req.raw.url?.split("?")[0] ?? "").text,
         }),
       },
       // res 只序列化 statusCode，配 res.headers.* 永远匹配不到，不放摆设条目（#62）
@@ -77,12 +87,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // 请求 ID：上游传入且形态合法才透传（防日志放大/伪造），否则生成 UUID（贯穿日志与响应头）
     genReqId: (req) => {
       const incoming = req.headers["x-request-id"];
-      return typeof incoming === "string" && /^[\w.-]{1,128}$/.test(incoming)
+      return typeof incoming === "string" &&
+        /^[\w.-]{1,128}$/.test(incoming) &&
+        sanitizeText(incoming).hits.length === 0
         ? incoming
         : randomUUID();
     },
   });
 
+  const debugTrace = createDebugTrace(options.debugMode ? app.log : undefined);
   if (authToken !== undefined) registerBearerAuth(app, authToken, options.corsOrigin);
   if (options.corsOrigin) {
     app.register(cors, {
@@ -126,7 +139,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   if (options.db && options.masterKey) {
     registerProviderRoutes(app, options.db, options.masterKey);
-    registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory);
+    registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory, debugTrace);
   }
   if (options.db) {
     registerUsageRoutes(app, options.db, options.usagePricing);
@@ -139,6 +152,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
+      debugTrace,
       ...(options.providerFactory ? { factory: options.providerFactory } : {}),
       ...(options.chatDeps?.retrieveFn ? { retrieveFn: options.chatDeps.retrieveFn } : {}),
       ...(options.chatDeps?.streamTimeoutMs !== undefined
@@ -164,7 +178,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
     if (status >= 500) {
-      request.log.error({ err: error }, "unhandled error");
+      request.log.error({ statusCode: status }, "unhandled error");
     }
     const code =
       ERROR_CODE_BY_STATUS[status] ??

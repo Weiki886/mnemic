@@ -8,11 +8,13 @@ import type { ModelSlots, ProviderWithKey } from "./repository.js";
 import { selectSlotProvider } from "./selection.js";
 import { observeEmbedding, observeLanguage, type UsageLogger } from "../usage/models.js";
 import { writeModelUsage, type UsageContext, type UsageRecord } from "../usage/repository.js";
+import type { DebugTrace } from "../debug/trace.js";
 
 /** 模型三槽位（ADR-005）：调用方只按用途取模型，不感知厂商与协议 */
 export type Slot = keyof Required<ModelSlots>;
 
 export interface ResolveOptions {
+  debugTrace?: DebugTrace;
   /** 指定 Provider；缺省时取最早创建且配置了该槽位的 Provider */
   providerName?: string;
   /** 测试注入 Fake；生产默认真实双协议工厂 */

@@ -7,6 +7,7 @@ import { RecallRequestSchema, RecallResultSchema } from "@mnemic/shared/memory";
 import { projects, retrievalTraces } from "../db/schema.js";
 import type { ProviderFactory } from "../providers/factory.js";
 import { retrieve } from "./search.js";
+import type { DebugTrace } from "../debug/trace.js";
 
 const Params = z.object({ projectId: z.string().uuid() });
 function fail(
@@ -29,6 +30,7 @@ export function registerRecallRoutes(
   db: PostgresJsDatabase,
   masterKey: Buffer,
   factory?: ProviderFactory,
+  debugTrace?: DebugTrace,
 ): void {
   app.post(
     "/projects/:projectId/recall",
@@ -83,6 +85,7 @@ export function registerRecallRoutes(
       if (!project) return fail(reply, request.id, 404, ErrorCode.NOT_FOUND, "项目不存在");
       try {
         const result = await retrieve(db, masterKey, projectId, body.data.query, {
+          ...(debugTrace ? { debugTrace } : {}),
           usageLogger: app.log,
           ...(factory ? { factory } : {}),
           topK: 5,

@@ -79,32 +79,76 @@ export async function runExtractionWriteback(
       purpose: "extraction",
     },
   };
-  const { model } = await resolveModel(db, masterKey, "extraction", scoped);
-  const extraction = await extractCandidates(model, args.text);
-  if (extraction.degraded) return empty;
-
-  const result: WritebackResult = {
-    ...empty,
-    extracted: extraction.candidates.length,
-    degraded: false,
-  };
-  for (const extracted of extraction.candidates) {
-    const candidate = args.channel
-      ? attachAuthority({ ...extracted, source_type: SOURCE_BY_CHANNEL[args.channel] })
-      : extracted;
-    const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
-    if (gate.decision === "SKIP") {
-      result.skipped += 1;
-      continue;
-    }
-    if (gate.decision === "PENDING") {
-      result.pending += 1;
-      continue;
-    }
-    const ingested = await ingestCandidate(db, args.projectId, gate.candidate, args.evidenceId, {
-      indexEmbedding: (a) => indexBeliefVersion(db, masterKey, a, scoped),
+  let phase: "extraction" | "gate" | "ingest" = "extraction";
+  try {
+    const { model } = await resolveModel(db, masterKey, "extraction", scoped);
+    const extraction = await extractCandidates(model, args.text);
+    options.debugTrace?.({
+      event: "memory.extraction.completed",
+      target_id: args.evidenceId,
+      detail: {
+        project_id: args.projectId,
+        conversation_id: evidence.conversationId,
+        attempts: extraction.attempts,
+        candidates_count: extraction.candidates.length,
+        dropped_count: extraction.droppedCount,
+        degraded: extraction.degraded,
+      },
     });
-    result.routes[ingested.route] += 1;
+    if (extraction.degraded) return empty;
+
+    const result: WritebackResult = {
+      ...empty,
+      extracted: extraction.candidates.length,
+      degraded: false,
+    };
+    for (const extracted of extraction.candidates) {
+      const candidate = args.channel
+        ? attachAuthority({ ...extracted, source_type: SOURCE_BY_CHANNEL[args.channel] })
+        : extracted;
+      phase = "gate";
+      const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
+      options.debugTrace?.({
+        event: "memory.gate.decided",
+        target_id: args.evidenceId,
+        detail: {
+          project_id: args.projectId,
+          decision: gate.decision,
+          ...(gate.decision === "PENDING" ? { pending_id: gate.pendingId } : {}),
+        },
+      });
+      if (gate.decision === "SKIP") {
+        result.skipped += 1;
+        continue;
+      }
+      if (gate.decision === "PENDING") {
+        result.pending += 1;
+        continue;
+      }
+      phase = "ingest";
+      const ingested = await ingestCandidate(db, args.projectId, gate.candidate, args.evidenceId, {
+        indexEmbedding: (a) => indexBeliefVersion(db, masterKey, a, scoped),
+      });
+      result.routes[ingested.route] += 1;
+      options.debugTrace?.({
+        event: "memory.write.completed",
+        target_id: args.evidenceId,
+        detail: {
+          project_id: args.projectId,
+          route: ingested.route,
+          observation_id: ingested.observationId,
+          belief_id: ingested.beliefId,
+          relation: ingested.relation,
+        },
+      });
+    }
+    return result;
+  } catch (error) {
+    options.debugTrace?.({
+      event: "memory.write.failed",
+      target_id: args.evidenceId,
+      detail: { project_id: args.projectId, phase },
+    });
+    throw error;
   }
-  return result;
 }
