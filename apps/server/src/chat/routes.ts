@@ -121,9 +121,8 @@ export function registerChatRoutes(
           body.data.current_conversation_id,
           {
             ...modelOpts,
-            onJob: (job) =>
-              trackJob(job, (err) => request.log.error({ err }, "resume writeback failed")),
-            logger: { error: (obj, msg) => request.log.error(obj, msg) },
+            onJob: (job) => trackJob(job, () => request.log.error("resume writeback failed")),
+            logger: { error: (_obj, msg) => request.log.error(msg) },
           },
         );
         if (result.kind === "resumed") return reply.code(201).send(result.conversation);
@@ -198,11 +197,8 @@ export function registerChatRoutes(
       const { id } = request.params as { id: string };
       const result = await commitConversation(db, masterKey, id, {
         ...modelOpts,
-        onJob: (job) =>
-          trackJob(job, (err) =>
-            request.log.error({ err, conversationId: id }, "commit writeback failed"),
-          ),
-        logger: { error: (obj, msg) => request.log.error(obj, msg) },
+        onJob: (job) => trackJob(job, () => request.log.error("commit writeback failed")),
+        logger: { error: (_obj, msg) => request.log.error(msg) },
       });
       if (result.kind === "not_found") {
         return reply
@@ -298,11 +294,8 @@ export function registerChatRoutes(
         {
           ...modelOpts,
           ...(deps.retrieveFn ? { retrieveFn: deps.retrieveFn } : {}),
-          onJob: (job) =>
-            trackJob(job, (err) =>
-              request.log.error({ err, conversationId: id }, "message writeback failed"),
-            ),
-          logger: { warn: (obj, msg) => request.log.warn(obj, msg) },
+          onJob: (job) => trackJob(job, () => request.log.error("message writeback failed")),
+          logger: { warn: (_obj, msg) => request.log.warn(msg) },
         },
         parsed.data.attachments,
       );

@@ -1,5 +1,12 @@
 /** 启动配置解析（#62）：入口共用，禁止各入口各自 inline 解析。 */
 
+/** Debug is an operator-only startup choice, never inferred from a request or LOG_LEVEL. */
+export function resolveDebugMode(raw: string | undefined): boolean {
+  if (raw === undefined || raw === "0") return false;
+  if (raw === "1") return true;
+  throw new Error("MNEMIC_DEBUG 必须为 0 或 1");
+}
+
 /** 单用户 Bearer Token：32–256 个协议允许的 ASCII 字符，禁止默认口令/空白配置。 */
 export function resolveAuthToken(raw: string | undefined): string {
   if (!raw || !/^[A-Za-z0-9._~+/-]{32,256}=*$/.test(raw) || raw.length > 256) {
