@@ -81,8 +81,8 @@ watch(
       class="grid gap-3 rounded-xl border border-zinc-200 bg-white p-5 sm:grid-cols-2"
       @submit.prevent="load"
     >
-      <label class="text-sm"
-        >开始时间 ISO
+      <label class="text-sm">
+        <span>开始时间 ISO</span>
         <input
           v-model="from"
           aria-label="开始时间 ISO"
@@ -90,8 +90,8 @@ watch(
           class="mt-1 w-full rounded-md border border-zinc-300 p-2 font-mono text-xs"
         />
       </label>
-      <label class="text-sm"
-        >结束时间 ISO
+      <label class="text-sm">
+        <span>结束时间 ISO</span>
         <input
           v-model="to"
           aria-label="结束时间 ISO"
@@ -99,16 +99,16 @@ watch(
           class="mt-1 w-full rounded-md border border-zinc-300 p-2 font-mono text-xs"
         />
       </label>
-      <label class="text-sm"
-        >物理会话 UUID（留空为全项目）
+      <label class="text-sm">
+        <span>物理会话 UUID（留空为全项目）</span>
         <input
           v-model="conversation"
           aria-label="会话 UUID"
           class="mt-1 w-full rounded-md border border-zinc-300 p-2 font-mono text-xs"
         />
       </label>
-      <label class="text-sm"
-        >分组方式
+      <label class="text-sm">
+        <span>分组方式</span>
         <select
           v-model="group"
           aria-label="分组方式"
@@ -155,11 +155,10 @@ watch(
           </div>
         </dl>
         <p class="mt-4 text-sm font-medium">
-          <template v-if="report.currency && report.totals.estimated_cost.known_amount !== null"
-            >已知部分估价 {{ report.currency }}
-            {{ report.totals.estimated_cost.known_amount }}</template
-          >
-          <template v-else>费用未知</template>（非账单）
+          <span v-if="report.currency && report.totals.estimated_cost.known_amount !== null">
+            已知部分估价 {{ report.currency }} {{ report.totals.estimated_cost.known_amount }}
+          </span>
+          <span v-else>费用未知</span>（非账单）
         </p>
         <p class="text-sm text-zinc-600">
           已估价 {{ report.totals.estimated_cost.priced_calls }} 次 · 未估价
