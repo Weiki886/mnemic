@@ -206,3 +206,27 @@ it("rejects incompatible capture fields instead of dumping extra content", async
   expect(JSON.parse(result.output)).toMatchObject({ shown: 0, ignored: 1 });
   expect(result.output).not.toContain("SECRET_KEY");
 });
+
+it("rejects the selected-output byte budget atomically; metadata-only still works for large content", async () => {
+  const f = await fixture([JSON.stringify(row("x".repeat(9 * 1024 * 1024)))]);
+  const full = await f.call(["--content", "--json"]);
+  expect(full.code).toBe(1);
+  expect(full.output).not.toContain("xxxxxxxx");
+  const meta = await f.call(["--json"]);
+  expect(meta.code).toBe(0);
+  expect(JSON.parse(meta.output).shown).toBe(1);
+});
+it("skips invalid UTF-8 and an unfinished final line without echoing either", async () => {
+  const f = await fixture([]);
+  await writeFile(
+    f.file,
+    Buffer.concat([
+      Buffer.from([0xff, 10]),
+      Buffer.from(JSON.stringify(row()) + '\n{"unfinished":'),
+    ]),
+  );
+  const result = await f.call(["--json"]);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.output)).toMatchObject({ shown: 1, ignored: 2 });
+  expect(result.output).not.toContain("unfinished");
+});

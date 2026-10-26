@@ -177,7 +177,8 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     }
     const detail = {
       arguments: "参数无效，请使用 --help 查看支持的选项。",
-      command: "命令无效，请使用 doctor、chat、resume、memory 或 sessions；使用 --help 查看用法。",
+      command:
+        "命令无效，请使用 doctor、chat、resume、memory、sessions 或 debug；使用 --help 查看用法。",
       server: "服务地址无效：须为不含凭据、查询或片段的 HTTP(S) URL。",
       project: "项目参数无效：请提供 --project UUID，且项目须已存在。",
       limit: "--limit 必须为 1–1000 的整数。",
