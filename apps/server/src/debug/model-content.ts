@@ -169,7 +169,8 @@ export function createModelDebug(logger?: Logger, credentials: readonly string[]
             type !== "reasoning-end"
           )
             return drop("unsupported");
-          if (typeof value.id !== "string") return drop("unsupported");
+          if (typeof value.id !== "string" || value.id.length === 0 || value.id.length > 128)
+            return drop("unsupported");
           const blockType = type.startsWith("text-") ? "text" : "reasoning";
           const block = blocks.find((b) => b.id === value.id && b.type === blockType);
           if (type.endsWith("-start")) {

@@ -73,6 +73,7 @@ export async function runExtractionWriteback(
   if (!evidence) throw new Error("invalid extraction usage scope");
   const scoped: ResolveOptions = {
     ...options,
+    debugEvidenceId: args.evidenceId,
     usageContext: {
       projectId: args.projectId,
       conversationId: evidence.conversationId,

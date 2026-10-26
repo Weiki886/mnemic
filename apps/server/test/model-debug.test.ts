@@ -220,3 +220,20 @@ it("bounds message/part/chunk counts including zero-byte deltas and drops buffer
     f.rows.every((r) => r.detail.omitted_reason === "size_limit" && r.detail.content === null),
   ).toBe(true);
 });
+
+it("omits malformed streams and oversized block IDs without emitting provider metadata", () => {
+  for (const id of ["x".repeat(129), ""]) {
+    const f = fixture(),
+      a = f.begin(prompt("x"));
+    a.part({ type: "text-start", id });
+    a.part({ type: "text-delta", id, delta: "answer" });
+    a.part({ type: "text-end", id });
+    a.part({ type: "finish", finishReason: "stop" });
+    a.finish("success");
+    expect(f.rows[1]!.detail).toMatchObject({
+      complete: false,
+      content: null,
+      omitted_reason: "unsupported",
+    });
+  }
+});

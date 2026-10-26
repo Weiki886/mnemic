@@ -15,12 +15,14 @@ import { ConversationContextError } from "./context.js";
 import { ChatGenerations } from "./generations.js";
 import { registerChatStreamRoutes } from "./stream-routes.js";
 import { ChatMessageInputSchema } from "@mnemic/shared/file-context";
+import type { ModelDebug } from "../debug/model-content.js";
 import type { DebugTrace } from "../debug/trace.js";
 
 /** 对话闭环 API（#7）：会话创建/提交/消息应答 */
 
 export interface ChatRouteDeps {
   debugTrace?: DebugTrace;
+  modelDebug?: ModelDebug;
   /** 测试注入 Fake 工厂；生产缺省真实双协议工厂 */
   factory?: ProviderFactory;
   /** 测试注入检索替身（阈值放宽/故障注入） */
@@ -50,6 +52,7 @@ export function registerChatRoutes(
   const modelOpts = {
     ...(deps.factory ? { factory: deps.factory } : {}),
     usageLogger: app.log,
+    ...(deps.modelDebug ? { modelDebug: deps.modelDebug } : {}),
     ...(deps.debugTrace ? { debugTrace: deps.debugTrace } : {}),
   };
   const generations = new ChatGenerations();

@@ -21,6 +21,7 @@ import { registerApprovalAuditRoutes } from "./approval/routes.js";
 import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
 import { sanitizeText } from "./gate/secrets.js";
+import { createModelDebug } from "./debug/model-content.js";
 import { createDebugTrace } from "./debug/trace.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
@@ -99,6 +100,18 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   const debugTrace = createDebugTrace(options.debugMode ? app.log : undefined);
+  const modelDebug = options.debugContent
+    ? createModelDebug(app.log, [
+        ...(authToken ? [authToken] : []),
+        ...(options.masterKey
+          ? [
+              options.masterKey.toString("hex"),
+              options.masterKey.toString("hex").toUpperCase(),
+              options.masterKey.toString("base64"),
+            ]
+          : []),
+      ])
+    : undefined;
   if (authToken !== undefined) registerBearerAuth(app, authToken, options.corsOrigin);
   if (options.corsOrigin) {
     app.register(cors, {
@@ -156,6 +169,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
       debugTrace,
+      ...(modelDebug ? { modelDebug } : {}),
       ...(options.providerFactory ? { factory: options.providerFactory } : {}),
       ...(options.chatDeps?.retrieveFn ? { retrieveFn: options.chatDeps.retrieveFn } : {}),
       ...(options.chatDeps?.streamTimeoutMs !== undefined
