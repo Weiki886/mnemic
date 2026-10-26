@@ -5,6 +5,7 @@
     "types": ["node"],
     "jsx": "react-jsx",
     "paths": {
+      "@mnemic/shared/usage": ["../../packages/shared/src/usage.ts"],
       "@mnemic/shared/file-context": ["../../packages/shared/src/file-context.ts"],
       "@mnemic/shared/approval-audit": ["../../packages/shared/src/approval-audit.ts"],
       "@mnemic/shared/approval": ["../../packages/shared/src/approval.ts"],

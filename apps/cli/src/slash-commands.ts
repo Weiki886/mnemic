@@ -8,6 +8,7 @@ import { parseArgs } from "node:util";
 import { ProviderPatchSchema, type ProviderPatch } from "@mnemic/shared/management";
 import { ApprovalModeSchema } from "@mnemic/shared/approval";
 import { ApprovalAuditQuerySchema, type ApprovalAuditQuery } from "@mnemic/shared/approval-audit";
+import { UsageQuerySchema, type UsageQuery } from "@mnemic/shared/usage";
 
 /** 只注册已经实现的命令；解析、帮助与补全共用，不从网络或历史加载命令。 */
 export const SLASH_COMMANDS = [
@@ -52,6 +53,11 @@ export const SLASH_COMMANDS = [
     usage: "/permissions [read-only|confirm|auto|list|revoke UUID|history [--limit N --offset N]]",
     description: "本地文件/命令审批模式与精确授权；默认只读，不控制聊天/记忆 API",
   },
+  {
+    name: "usage",
+    usage: "/usage [--current] [--from ISO --to ISO] [--group-by day|model|purpose|conversation]",
+    description: "读取当前项目或物理会话的用量与估价；不调用模型",
+  },
 ] as const;
 
 type CommandName = (typeof SLASH_COMMANDS)[number]["name"];
@@ -62,6 +68,7 @@ export type ManagementCommand =
   | { kind: "command"; name: "status" }
   | { kind: "command"; name: "config"; action: "show" }
   | { kind: "command"; name: "config"; action: "set"; id: string; patch: ProviderPatch };
+export type UsageCommand = { kind: "command"; name: "usage"; current: boolean; query: UsageQuery };
 type ChatInput =
   | { kind: "empty" }
   | { kind: "message"; text: string }
@@ -69,12 +76,13 @@ type ChatInput =
       kind: "command";
       name: Exclude<
         CommandName,
-        "resume" | "memory" | "forget" | "recall" | "status" | "config" | "permissions"
+        "resume" | "memory" | "forget" | "recall" | "status" | "config" | "permissions" | "usage"
       >;
     }
   | { kind: "command"; name: "resume"; argument: string }
   | MemoryCommand
   | ManagementCommand
+  | UsageCommand
   | { kind: "command"; name: "recall"; query: string }
   | { kind: "command"; name: "permissions"; action: "show" | "list" }
   | { kind: "command"; name: "permissions"; action: "history"; query: ApprovalAuditQuery }
@@ -89,6 +97,31 @@ export function parseChatInput(text: string): ChatInput {
   const [token, ...args] = trimmed.split(/\s+/);
   const command = SLASH_COMMANDS.find((entry) => `/${entry.name}` === token);
   if (!command) return { kind: "error", message: "未知斜杠命令；输入 /help 查看已支持命令。" };
+  if (command.name === "usage") {
+    try {
+      const parsed = parseArgs({
+        args,
+        tokens: true,
+        options: {
+          current: { type: "boolean" },
+          from: { type: "string" },
+          to: { type: "string" },
+          "group-by": { type: "string" },
+        },
+      });
+      const names = parsed.tokens.filter((t) => t.kind === "option").map((t) => t.name);
+      if (new Set(names).size !== names.length) throw new Error("duplicate option");
+      const { current, "group-by": groupBy, ...filters } = parsed.values;
+      return {
+        kind: "command",
+        name: "usage",
+        current: current ?? false,
+        query: UsageQuerySchema.parse({ ...filters, ...(groupBy ? { group_by: groupBy } : {}) }),
+      };
+    } catch {
+      return { kind: "error", message: `用法：${command.usage}` };
+    }
+  }
   if (command.name === "permissions") {
     if (args[0] === "history") {
       try {
