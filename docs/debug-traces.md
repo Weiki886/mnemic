@@ -82,11 +82,11 @@ master key 的 hex/大写 hex/base64 及本次所选 provider key 的精确匹�
 将操作者收集的应用 stdout 复制为一个稳定的本地文件，再运行（仓库开发入口）：
 
 ```sh
-pnpm --filter @mnemic/cli start -- debug --file ./server.snapshot.jsonl --project <项目UUID>
-pnpm --filter @mnemic/cli start -- debug --file ./server.snapshot.jsonl --project <项目UUID> --conversation <物理会话UUID> --content --json
+node apps/cli/dist/index.js debug --file /绝对路径/server.snapshot.jsonl --project <项目UUID>
+node apps/cli/dist/index.js debug --file /绝对路径/server.snapshot.jsonl --project <项目UUID> --conversation <物理会话UUID> --content --json
 ```
 
-先按 Quickstart 构建 CLI/shared；正式安装后同样可用 `mnemic debug ...`。
+先按 Quickstart 构建 CLI/shared；将绝对路径及 UUID 替换为实际值。从仓库根运行上述 node 命令可得到无 pnpm 包装文字的输出。
 命令只读显式指定的文件，不连接服务、不读取服务端配置、不解密 provider key、不调用模型，
 不接收 `--server`/`--probe`，也不能开启服务端正文捕获。默认只显示元数据，`--content` 才显示
 已经捕获的完整受支持文本；完整性和省略原因原样保留，不补造缺失响应。

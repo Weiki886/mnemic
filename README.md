@@ -164,7 +164,7 @@ CSV/JSON 分页导出与价格配置见 [用量 API](docs/usage-reports.md)。
 本地查看已有日志快照（默认仅元数据，`--content` 才显示已有正文）：
 
 ```sh
-pnpm --filter @mnemic/cli start -- debug --file ./server.snapshot.jsonl --project <项目UUID>
+pnpm cli debug --file /绝对路径/server.snapshot.jsonl --project <项目UUID>
 ```
 
 该命令不联网、不调用模型，也不会开启服务端调试；快照和终端输出仍需按敏感资料保护。
