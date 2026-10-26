@@ -180,7 +180,9 @@ it("requires explicit project and file even in offline mode", async () => {
 it("rejects unreadable, symlink and non-regular files without echoing path/OS errors", async () => {
   const f = await fixture([]);
   await rm(f.file);
-  await symlink("/does-not-exist-SECRET", f.file);
+  const target = join(f.dir, "regular-target.jsonl");
+  await writeFile(target, JSON.stringify(row()) + "\n");
+  await symlink(target, f.file);
   expect(await f.call()).toMatchObject({ code: 1 });
   await rm(f.file);
   await mkdir(f.file);
