@@ -231,3 +231,54 @@ it.each(["SKIP", "PENDING"] as const)(
     }
   },
 );
+
+it.each(["commit", "resume"] as const)(
+  "%s directly traces queued physical Evidence once and retains its source conversation",
+  async (action) => {
+    const f = await fixture(true);
+    try {
+      const conv = await f.api.createConversation(project),
+        evidence = uuidv7();
+      await t.sql`insert into messages(id,conversation_id,speaker,raw_text,msg_time) values(${evidence},${conv.id},'user',${`QUEUED DIRECTIVE ${secret}`},now())`;
+      let resumedId: string | undefined;
+      if (action === "commit") {
+        const result = await f.api.commitConversation(conv.id);
+        expect(result.extraction_triggered).toBe(true);
+      } else {
+        const result = await f.api.resumeConversation(project, conv.id);
+        resumedId = result.id;
+        expect(resumedId).not.toBe(conv.id);
+      }
+      await waitForChatJobs();
+      const rows = f.traces();
+      expect(rows.map((r) => r.event)).toEqual([
+        "memory.extraction.completed",
+        "memory.gate.decided",
+        "memory.write.completed",
+      ]);
+      expect(rows.every((r) => r.target_id === evidence && r.detail.project_id === project)).toBe(
+        true,
+      );
+      expect(rows[0].detail.conversation_id).toBe(conv.id);
+      expect(rows[2].detail.route).toBe("created");
+      expect(
+        await t.sql`select id from observations where id=${rows[2].detail.observation_id} and evidence_id=${evidence}`,
+      ).toHaveLength(1);
+      const [stored] =
+        await t.sql`select m.extracted_at,c.ended_at from messages m join conversations c on c.id=m.conversation_id where m.id=${evidence}`;
+      expect(stored!.extracted_at).not.toBeNull();
+      expect(stored!.ended_at).not.toBeNull();
+      if (resumedId) await f.api.commitConversation(resumedId);
+      else await expect(f.api.commitConversation(conv.id)).rejects.toMatchObject({ status: 409 });
+      await waitForChatJobs();
+      expect(f.traces()).toHaveLength(3);
+      expect(await t.sql`select id from observations where evidence_id=${evidence}`).toHaveLength(
+        1,
+      );
+      expect(f.log()).not.toContain(secret);
+      expect(f.log()).not.toContain("QUEUED DIRECTIVE");
+    } finally {
+      await f.app.close();
+    }
+  },
+);
