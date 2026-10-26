@@ -21,6 +21,7 @@ import { registerApprovalAuditRoutes } from "./approval/routes.js";
 import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
 import { sanitizeText } from "./gate/secrets.js";
+import { createModelDebug } from "./debug/model-content.js";
 import { createDebugTrace } from "./debug/trace.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
@@ -35,6 +36,7 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 export interface BuildAppOptions {
   /** Operator-only; forces debug-level output. LOG_LEVEL alone never enables memory traces. */
   debugMode?: boolean;
+  debugContent?: boolean;
   usagePricing?: UsagePricing;
   /** 默认必须提供 Token；仅隔离测试夹具可显式 auth:false。正式入口没有关闭开关。 */
   authToken?: string | undefined;
@@ -58,6 +60,8 @@ export interface BuildAppOptions {
 const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
+  if (options.debugContent && !options.debugMode)
+    throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const app = Fastify({
     logger: {
@@ -96,6 +100,18 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   const debugTrace = createDebugTrace(options.debugMode ? app.log : undefined);
+  const modelDebug = options.debugContent
+    ? createModelDebug(app.log, [
+        ...(authToken ? [authToken] : []),
+        ...(options.masterKey
+          ? [
+              options.masterKey.toString("hex"),
+              options.masterKey.toString("hex").toUpperCase(),
+              options.masterKey.toString("base64"),
+            ]
+          : []),
+      ])
+    : undefined;
   if (authToken !== undefined) registerBearerAuth(app, authToken, options.corsOrigin);
   if (options.corsOrigin) {
     app.register(cors, {
@@ -153,6 +169,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
       debugTrace,
+      ...(modelDebug ? { modelDebug } : {}),
       ...(options.providerFactory ? { factory: options.providerFactory } : {}),
       ...(options.chatDeps?.retrieveFn ? { retrieveFn: options.chatDeps.retrieveFn } : {}),
       ...(options.chatDeps?.streamTimeoutMs !== undefined

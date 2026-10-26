@@ -9,12 +9,14 @@ import {
   resolveHost,
   resolvePort,
   resolveDebugMode,
+  resolveDebugContent,
 } from "./config.js";
 import { parseUsagePricing } from "./usage/pricing.js";
 
 // 必须先校验鉴权配置再连接 DB/监听端口；不存在“空 Token 时放开接口”的启动模式。
 const authToken = resolveAuthToken(process.env.MNEMIC_AUTH_TOKEN);
 const debugMode = resolveDebugMode(process.env.MNEMIC_DEBUG);
+const debugContent = resolveDebugContent(process.env.MNEMIC_DEBUG_CONTENT, debugMode);
 const port = resolvePort(process.env.PORT);
 const host = resolveHost(process.env.HOST);
 const corsOrigin = resolveCorsOrigin(process.env.CORS_ORIGIN);
@@ -32,7 +34,15 @@ const masterKey = process.env.MNEMIC_MASTER_KEY
   ? parseMasterKey(process.env.MNEMIC_MASTER_KEY)
   : undefined;
 
-const app = buildApp({ db, masterKey, corsOrigin, authToken, usagePricing, debugMode });
+const app = buildApp({
+  db,
+  masterKey,
+  corsOrigin,
+  authToken,
+  usagePricing,
+  debugMode,
+  debugContent,
+});
 if (db) {
   app.log.info("embedding 维度守卫通过");
 }

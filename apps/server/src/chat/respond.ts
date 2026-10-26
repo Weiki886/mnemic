@@ -131,6 +131,7 @@ export async function prepareAnswer(
   // 检索（#6）；检索失败降级为无记忆回答，不阻塞对话
   const scoped = {
     ...options,
+    debugEvidenceId: entered.userMessageId,
     usageContext: {
       projectId: entered.projectId,
       conversationId: entered.conversationId,

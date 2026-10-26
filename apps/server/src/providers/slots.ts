@@ -8,6 +8,7 @@ import type { ModelSlots, ProviderWithKey } from "./repository.js";
 import { selectSlotProvider } from "./selection.js";
 import { observeEmbedding, observeLanguage, type UsageLogger } from "../usage/models.js";
 import { writeModelUsage, type UsageContext, type UsageRecord } from "../usage/repository.js";
+import type { ModelDebug, ModelDebugFactory } from "../debug/model-content.js";
 import type { DebugTrace } from "../debug/trace.js";
 
 /** 模型三槽位（ADR-005）：调用方只按用途取模型，不感知厂商与协议 */
@@ -15,6 +16,9 @@ export type Slot = keyof Required<ModelSlots>;
 
 export interface ResolveOptions {
   debugTrace?: DebugTrace;
+  modelDebug?: ModelDebug;
+  /** Server-resolved physical Evidence; never taken from HTTP model options. */
+  debugEvidenceId?: string;
   /** 指定 Provider；缺省时取最早创建且配置了该槽位的 Provider */
   providerName?: string;
   /** 测试注入 Fake；生产默认真实双协议工厂 */
@@ -85,6 +89,30 @@ export async function resolveModel(
   };
   const base = { ...context, providerName: row.name, modelId, slot };
   const sink = (record: UsageRecord) => writeModelUsage(db, record);
+  let debug: ModelDebugFactory | undefined;
+  if (
+    slot !== "embedding" &&
+    context.purpose === slot &&
+    context.projectId &&
+    context.conversationId &&
+    options.debugEvidenceId
+  ) {
+    try {
+      debug = options.modelDebug?.(
+        {
+          project_id: context.projectId,
+          conversation_id: context.conversationId,
+          evidence_id: options.debugEvidenceId,
+          provider_name: row.name,
+          model_id: modelId,
+          slot,
+        },
+        config.apiKey,
+      );
+    } catch {
+      /* Debug setup cannot prevent a paid business request. */
+    }
+  }
   const model =
     slot === "embedding"
       ? observeEmbedding(
@@ -98,6 +126,7 @@ export async function resolveModel(
           base,
           sink,
           options.usageLogger,
+          debug,
         );
   return { model, modelId, providerName: row.name, slot };
 }
