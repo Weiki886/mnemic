@@ -116,7 +116,10 @@ export function parseChatInput(text: string): ChatInput {
         kind: "command",
         name: "usage",
         current: current ?? false,
-        query: UsageQuerySchema.parse({ ...filters, ...(groupBy ? { group_by: groupBy } : {}) }),
+        query: UsageQuerySchema.parse({
+          ...filters,
+          ...(groupBy !== undefined ? { group_by: groupBy } : {}),
+        }),
       };
     } catch {
       return { kind: "error", message: `用法：${command.usage}` };

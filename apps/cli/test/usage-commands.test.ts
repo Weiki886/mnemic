@@ -55,6 +55,7 @@ it.each([
   "/usage --from invalid",
   "/usage --secret value",
   "/usage --group-by invalid",
+  "/usage --group-by=",
 ])("rejects invalid usage syntax locally: %s", (text) => {
   expect(parseChatInput(text).kind).toBe("error");
 });
