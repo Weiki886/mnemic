@@ -182,5 +182,18 @@ export async function retrieve(
     }
   }
 
+  options.debugTrace?.({
+    event: "memory.retrieval.completed",
+    target_id: traceId,
+    detail: {
+      project_id: projectId,
+      conversation_id:
+        options.usageContext?.projectId === projectId ? options.usageContext.conversationId : null,
+      matched_count: all.length,
+      selected_count: selected.length,
+      abstained,
+      reinforce_enabled: reinforce,
+    },
+  });
   return { candidates: selected, abstained, traceId };
 }

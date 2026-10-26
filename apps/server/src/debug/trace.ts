@@ -5,6 +5,7 @@ const project = { project_id: id };
 const event = <T extends string, S extends z.ZodRawShape>(name: T, detail: S) =>
   z.object({ event: z.literal(name), target_id: id, detail: z.object(detail).strict() }).strict();
 export const DebugEventSchema = z.discriminatedUnion("event", [
+  event("memory.write.failed", { ...project, phase: z.enum(["extraction", "gate", "ingest"]) }),
   event("memory.retrieval.completed", {
     ...project,
     conversation_id: id.nullable(),

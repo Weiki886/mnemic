@@ -21,6 +21,7 @@ import { registerApprovalAuditRoutes } from "./approval/routes.js";
 import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
 import { sanitizeText } from "./gate/secrets.js";
+import { createDebugTrace } from "./debug/trace.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
 const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -32,6 +33,8 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 };
 
 export interface BuildAppOptions {
+  /** Operator-only; forces debug-level output. LOG_LEVEL alone never enables memory traces. */
+  debugMode?: boolean;
   usagePricing?: UsagePricing;
   /** 默认必须提供 Token；仅隔离测试夹具可显式 auth:false。正式入口没有关闭开关。 */
   authToken?: string | undefined;
@@ -58,7 +61,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const app = Fastify({
     logger: {
-      level: process.env.LOG_LEVEL ?? "info",
+      level: options.debugMode ? "debug" : (process.env.LOG_LEVEL ?? "info"),
       // Fastify 默认 req 序列化不含 headers，redact 会落空；显式带上 headers，让脱敏真实生效
       serializers: {
         req: (req): Record<string, unknown> => ({
@@ -92,6 +95,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
   });
 
+  const debugTrace = createDebugTrace(options.debugMode ? app.log : undefined);
   if (authToken !== undefined) registerBearerAuth(app, authToken, options.corsOrigin);
   if (options.corsOrigin) {
     app.register(cors, {
@@ -135,7 +139,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   if (options.db && options.masterKey) {
     registerProviderRoutes(app, options.db, options.masterKey);
-    registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory);
+    registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory, debugTrace);
   }
   if (options.db) {
     registerUsageRoutes(app, options.db, options.usagePricing);
@@ -148,6 +152,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
+      debugTrace,
       ...(options.providerFactory ? { factory: options.providerFactory } : {}),
       ...(options.chatDeps?.retrieveFn ? { retrieveFn: options.chatDeps.retrieveFn } : {}),
       ...(options.chatDeps?.streamTimeoutMs !== undefined

@@ -155,6 +155,11 @@ Web 连接项目后点击「用量」，可按时间和会话筛选并刷新，�
 后台提取与索引可能晚于回答落记录。使用与完整验收口径见 [用量客户端](docs/client-usage.md)，
 CSV/JSON 分页导出与价格配置见 [用量 API](docs/usage-reports.md)。
 
+### 调试元数据
+
+调试期可在服务端设置 `MNEMIC_DEBUG=1`，输出聊天写回与检索的结构化元数据轨迹。
+默认关闭；目前不记录完整 prompt 或模型正文，范围和安全边界见 [调试轨迹](docs/debug-traces.md)。
+
 ## 仓库结构
 
 ```text
