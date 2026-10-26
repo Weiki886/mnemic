@@ -23,6 +23,66 @@ function memoryStorage(): Storage {
 }
 
 describe("AppShell project gate", () => {
+  it("navigates to authenticated project usage without persisting the token or invoking a model", async () => {
+    const metric = { reported: "0", missing_calls: 0 };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (url: string) =>
+          new Response(
+            JSON.stringify(
+              url.includes("/usage")
+                ? {
+                    project_id: projectId,
+                    conversation_id: null,
+                    from: "2026-10-01T00:00:00Z",
+                    to: "2026-10-02T00:00:00Z",
+                    group_by: "day",
+                    currency: null,
+                    pricing_revision: null,
+                    groups_truncated: false,
+                    groups: [],
+                    totals: {
+                      calls: 0,
+                      success_calls: 0,
+                      error_calls: 0,
+                      aborted_calls: 0,
+                      duration_ms: "0",
+                      prompt_tokens: metric,
+                      completion_tokens: metric,
+                      total_tokens: metric,
+                      reasoning_tokens: metric,
+                      cached_input_tokens: metric,
+                      estimated_cost: { known_amount: null, priced_calls: 0, unpriced_calls: 0 },
+                    },
+                  }
+                : [],
+            ),
+            { status: 200 },
+          ),
+      ),
+    );
+    const view = mount(App, { global: { plugins: [router] } });
+    await view.get('[aria-label="项目 UUID"]').setValue(projectId);
+    await view.get('[aria-label="服务端 Token"]').setValue(token);
+    await view.get("form").trigger("submit.prevent");
+    await flushPromises();
+    await view.get('nav a[href="/usage"]').trigger("click");
+    await flushPromises();
+    expect(view.text()).toContain("用量与估价");
+    expect(view.text()).toContain("无模型调用记录");
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).includes(`/projects/${projectId}/usage`));
+    expect(call).toBeDefined();
+    expect(new Headers(call![1]?.headers).get("authorization")).toBe(`Bearer ${token}`);
+    expect(
+      vi.mocked(fetch).mock.calls.every(([, init]) => !init?.method || init.method === "GET"),
+    ).toBe(true);
+    expect(localStorage.length).toBe(1);
+    expect(view.html()).not.toContain(token);
+    view.unmount();
+  });
   beforeEach(async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     vi.stubGlobal(

@@ -145,6 +145,16 @@ shared client 对应方法为 `correctBelief(projectId, beliefId, value)` 和
 升级时先停旧服务，执行 `pnpm --filter @mnemic/server db:migrate`，再启动新版；
 迁移会短暂锁住会话表，旧代码不支持新的唯一冲突处理，不应与迁移并行运行或单独回退旧代码。
 
+### 查看用量与估价
+
+对话内 `/usage` 查看当前项目近30天用量，`/usage --current` 限定当前物理会话；
+可加 `--from` / `--to`（带时区 ISO 时间）与 `--group-by model` 等分组参数。
+Web 连接项目后点击「用量」，可按时间和会话筛选并刷新，不调用模型。
+
+未报告 token 不等于零，未估价调用不包含在已知金额中；费用只按服务端显式单价配置估算，非账单。
+后台提取与索引可能晚于回答落记录。使用与完整验收口径见 [用量客户端](docs/client-usage.md)，
+CSV/JSON 分页导出与价格配置见 [用量 API](docs/usage-reports.md)。
+
 ## 仓库结构
 
 ```text
