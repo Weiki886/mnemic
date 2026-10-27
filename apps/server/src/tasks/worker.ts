@@ -13,7 +13,7 @@ import {
 import { createPeriodicScheduler, parseTaskSchedules, type TaskSchedule } from "./scheduler.js";
 export type TaskHandler = (
   task: Readonly<ClaimedTask>,
-  context: { signal: AbortSignal },
+  context: { signal: AbortSignal; checkpoint: () => void },
 ) => Promise<void>;
 export interface WorkerOptions {
   db: PostgresJsDatabase;
@@ -25,6 +25,7 @@ export interface WorkerOptions {
   pollMs?: number;
   taskTimeoutMs?: number;
   schedules?: TaskSchedule[];
+  beforePoll?: (signal: AbortSignal) => Promise<void>;
   logger?: { warn(message: string): void };
 }
 const Settings = z
@@ -55,6 +56,7 @@ export class TaskWorker {
   private readonly handlers: Map<TaskRow["type"], TaskHandler>;
   private readonly schedule: (signal?: AbortSignal) => Promise<number>;
   private readonly scheduleAbort = new AbortController();
+  private readonly beforePoll: WorkerOptions["beforePoll"];
   private readonly logger: WorkerOptions["logger"];
   private readonly active = new Map<string, Active>();
   private polling: Promise<number> | undefined;
@@ -65,7 +67,7 @@ export class TaskWorker {
   private stopExpiresAt: number | undefined;
   private stopped: Promise<{ drained: boolean }> | undefined;
   constructor(options: WorkerOptions) {
-    const { db, handlers, schedules = [], logger, ...raw } = options;
+    const { db, handlers, schedules = [], logger, beforePoll, ...raw } = options;
     const settings = Settings.parse(raw),
       heartbeatMs = settings.heartbeatMs ?? Math.floor(settings.leaseMs / 3);
     if (heartbeatMs * 2 >= settings.leaseMs) throw Error("invalid worker heartbeat");
@@ -90,6 +92,7 @@ export class TaskWorker {
       )
     )
       throw Error("unhandled task schedule");
+    this.beforePoll = beforePoll;
     this.db = db;
     this.handlers = registered;
     this.settings = { ...settings, heartbeatMs };
@@ -113,6 +116,8 @@ export class TaskWorker {
     return this.polling;
   }
   private async fill(): Promise<number> {
+    await this.beforePoll?.(this.scheduleAbort.signal);
+    if (this.stopping) return 0;
     await this.schedule(this.scheduleAbort.signal);
     if (this.stopping) return 0;
     const slots = this.settings.concurrency - this.active.size;
@@ -211,7 +216,15 @@ export class TaskWorker {
       this.stopExpired();
       checkDeadline();
       entry.controller.signal.throwIfAborted();
-      await handler(structuredClone(task), { signal: entry.controller.signal });
+      await handler(structuredClone(task), {
+        signal: entry.controller.signal,
+        checkpoint: () => {
+          this.stopExpired();
+          checkDeadline();
+          entry.controller.signal.throwIfAborted();
+          if (!entry.live || entry.lost) throw Error("task lease lost");
+        },
+      });
     } catch {
       failed = true;
     } finally {

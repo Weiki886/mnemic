@@ -1,9 +1,9 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { and, eq, sql } from "drizzle-orm";
 import { conversations, messages } from "../db/schema.js";
-import { extractCandidates } from "../extraction/extractor.js";
+import { extractCandidates, type ExtractionResult } from "../extraction/extractor.js";
 import { processCandidate } from "../gate/pipeline.js";
-import { ingestCandidate, type IngestRoute } from "../ingest/ingest.js";
+import { ingestCandidate, type IngestRoute, type IndexEmbeddingArgs } from "../ingest/ingest.js";
 import { resolveModel, type ResolveOptions } from "../providers/slots.js";
 import { indexBeliefVersion } from "../retrieval/embed.js";
 import { attachAuthority } from "../extraction/authority.js";
@@ -98,54 +98,10 @@ export async function runExtractionWriteback(
     });
     if (extraction.degraded) return empty;
 
-    const result: WritebackResult = {
-      ...empty,
-      extracted: extraction.candidates.length,
-      degraded: false,
-    };
-    for (const extracted of extraction.candidates) {
-      const candidate = args.channel
-        ? attachAuthority({ ...extracted, source_type: SOURCE_BY_CHANNEL[args.channel] })
-        : extracted;
-      phase = "gate";
-      const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
-      options.debugTrace?.({
-        event: "memory.gate.decided",
-        target_id: args.evidenceId,
-        detail: {
-          project_id: args.projectId,
-          conversation_id: evidence.conversationId,
-          decision: gate.decision,
-          ...(gate.decision === "PENDING" ? { pending_id: gate.pendingId } : {}),
-        },
-      });
-      if (gate.decision === "SKIP") {
-        result.skipped += 1;
-        continue;
-      }
-      if (gate.decision === "PENDING") {
-        result.pending += 1;
-        continue;
-      }
-      phase = "ingest";
-      const ingested = await ingestCandidate(db, args.projectId, gate.candidate, args.evidenceId, {
-        indexEmbedding: (a) => indexBeliefVersion(db, masterKey, a, scoped),
-      });
-      result.routes[ingested.route] += 1;
-      options.debugTrace?.({
-        event: "memory.write.completed",
-        target_id: args.evidenceId,
-        detail: {
-          project_id: args.projectId,
-          conversation_id: evidence.conversationId,
-          route: ingested.route,
-          observation_id: ingested.observationId,
-          belief_id: ingested.beliefId,
-          relation: ingested.relation,
-        },
-      });
-    }
-    return result;
+    phase = "ingest";
+    return await applyExtraction(db, args, evidence.conversationId, extraction, scoped, (a) =>
+      indexBeliefVersion(db, masterKey, a, scoped),
+    );
   } catch (error) {
     options.debugTrace?.({
       event: "memory.write.failed",
@@ -154,4 +110,63 @@ export async function runExtractionWriteback(
     });
     throw error;
   }
+}
+
+/** Shared DB-only business pipeline; durable workers buffer trace events until transaction commit. */
+export async function applyExtraction(
+  db: PostgresJsDatabase,
+  args: WritebackArgs,
+  conversationId: string,
+  extraction: ExtractionResult,
+  scoped: ResolveOptions,
+  indexEmbedding: (args: IndexEmbeddingArgs) => Promise<void>,
+): Promise<WritebackResult> {
+  const result: WritebackResult = {
+    routes: { created: 0, merged: 0, skipped: 0, conflict: 0 },
+    pending: 0,
+    skipped: 0,
+    extracted: extraction.candidates.length,
+    degraded: false,
+  };
+  for (const extracted of extraction.candidates) {
+    const candidate = args.channel
+      ? attachAuthority({ ...extracted, source_type: SOURCE_BY_CHANNEL[args.channel] })
+      : extracted;
+    const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
+    scoped.debugTrace?.({
+      event: "memory.gate.decided",
+      target_id: args.evidenceId,
+      detail: {
+        project_id: args.projectId,
+        conversation_id: conversationId,
+        decision: gate.decision,
+        ...(gate.decision === "PENDING" ? { pending_id: gate.pendingId } : {}),
+      },
+    });
+    if (gate.decision === "SKIP") {
+      result.skipped += 1;
+      continue;
+    }
+    if (gate.decision === "PENDING") {
+      result.pending += 1;
+      continue;
+    }
+    const ingested = await ingestCandidate(db, args.projectId, gate.candidate, args.evidenceId, {
+      indexEmbedding,
+    });
+    result.routes[ingested.route] += 1;
+    scoped.debugTrace?.({
+      event: "memory.write.completed",
+      target_id: args.evidenceId,
+      detail: {
+        project_id: args.projectId,
+        conversation_id: conversationId,
+        route: ingested.route,
+        observation_id: ingested.observationId,
+        belief_id: ingested.beliefId,
+        relation: ingested.relation,
+      },
+    });
+  }
+  return result;
 }
