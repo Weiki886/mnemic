@@ -380,3 +380,82 @@ export const modelUsage = pgTable(
     ),
   ],
 );
+
+export const memoryTaskTypeEnum = pgEnum("memory_task_type", [
+  "EXTRACT",
+  "REEMBED",
+  "DECAY",
+  "COMPILE_PROFILE",
+]);
+export const memoryTaskStatusEnum = pgEnum("memory_task_status", [
+  "queued",
+  "running",
+  "done",
+  "failed",
+  "dead",
+]);
+/** #21 owner: tasks. Payload contains references only, never Evidence text, keys or raw exceptions.
+ * failed = waiting for retry; terminal states are done/dead. Lease token fences stale workers. */
+export const memoryTasks = pgTable(
+  "memory_tasks",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    type: memoryTaskTypeEnum("type").notNull(),
+    payload: jsonb("payload").$type<Record<string, string>>().notNull(),
+    status: memoryTaskStatusEnum("status").notNull().default("queued"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    backoffBaseMs: integer("backoff_base_ms").notNull().default(1000),
+    backoffCapMs: integer("backoff_cap_ms").notNull().default(60000),
+    runAt: ts("run_at").notNull().defaultNow(),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: ts("lease_expires_at"),
+    lastErrorCode: text("last_error_code"),
+    finishedAt: ts("finished_at"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("memory_tasks_identity_key").on(t.projectId, t.type, t.idempotencyKey),
+    index("memory_tasks_due_idx").on(t.status, t.runAt, t.id),
+    index("memory_tasks_lease_idx").on(t.status, t.leaseExpiresAt, t.id),
+    index("memory_tasks_project_status_idx").on(t.projectId, t.status, t.createdAt, t.id),
+    check(
+      "memory_tasks_attempts_check",
+      sql`${t.maxAttempts} between 1 and 100 and ${t.attempts} between 0 and ${t.maxAttempts}`,
+    ),
+    check(
+      "memory_tasks_backoff_check",
+      sql`${t.backoffBaseMs} between 1 and ${t.backoffCapMs} and ${t.backoffCapMs} <= 86400000`,
+    ),
+    check("memory_tasks_key_check", sql`${t.idempotencyKey} ~ '^[A-Za-z0-9._:-]{1,200}$'`),
+    check(
+      "memory_tasks_lease_check",
+      sql`(
+    ${t.status} = 'running' and ${t.leaseToken} is not null and ${t.leaseExpiresAt} is not null and ${t.attempts} > 0
+  ) or (${t.status} <> 'running' and ${t.leaseToken} is null and ${t.leaseExpiresAt} is null)`,
+    ),
+    check(
+      "memory_tasks_terminal_check",
+      sql`(${t.status} in ('done','dead')) = (${t.finishedAt} is not null)`,
+    ),
+    check(
+      "memory_tasks_error_check",
+      sql`${t.lastErrorCode} is null or ${t.lastErrorCode} in ('HANDLER_FAILED','TIMEOUT','LEASE_EXPIRED')`,
+    ),
+    check(
+      "memory_tasks_payload_check",
+      sql`jsonb_typeof(${t.payload}) = 'object' and (
+    (${t.type} in ('DECAY','COMPILE_PROFILE') and ${t.payload} = '{}'::jsonb) or
+    (${t.type} = 'EXTRACT' and ${t.payload} ? 'evidence_id' and ${t.payload} - 'evidence_id' = '{}'::jsonb and
+      jsonb_typeof(${t.payload}->'evidence_id') = 'string' and ${t.payload}->>'evidence_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') or
+    (${t.type} = 'REEMBED' and ${t.payload} ? 'belief_version_id' and ${t.payload} - 'belief_version_id' = '{}'::jsonb and
+      jsonb_typeof(${t.payload}->'belief_version_id') = 'string' and ${t.payload}->>'belief_version_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  )`,
+    ),
+  ],
+);
