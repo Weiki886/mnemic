@@ -62,6 +62,7 @@ export class TaskWorker {
   private started = false;
   private stopping = false;
   private abandoned = false;
+  private stopExpiresAt: number | undefined;
   private stopped: Promise<{ drained: boolean }> | undefined;
   constructor(options: WorkerOptions) {
     const { db, handlers, schedules = [], logger, ...raw } = options;
@@ -123,8 +124,11 @@ export class TaskWorker {
       leaseMs: this.settings.leaseMs,
     });
     // A stop deadline can expire while SQL is in flight. Never start/ack abandoned claims.
-    if (this.abandoned) return 0;
+    if (this.stopExpired()) return 0;
+    let started = 0;
     for (const task of tasks) {
+      if (this.stopExpired()) break;
+      started++;
       const entry: Active = {
         controller: new AbortController(),
         promise: Promise.resolve(),
@@ -137,16 +141,32 @@ export class TaskWorker {
         .catch(() => this.warn("task worker persistence failed"))
         .finally(() => this.active.delete(task.id));
     }
-    return tasks.length;
+    return started;
   }
   private clearTimers(entry: Active) {
     if (entry.heartbeat) clearTimeout(entry.heartbeat);
     if (entry.deadline) clearTimeout(entry.deadline);
   }
-  private heartbeat(entry: Active, lease: TaskLease) {
-    if (!entry.live || entry.controller.signal.aborted || this.abandoned) return;
+  private abandon(): void {
+    if (this.abandoned) return;
+    this.abandoned = true;
+    for (const entry of this.active.values()) {
+      this.clearTimers(entry);
+      entry.controller.abort();
+    }
+  }
+  private stopExpired(): boolean {
+    if (this.stopExpiresAt !== undefined && performance.now() >= this.stopExpiresAt) this.abandon();
+    return this.abandoned;
+  }
+  private heartbeat(entry: Active, lease: TaskLease, checkDeadline: () => void) {
+    if (!entry.live) return;
+    checkDeadline();
+    if (this.stopExpired() || entry.controller.signal.aborted) return;
     entry.heartbeat = setTimeout(() => {
-      if (!entry.live || entry.controller.signal.aborted || this.abandoned) return;
+      if (!entry.live) return;
+      checkDeadline();
+      if (this.stopExpired() || entry.controller.signal.aborted) return;
       entry.renewal = renewTaskLease(this.db, lease, this.settings.leaseMs)
         .then((ok) => {
           if (!ok) {
@@ -161,7 +181,7 @@ export class TaskWorker {
         })
         .finally(() => {
           entry.renewal = undefined;
-          this.heartbeat(entry, lease);
+          this.heartbeat(entry, lease, checkDeadline);
         });
     }, this.settings.heartbeatMs);
     entry.heartbeat.unref();
@@ -180,10 +200,12 @@ export class TaskWorker {
     };
     entry.deadline = setTimeout(expire, this.settings.taskTimeoutMs);
     entry.deadline.unref();
-    this.heartbeat(entry, lease);
+    this.heartbeat(entry, lease, checkDeadline);
     let failed = false;
     try {
+      if (this.stopExpired()) return;
       await assertTaskScope(this.db, task);
+      this.stopExpired();
       checkDeadline();
       entry.controller.signal.throwIfAborted();
       await handler(structuredClone(task), { signal: entry.controller.signal });
@@ -196,7 +218,7 @@ export class TaskWorker {
       this.clearTimers(entry);
       await entry.renewal;
     }
-    if (entry.lost || this.abandoned) return;
+    if (this.stopExpired() || entry.lost) return;
     if (entry.timedOut) await retryTask(this.db, lease, "TIMEOUT");
     else if (failed) {
       this.warn("task handler failed");
@@ -225,6 +247,9 @@ export class TaskWorker {
     this.stopping = true;
     this.scheduleAbort.abort();
     if (this.timer) clearTimeout(this.timer);
+    if (!this.polling && this.active.size === 0)
+      return (this.stopped = Promise.resolve({ drained: true }));
+    this.stopExpiresAt = performance.now() + deadline;
     const drain = async () => {
       while (this.polling || this.active.size) {
         if (this.polling) await this.polling.catch(() => {});
@@ -234,20 +259,15 @@ export class TaskWorker {
     };
     this.stopped = (async () => {
       let timer: NodeJS.Timeout | undefined;
-      const drained = await Promise.race([
+      const finished = await Promise.race([
         drain(),
         new Promise<false>((resolve) => {
           timer = setTimeout(() => resolve(false), deadline);
         }),
       ]);
       if (timer) clearTimeout(timer);
-      if (!drained) {
-        this.abandoned = true;
-        for (const entry of this.active.values()) {
-          this.clearTimers(entry);
-          entry.controller.abort();
-        }
-      }
+      const drained = finished && !this.stopExpired();
+      if (!drained) this.abandon();
       return { drained };
     })();
     return this.stopped;

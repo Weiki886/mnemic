@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
+import * as taskRepository from "../src/tasks/repository.js";
 import { TaskWorker } from "../src/tasks/worker.js";
 import { enqueueTask, claimTasks } from "../src/tasks/repository.js";
 import { createPeriodicScheduler } from "../src/tasks/scheduler.js";
@@ -483,3 +484,39 @@ it.each(["cpu", "microtasks"] as const)(
     expect(await state(task.id)).toMatchObject({ status: "failed", last_error_code: "TIMEOUT" });
   },
 );
+
+it("a handler finishing after a blocked stop deadline cannot publish a late receipt", async () => {
+  const p = await project(),
+    task = await add(p),
+    block = gate();
+  let entered = false;
+  const w = new TaskWorker({
+    db: t.db,
+    projectId: p,
+    concurrency: 1,
+    taskTimeoutMs: 1000,
+    handlers: {
+      DECAY: async () => {
+        entered = true;
+        await block.promise;
+        const until = performance.now() + 100;
+        while (performance.now() < until) {
+          /* Block stop timer. */
+        }
+      },
+    },
+  });
+  workers.push(w);
+  await w.tick();
+  await vi.waitFor(() => expect(entered).toBe(true));
+  const receipt = vi.spyOn(taskRepository, "completeTask");
+  try {
+    const stopping = w.stop(10);
+    block.release();
+    expect(await stopping).toEqual({ drained: false });
+    expect(receipt).not.toHaveBeenCalled();
+    expect((await state(task.id)).status).toBe("running");
+  } finally {
+    receipt.mockRestore();
+  }
+});

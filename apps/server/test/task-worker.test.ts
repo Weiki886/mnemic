@@ -67,3 +67,50 @@ it("periodic schedules require an own registered handler, not an inherited proto
       }),
   ).toThrow("unhandled task schedule");
 });
+it("stop deadlines also reject late claims when a microtask blocks the timer", async () => {
+  let release!: (rows: unknown[]) => void;
+  const pending = new Promise<unknown[]>((r) => {
+    release = r;
+  });
+  const db = { transaction: () => pending } as unknown as PostgresJsDatabase,
+    handler = vi.fn(async () => {});
+  const w = new TaskWorker({ db, handlers: { DECAY: handler } });
+  const tick = w.tick();
+  await Promise.resolve();
+  await Promise.resolve();
+  const stopping = w.stop(10);
+  const until = performance.now() + 50;
+  while (performance.now() < until) {
+    /* Deliberately block deadline timers. */
+  }
+  const id = "11111111-1111-4111-8111-111111111111";
+  release([
+    {
+      id,
+      projectId: id,
+      type: "DECAY",
+      payload: {},
+      idempotencyKey: "test",
+      attempts: 1,
+      maxAttempts: 5,
+      backoffBaseMs: 1000,
+      backoffCapMs: 60000,
+      runAt: new Date(),
+      leaseToken: id,
+      leaseExpiresAt: new Date(Date.now() + 1000),
+    },
+  ]);
+  expect(await tick).toBe(0);
+  expect(await stopping).toEqual({ drained: false });
+  expect(handler).not.toHaveBeenCalled();
+});
+it("an idle worker stops at zero budget without touching the database", async () => {
+  const db = new Proxy({} as PostgresJsDatabase, {
+    get() {
+      throw Error("DB must stay unused");
+    },
+  });
+  const worker = new TaskWorker({ db, handlers: { DECAY: async () => {} } });
+  expect(await worker.stop(0)).toEqual({ drained: true });
+  expect(await worker.tick()).toBe(0);
+});
