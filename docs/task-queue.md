@@ -93,7 +93,8 @@ stateDiagram-v2
 
 心跳单飞，不积压续租请求。续租返回 false 或数据库失败时中止 signal，停止续租且不确认/重试
 不确定的租约。超时中止 signal；handler 真正退出后，若仍持有有效租约才记录 TIMEOUT 并退避。
-普通 handler 异常只写 HANDLER_FAILED。所有警告使用固定文案，logger 抛错不回退原始对象。
+执行截止时间以 performance.now 单调时钟捕获，在 handler 前及退出时复查，
+防止 CPU/连续微任务阻塞定时器后被误记成功。普通 handler 异常只写 HANDLER_FAILED。所有警告使用固定文案，logger 抛错不回退原始对象。
 
 **取消是协作式的**：JavaScript Promise 不会被强制终止。不响应 signal 的 handler 继续占用本地槽位，
 不能提前释放槽位后悄悄叠加新执行。超时会停止后续心跳；在途续租 SQL 仍可能完成一次。

@@ -453,3 +453,33 @@ it("a broken periodic project cannot block healthy schedules, and failures are r
   expect(await t.sql`select id from memory_tasks where project_id=${bad}`).toHaveLength(0);
   expect(errors).toEqual(["fixed failure"]);
 });
+
+it.each(["cpu", "microtasks"] as const)(
+  "%s execution cannot outrun the deadline timer and get acknowledged as success",
+  async (mode) => {
+    const p = await project(),
+      task = await add(p);
+    let entered = false;
+    const w = new TaskWorker({
+      db: t.db,
+      projectId: p,
+      taskTimeoutMs: 100,
+      leaseMs: 1000,
+      heartbeatMs: 200,
+      handlers: {
+        DECAY: async () => {
+          entered = true;
+          const until = performance.now() + 160;
+          while (performance.now() < until) {
+            if (mode === "microtasks") await Promise.resolve();
+          }
+        },
+      },
+    });
+    workers.push(w);
+    await w.tick();
+    await vi.waitFor(async () => expect((await state(task.id)).status).not.toBe("running"));
+    expect(entered).toBe(true);
+    expect(await state(task.id)).toMatchObject({ status: "failed", last_error_code: "TIMEOUT" });
+  },
+);

@@ -169,21 +169,29 @@ export class TaskWorker {
   private async execute(task: ClaimedTask, entry: Active): Promise<void> {
     const lease = { id: task.id, projectId: task.projectId, leaseToken: task.leaseToken };
     const handler = this.handlers.get(task.type)!;
-    entry.deadline = setTimeout(() => {
+    const expiresAt = performance.now() + this.settings.taskTimeoutMs;
+    const expire = () => {
       entry.timedOut = true;
       entry.controller.abort();
       if (entry.heartbeat) clearTimeout(entry.heartbeat);
-    }, this.settings.taskTimeoutMs);
+    };
+    const checkDeadline = () => {
+      if (!entry.timedOut && performance.now() >= expiresAt) expire();
+    };
+    entry.deadline = setTimeout(expire, this.settings.taskTimeoutMs);
     entry.deadline.unref();
     this.heartbeat(entry, lease);
     let failed = false;
     try {
       await assertTaskScope(this.db, task);
+      checkDeadline();
       entry.controller.signal.throwIfAborted();
       await handler(structuredClone(task), { signal: entry.controller.signal });
     } catch {
       failed = true;
     } finally {
+      // CPU work or a continuous microtask chain can prevent the timer from running at all.
+      checkDeadline();
       entry.live = false;
       this.clearTimers(entry);
       await entry.renewal;
