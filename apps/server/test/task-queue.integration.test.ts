@@ -203,7 +203,7 @@ it("retry uses persisted exponential delays with a cap, and the last failed atte
   expect(dead[0]).toMatchObject({ attempts: 4, status: "dead", lastErrorCode: "HANDLER_FAILED" });
   expect(await listDeadTasks(t.db, { projectId: uuidv7() })).toEqual([]);
 });
-it("a crashed final attempt moves to dead on the next bounded claim, without a sixth invocation", async () => {
+it("a crashed final attempt moves to dead on the next bounded claim, without an extra invocation", async () => {
   const f = await seed();
   await queued(f.projectId, { maxAttempts: 1 });
   const [task] = await claimTasks(t.db, { projectId: f.projectId });
@@ -329,4 +329,58 @@ it("exhausted recovery is bounded to 100 rows per claim and dead queries paginat
   expect(first).toHaveLength(60);
   expect(second).toHaveLength(41);
   expect(new Set([...first, ...second].map((r) => r.id)).size).toBe(101);
+});
+
+it("the same identity cannot silently replace a valid reference with a different Evidence", async () => {
+  const f = await seed(),
+    key = uuidv7(),
+    second = uuidv7();
+  const [source] = await t.sql`select conversation_id from messages where id=${f.evidence}`;
+  await t.sql`insert into messages(id,conversation_id,speaker,raw_text,msg_time) values(${second},${source!.conversation_id},'user','second',now())`;
+  const request = {
+    projectId: f.projectId,
+    type: "EXTRACT",
+    payload: { evidence_id: f.evidence },
+    idempotencyKey: key,
+  };
+  const original = await enqueueTask(t.db, request);
+  await expect(enqueueTask(t.db, { ...request, payload: { evidence_id: second } })).rejects.toThrow(
+    "task identity conflict",
+  );
+  expect(
+    (await t.sql`select payload from memory_tasks where id=${original.task.id}`)[0]!.payload,
+  ).toEqual({ evidence_id: f.evidence });
+});
+it("caller mutation during a lease wait cannot redirect completion to another claimed task", async () => {
+  const f = await seed();
+  await queued(f.projectId);
+  await queued(f.projectId);
+  const [first, second] = await claimTasks(t.db, { projectId: f.projectId, limit: 2 });
+  const input = { ...first! };
+  let completion: Promise<boolean> | undefined;
+  try {
+    await t.db.transaction(async (tx) => {
+      const { sql } = await import("drizzle-orm");
+      await tx.execute(sql`select id from memory_tasks where id=${first!.id} for update`);
+      completion = completeTask(t.db, input);
+      await vi.waitFor(
+        async () => {
+          const [r] =
+            await t.sql`select count(*)::int n from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and query like '%"memory_tasks"%'`;
+          expect(r!.n).toBeGreaterThan(0);
+        },
+        { timeout: 1000, interval: 10 },
+      );
+      Object.assign(input, second);
+    });
+    expect(await completion).toBe(true);
+    expect((await t.sql`select status from memory_tasks where id=${first!.id}`)[0]!.status).toBe(
+      "done",
+    );
+    expect((await t.sql`select status from memory_tasks where id=${second!.id}`)[0]!.status).toBe(
+      "running",
+    );
+  } finally {
+    await completion;
+  }
 });
