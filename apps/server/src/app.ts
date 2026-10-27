@@ -22,6 +22,7 @@ import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
 import { sanitizeText } from "./gate/secrets.js";
 import { createModelDebug } from "./debug/model-content.js";
+import type { TaskWorker } from "./tasks/worker.js";
 import { createDebugTrace } from "./debug/trace.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
@@ -52,6 +53,8 @@ export interface BuildAppOptions {
   chatDeps?: { retrieveFn?: typeof retrieve; streamTimeoutMs?: number } | undefined;
   /** 停机等待异步写回任务的超时上限（毫秒），默认 10s；测试可调小 */
   shutdownDrainMs?: number | undefined;
+  /** Explicit handler-backed engine only. No default worker until durable EXTRACT is wired. */
+  taskWorker?: Pick<TaskWorker, "start" | "stop">;
   /** CORS 允许的源（#8 Web 记忆中心跨源调 API）；未配置则不启用 CORS */
   corsOrigin?: string | undefined;
 }
@@ -125,6 +128,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     reply.header("x-request-id", request.id);
   });
 
+  if (options.taskWorker)
+    app.addHook("onReady", async () => {
+      options.taskWorker!.start();
+    });
+
   // 优雅停机衔接异步写回（#62）：app.close() 先等 chat commit 的 pending
   // 写回任务排空，否则刚返回成功的 commit 在停机时静默丢失；挂死任务超时放行
   app.addHook("onClose", async () => {
@@ -132,7 +140,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
-        waitForChatJobs(),
+        (async () => {
+          if (options.taskWorker) {
+            try {
+              const result = await options.taskWorker.stop(drainMs);
+              if (!result.drained) app.log.warn("task worker shutdown drain timeout");
+            } catch {
+              app.log.warn("task worker shutdown failed");
+            }
+          }
+          await waitForChatJobs();
+        })(),
         new Promise<void>((resolve) => {
           timer = setTimeout(() => {
             app.log.warn({ drainMs }, "shutdown drain timeout: pending writeback jobs abandoned");

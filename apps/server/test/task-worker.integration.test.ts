@@ -275,15 +275,13 @@ it("revalidates JSON references before handler execution, never trusts a persist
   await t.sql`insert into messages(id,conversation_id,speaker,raw_text,msg_time) values(${evidence},${conversation},'user','secret',now())`;
   const { memoryTasks } = await import("../src/db/schema.js");
   const id = uuidv7();
-  await t.db
-    .insert(memoryTasks)
-    .values({
-      id,
-      projectId: p,
-      type: "EXTRACT",
-      payload: { evidence_id: evidence },
-      idempotencyKey: uuidv7(),
-    });
+  await t.db.insert(memoryTasks).values({
+    id,
+    projectId: p,
+    type: "EXTRACT",
+    payload: { evidence_id: evidence },
+    idempotencyKey: uuidv7(),
+  });
   const handler = vi.fn(async () => {});
   const w = new TaskWorker({ db: t.db, projectId: p, handlers: { EXTRACT: handler } });
   workers.push(w);
@@ -363,4 +361,78 @@ it("configuration fails before background work for empty handlers, unsafe budget
     expect(
       () => new TaskWorker({ db: t.db, handlers: { DECAY: async () => {} }, ...options }),
     ).toThrow();
+});
+
+it("timeout does not free an uncooperative handler's slot; its late return cannot become success", async () => {
+  const p = await project(),
+    first = await add(p),
+    second = await add(p),
+    block = gate();
+  let signal!: AbortSignal,
+    entered = false;
+  const w = new TaskWorker({
+    db: t.db,
+    projectId: p,
+    concurrency: 1,
+    taskTimeoutMs: 100,
+    handlers: {
+      DECAY: async (_row, ctx) => {
+        entered = true;
+        signal = ctx.signal;
+        await block.promise;
+      },
+    },
+  });
+  workers.push(w);
+  await w.tick();
+  await vi.waitFor(() => expect(entered).toBe(true));
+  await vi.waitFor(() => expect(signal.aborted).toBe(true));
+  expect(await w.tick()).toBe(0);
+  expect((await state(second.id)).attempts).toBe(0);
+  block.release();
+  await vi.waitFor(async () => expect((await state(first.id)).status).toBe("failed"));
+  expect((await state(first.id)).last_error_code).toBe("TIMEOUT");
+});
+it("a failed heartbeat aborts conservatively without publishing success or exposing DB details", async () => {
+  const p = await project(),
+    task = await add(p),
+    logs: string[] = [];
+  let entered = false,
+    aborted = false;
+  const w = new TaskWorker({
+    db: t.db,
+    projectId: p,
+    leaseMs: 900,
+    heartbeatMs: 150,
+    logger: { warn: (s) => logs.push(s) },
+    handlers: {
+      DECAY: async (_row, { signal }) => {
+        entered = true;
+        await new Promise<void>((resolve) =>
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+      },
+    },
+  });
+  workers.push(w);
+  await w.tick();
+  await vi.waitFor(() => expect(entered).toBe(true));
+  const spy = vi
+    .spyOn(t.db, "transaction")
+    .mockRejectedValueOnce(Error("DB sk-private01234567890123456789"));
+  try {
+    await vi.waitFor(() => expect(aborted).toBe(true));
+    expect((await state(task.id)).status).toBe("running");
+    expect(logs).toContain("task worker lease unavailable");
+    expect(JSON.stringify(logs)).not.toContain("sk-private");
+  } finally {
+    spy.mockRestore();
+  }
 });
