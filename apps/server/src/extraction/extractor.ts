@@ -12,6 +12,7 @@ import { CandidateSchema } from "./schema.js";
  */
 
 export interface ExtractOptions {
+  signal?: AbortSignal;
   /** 注入"今天"（YYYY-MM-DD），保证时间分类可复现；缺省取当前日期 */
   today?: string;
   maxAttempts?: number;
@@ -72,12 +73,15 @@ export async function extractCandidates(
   let lastError = "未知错误";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    options.signal?.throwIfAborted();
     try {
       const { text } = await generateText({
         model,
+        ...(options.signal ? { ...(options.signal ? { abortSignal: options.signal } : {}) } : {}),
         prompt: buildExtractionPrompt(input, today, feedback),
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       });
+      options.signal?.throwIfAborted();
       const parsed = parseCandidates(text);
       if (parsed) {
         return {
@@ -91,6 +95,7 @@ export async function extractCandidates(
       feedback = lastError;
       options.logger?.warn({ attempt, input: input.slice(0, 80) }, "extraction attempt failed");
     } catch (err) {
+      options.signal?.throwIfAborted();
       lastError = err instanceof Error ? err.message : String(err);
       feedback = `调用失败：${lastError}`;
       options.logger?.warn({ attempt, err: lastError }, "extraction attempt error");
