@@ -436,3 +436,20 @@ it("a failed heartbeat aborts conservatively without publishing success or expos
     spy.mockRestore();
   }
 });
+
+it("a broken periodic project cannot block healthy schedules, and failures are reported without payloads", async () => {
+  const p = await project(),
+    bad = uuidv7(),
+    errors: string[] = [];
+  const configs = [
+    { projectId: bad, name: "bad", everyMs: 60000 },
+    { projectId: p, name: "good", everyMs: 60000 },
+  ];
+  const run = createPeriodicScheduler(t.db, configs, () => {
+    errors.push("fixed failure");
+  });
+  expect(await run()).toBe(1);
+  expect(await t.sql`select id from memory_tasks where project_id=${p}`).toHaveLength(1);
+  expect(await t.sql`select id from memory_tasks where project_id=${bad}`).toHaveLength(0);
+  expect(errors).toEqual(["fixed failure"]);
+});

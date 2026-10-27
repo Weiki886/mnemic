@@ -91,7 +91,9 @@ export class TaskWorker {
     this.handlers = new Map(entries as [TaskRow["type"], TaskHandler][]);
     this.settings = { ...settings, heartbeatMs };
     this.logger = logger;
-    this.schedule = createPeriodicScheduler(db, schedules);
+    this.schedule = createPeriodicScheduler(db, schedules, () =>
+      this.warn("task schedule enqueue failed"),
+    );
   }
   private warn(message: string) {
     try {
