@@ -79,16 +79,18 @@ export class TaskWorker {
     )
       throw Error("invalid task handlers");
     // Validate and snapshot schedules without relying on caller-owned objects during future ticks.
+    const registered = new Map(entries as [TaskRow["type"], TaskHandler][]);
     const planned = parseTaskSchedules(schedules);
     if (
       planned.some(
         (p) =>
-          !handlers.COMPILE_PROFILE || (settings.projectId && p.projectId !== settings.projectId),
+          !registered.has("COMPILE_PROFILE") ||
+          (settings.projectId && p.projectId !== settings.projectId),
       )
     )
       throw Error("unhandled task schedule");
     this.db = db;
-    this.handlers = new Map(entries as [TaskRow["type"], TaskHandler][]);
+    this.handlers = registered;
     this.settings = { ...settings, heartbeatMs };
     this.logger = logger;
     this.schedule = createPeriodicScheduler(db, schedules, () =>

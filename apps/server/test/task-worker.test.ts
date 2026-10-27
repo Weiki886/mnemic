@@ -51,3 +51,19 @@ it("a claim finishing after the stop deadline never starts a new handler", async
   expect(await tick).toBe(0);
   expect(handler).not.toHaveBeenCalled();
 });
+it("periodic schedules require an own registered handler, not an inherited prototype property", () => {
+  const handlers = Object.setPrototypeOf(
+    { DECAY: async () => {} },
+    { COMPILE_PROFILE: async () => {} },
+  );
+  expect(
+    () =>
+      new TaskWorker({
+        db: {} as PostgresJsDatabase,
+        handlers,
+        schedules: [
+          { projectId: "11111111-1111-4111-8111-111111111111", name: "profile", everyMs: 1000 },
+        ],
+      }),
+  ).toThrow("unhandled task schedule");
+});
