@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { enqueueConversationExtraction } from "../tasks/extraction-outbox.js";
 import { uuidv7 } from "uuidv7";
 import { conversations, messages, projects } from "../db/schema.js";
 import type { ResolveOptions } from "../providers/slots.js";
@@ -60,10 +61,35 @@ export async function commitConversation(
   masterKey: Buffer,
   conversationId: string,
   options: ResolveOptions & {
+    durableExtraction?: boolean;
     onJob: (job: () => Promise<void>) => void;
     logger?: { error: (obj: object, msg: string) => void };
   },
 ): Promise<CommitResult> {
+  if (options.durableExtraction)
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .for("update")
+        .limit(1);
+      if (!row) return { kind: "not_found" } as const;
+      try {
+        await loadConversationMessages(tx, row);
+      } catch (error) {
+        if (!(error instanceof ConversationContextError)) throw error;
+        return { kind: "context_invalid" } as const;
+      }
+      if (row.endedAt) return { kind: "already_ended", conversation: toApi(row) } as const;
+      const extractionTriggered = await enqueueConversationExtraction(tx, row.projectId, row.id);
+      const [updated] = await tx
+        .update(conversations)
+        .set({ endedAt: new Date() })
+        .where(eq(conversations.id, row.id))
+        .returning();
+      return { kind: "committed", conversation: toApi(updated!), extractionTriggered } as const;
+    });
   const [row] = await db
     .select()
     .from(conversations)
@@ -102,10 +128,13 @@ export async function scheduleConversationWriteback(
   conversationId: string,
   projectId: string,
   options: ResolveOptions & {
+    durableExtraction?: boolean;
     onJob: (job: () => Promise<void>) => void;
     logger?: { error: (obj: object, msg: string) => void };
   },
 ): Promise<boolean> {
+  if (options.durableExtraction)
+    return enqueueConversationExtraction(db, projectId, conversationId);
   // Only physical user directives and validated file Evidence; never assistants or inherited rows.
   const pendingMsgs = await db
     .select()

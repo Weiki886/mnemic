@@ -1,25 +1,26 @@
-# 表驱动任务队列（#21，拆分 1/3 + 2/3）
+# 表驱动任务队列（#21）
 
-已交付 `memory_tasks` 的迁移、内部仓储、worker 引擎及周期调度，owner 为 tasks（ADR-006）。
-Refs #21，尚不关闭 Issue：3/3 再接入真实 EXTRACT 与业务副作用幂等，并完成端到端验收。
-现有进程内 `trackJob`/`extracted_at` 路径未改，不能用本轮合并宣称聊天任务已经不会因崩溃丢失。
-不新增 Redis、依赖、公开 HTTP 端点或客户端命令。默认服务入口尚未创建 worker；
-只有受信代码显式注入真实处理器与引擎时才会运行，不会用空处理器把任务伪造成成功。
+已交付 `memory_tasks`、worker、周期调度及真实 EXTRACT/REEMBED 链路，owner 为 tasks（ADR-006）。
+正式 `src/index.ts` 在 DB 与 master key 齐备时启用持久消费，不用空处理器伪造成功。
+消息、文件 Evidence 和提取 outbox 同事务持久化；提取成功后才置 extracted_at。
+库调用 `buildApp` 通过 `extractionQueue: {}` 显式启用，缺省保留兼容的进程内路径；
+它与外部注入的 `taskWorker` 互斥。正式服务没有退回进程内写回的环境开关。
+不新增 Redis、依赖或公开队列 HTTP 端点。
 
 ## 任务与身份
 
 `enqueueTask(db, input)` 严格校验输入，再验证项目/引用归属；返回 `{task, created}`。
 
-| type            | payload                     | 本轮执行器 |
-| --------------- | --------------------------- | ---------- |
-| EXTRACT         | `{evidence_id: UUID}`       | 未接线     |
-| REEMBED         | `{belief_version_id: UUID}` | 未接线     |
-| DECAY           | `{}`                        | 未接线     |
-| COMPILE_PROFILE | `{}`                        | 未接线     |
+| type            | payload                     | 本轮执行器                       |
+| --------------- | --------------------------- | -------------------------------- |
+| EXTRACT         | `{evidence_id: UUID}`       | 真实提取、Gate、ingest、Resolver |
+| REEMBED         | `{belief_version_id: UUID}` | 单版本派生索引写入               |
+| DECAY           | `{}`                        | 未接线                           |
+| COMPILE_PROFILE | `{}`                        | 未接线                           |
 
 payload 只存引用，不复制 Evidence、prompt、模型回答、配置或候选正文。
 JSON 引用不是数据库 FK：入队时在事务中沿消息→会话或版本→Belief 校验项目归属并加 key-share 锁；
-未来 handler 执行时仍必须重新验证引用存在、归属正确且未被删除，不能信任旧 JSON。
+handler 执行时仍会重新验证引用存在、归属正确且未被删除，不能信任旧 JSON。
 项目列有 FK；本轮不改变硬删除传播（#11）或提供任意载荷透传。
 
 幂等键在 `(project_id, type, idempotency_key)` 内唯一；1–200 个 ASCII 字母/数字/`._:-`，
@@ -27,7 +28,7 @@ JSON 引用不是数据库 FK：入队时在事务中沿消息→会话或版本
 避免不同项目互相压制。done/dead 后键仍保留，不会因重复 enqueue 重新执行。
 同键相同引用和重试配置返回旧任务；引用/重试配置冲突以固定 `task identity conflict` 拒绝，
 不覆盖旧行。原 `run_at` 不因重复入队变化；需要新一次计划执行时用新的稳定幂等键。
-这只是入队去重，不代表业务副作用已经 exactly-once。
+入队去重本身不是业务幂等；真实提取还使用后文的事务回执与 Evidence 完成标记。
 
 ## 状态与租约
 
@@ -75,7 +76,7 @@ stateDiagram-v2
 `TaskWorker` 导出自 `apps/server/src/tasks/worker.ts`，要求 db 与至少一个受信 handler。
 处理器按 EXTRACT/REEMBED/DECAY/COMPILE_PROFILE 注册；只认领注册表中的类型，未注册类型也
 不会被该 worker 清扫或标成成功。注册表在构造时复制；原型上的属性不算注册。
-每次 handler 获得独立的 task 副本和 `{signal: AbortSignal}`，不能通过改写对象重定向回执。
+每次 handler 获得独立的 task 副本和 `{signal: AbortSignal, checkpoint()}`，不能通过改写对象重定向回执。
 执行前重新校验 payload 与引用归属；当前版本、软删除、业务写入等策略仍由具体 handler 负责。
 
 | 设置          | 默认             | 范围                             |
@@ -112,8 +113,8 @@ stateDiagram-v2
 
 Fastify 通过显式 `buildApp({taskWorker})` 在 ready 时启动、close 时排空，再等旧 chat jobs；
 共用 shutdownDrainMs 的总时间上限；注入 worker 时该值须为0–60000的整数，否则在启动前拒绝。
-worker 引用与排空预算在 buildApp 时捕获，外部修改 options 不会改变正在管理的实例。没有注入时保持旧行为；本轮不更改正式 index 的默认消费路径，
-也未替换 extracted_at/trackJob，避免在真实 handler 尚未就绪时消费队列。
+worker 引用与排空预算在 buildApp 时捕获，外部修改 options 不会改变正在管理的实例。
+`extractionQueue` 创建真实 EXTRACT/REEMBED worker，沿用相同生命周期和预算。
 
 ## 周期调度
 
@@ -139,9 +140,37 @@ name 为1–64个 ASCII 字母/数字/`._-`，everyMs 为100ms–30天，startsA
 这证明 worker 的崩溃恢复链路，不冒充“业务写入成功但回执前崩溃”场景下的 exactly-once。
 
 COMPILE_PROFILE 用注入的离线 handler 验证实际周期桶执行，不代表 #41 画像重写已实现。
-REEMBED/DECAY 同样只消费显式注册处理器；生产业务实现归其对应 Issue。
-3/3 再接线 EXTRACT，处理事务、业务幂等及异常窗口，并终验 #21。
+DECAY 和真实画像编译不注册，业务实现分别归 #10/#41。单版本 REEMBED 不代表模型切换后的全量重嵌入工具。
 
 任务表没有自动清理，幂等记录长期保留；保留/清理策略由后续运维需求决定。
 回滚应用代码可以保留新增表和枚举，不自动删除已持久化任务。
 测试使用隔离原生 PG 或 CI Testcontainers、离线模型，无付费模型调用、实际 .env 读取或用户服务重启。
+
+## 真实提取与原子回执（3/3）
+
+- JSON/SSE 在会话锁内一起写物理用户消息、脱敏文件和 `extract:<messageId>` outbox。
+  回答失败、取消或进程退出不撤销已经准入的用户 Evidence；worker 可在回答完成前处理它。
+- commit/resume 把归档、续聊引用和待提取物理 Evidence 入队放在同一事务；不复制或重新提取继承历史。
+- 每次执行从库中重读项目/会话/消息及文件父引用，拒绝助手、普通 tool 和人工修正专用会话。
+  文件权威强制 PROJECT_FILE。调用模型前和事务内都验证来源，内容发生变化则拒绝旧结果。
+- 提取模型在业务事务外调用；格式反馈失败耗尽属于失败任务，走退避/死信，不当成成功空结果。
+  已取消请求不发模型调用，取消后不再作反馈重试。用量观察独立记录真实调用，不随业务事务回滚。
+- 同项目 durable worker 提交使用 advisory transaction lock，再锁会话、消息和任务；不同项目可并行。
+  `completeTaskWith` 取得任务锁后用新语句复查 DB 时间，执行 DB-only 回调，最后再检查租约并标 done。
+  Gate 审计/PENDING、Observation/Belief/版本/消解轨迹、REEMBED outbox、extracted_at、done 一起提交或回滚。
+  末次 checkpoint 同步复查取消与单调截止时间；已发送的 COMMIT 无法撤回，不能承诺截止后的物理 I/O 为零。
+- 已成功 Evidence 的其他任务直接完成，不再调用模型或 Gate；同 Evidence 并发投递也只提交一套业务效果。
+  并发调用模型及提交前崩溃仍可能重复消耗 token，**不承诺付费调用 exactly-once**。
+- 新版本的 `embed:<versionId>` 索引任务同事务入队。模型嵌入在锁外计算，事务内替换该版本索引并标 done。
+  索引失败独立退避/死信，已写事实不重复佐证。语义召回有短暂索引延迟，期间仍可关键词召回；
+  `memory.write.completed` 表示事实事务已提交，不代表派生向量已经可用。成功事件只在事务提交后发送。
+
+启动及后续轮询会补齐历史 `extracted_at IS NULL` 且没有默认 EXTRACT 身份的物理用户/文件 Evidence，
+每批最多100条，批次未满时30秒再检查；排除人工修正专用会话，不触碰既有 done/dead/failed 身份。
+这会触发补处理历史消息的模型用量，应在部署前确认模型配置和待处理规模。
+旧进程内路径曾提前写入的非空 extracted_at 无法判断是否真正成功，本轮不自动清空或重放；
+需要操作者核查后修复。长期无模型配置或服务故障可耗尽重试进入 dead，配置修复不会自动重置死信。
+
+真实子进程故障注入分别停在业务事务提交前、业务提交后而常规 worker 回执前，再 SIGKILL：
+前者整体回滚并重领，后者任务已 done 不重复调用模型；两者最终均恰好一条 Observation、evidence_count=1
+及一个索引 outbox。这不覆盖任意外部工具副作用；未来 handler 必须自己定义幂等提交协议。

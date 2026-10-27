@@ -10,6 +10,7 @@ import { claimMessageForExtraction, runExtractionWriteback } from "./writeback.j
 import { ConversationContextError, loadConversationMessages, modelHistory } from "./context.js";
 import type { ProjectAttachment } from "@mnemic/shared/file-context";
 import { currentUserContent, prepareFileEvidence } from "./attachments.js";
+import { enqueueExtraction } from "../tasks/extraction-outbox.js";
 import { writeAuditLog } from "../gate/audit.js";
 
 /** 消息应答编排（#7）：存消息 → 检索注入 → 模型回答 → 存回答 → 异步写记忆 */
@@ -36,6 +37,7 @@ export type RespondResult =
     };
 
 export interface RespondOptions extends ResolveOptions {
+  durableExtraction?: boolean;
   onJob: (job: () => Promise<void>) => void;
   /** 测试注入检索替身（阈值放宽/故障注入）；缺省真实两路混合检索 */
   retrieveFn?: typeof retrieve;
@@ -58,6 +60,7 @@ export async function enterMessage(
   text: string,
   projectId?: string,
   attachments: ProjectAttachment[] = [],
+  durableExtraction = false,
 ) {
   const userMessageId = uuidv7();
   // 会话行锁内完成"未提交检查 + 写入消息"：与并发 commit 互斥，
@@ -106,6 +109,10 @@ export async function enterMessage(
           meta: { pattern: hit.pattern, count: hit.count },
         });
       files.push({ id, rawText: file.rawText, attachment: file.attachment });
+    }
+    if (durableExtraction) {
+      for (const id of [userMessageId, ...files.map((f) => f.id)])
+        await enqueueExtraction(tx, conv.projectId, id);
     }
     return {
       kind: "ok" as const,
@@ -208,6 +215,7 @@ export async function scheduleMessageWriteback(
   text: string,
   options: RespondOptions,
 ) {
+  if (options.durableExtraction) return; // Already persisted with Evidence admission.
   // 异步写记忆：先认领再提取（认领失败 = 并发 commit 已接管，无需重复提取）
   const projectId = entered.projectId;
   for (const evidence of [
@@ -245,7 +253,14 @@ export async function respondToMessage(
   options: RespondOptions,
   attachments: ProjectAttachment[] = [],
 ): Promise<RespondResult> {
-  const entered = await enterMessage(db, conversationId, text, projectId, attachments);
+  const entered = await enterMessage(
+    db,
+    conversationId,
+    text,
+    projectId,
+    attachments,
+    options.durableExtraction,
+  );
   if (entered.kind !== "ok") return { kind: entered.kind };
   const { model, candidates, abstained, history, system, userContent } = await prepareAnswer(
     db,
