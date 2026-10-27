@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { planPeriodicTasks, createPeriodicScheduler } from "../src/tasks/scheduler.js";
 const projectId = "11111111-1111-4111-8111-111111111111";
@@ -66,4 +66,36 @@ it("empty schedules do not inspect a DB connection or environment", async () => 
     },
   });
   expect(await createPeriodicScheduler(db, [])()).toBe(0);
+});
+
+it("stop during the DB clock read prevents enqueueing any new period", async () => {
+  const abort = new AbortController();
+  let release!: (rows: unknown[]) => void;
+  const clock = new Promise<unknown[]>((r) => {
+    release = r;
+  });
+  const transaction = vi.fn(async () => {
+    throw Error("enqueue must not start");
+  });
+  const db = { execute: () => clock, transaction } as unknown as PostgresJsDatabase;
+  const run = createPeriodicScheduler(db, [schedule]);
+  const pending = run(abort.signal);
+  abort.abort();
+  release([{ now: new Date("2026-01-01T00:00:01Z") }]);
+  expect(await pending).toBe(0);
+  expect(transaction).not.toHaveBeenCalled();
+});
+it("stop between scheduled enqueues prevents the remaining configurations from producing work", async () => {
+  const abort = new AbortController();
+  const transaction = vi.fn(async () => {
+    abort.abort();
+    return { created: true, task: {} };
+  });
+  const db = {
+    execute: async () => [{ now: new Date("2026-01-01T00:00:01Z") }],
+    transaction,
+  } as unknown as PostgresJsDatabase;
+  const run = createPeriodicScheduler(db, [schedule, { ...schedule, name: "second" }]);
+  expect(await run(abort.signal)).toBe(1);
+  expect(transaction).toHaveBeenCalledOnce();
 });

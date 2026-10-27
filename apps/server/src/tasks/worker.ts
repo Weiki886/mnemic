@@ -53,7 +53,8 @@ export class TaskWorker {
   private readonly db: PostgresJsDatabase;
   private readonly settings: z.infer<typeof Settings> & { heartbeatMs: number };
   private readonly handlers: Map<TaskRow["type"], TaskHandler>;
-  private readonly schedule: () => Promise<number>;
+  private readonly schedule: (signal?: AbortSignal) => Promise<number>;
+  private readonly scheduleAbort = new AbortController();
   private readonly logger: WorkerOptions["logger"];
   private readonly active = new Map<string, Active>();
   private polling: Promise<number> | undefined;
@@ -107,7 +108,7 @@ export class TaskWorker {
     return this.polling;
   }
   private async fill(): Promise<number> {
-    await this.schedule();
+    await this.schedule(this.scheduleAbort.signal);
     if (this.stopping) return 0;
     const slots = this.settings.concurrency - this.active.size;
     if (slots <= 0) return 0;
@@ -210,6 +211,7 @@ export class TaskWorker {
     const deadline = z.number().int().min(0).max(60000).parse(timeoutMs);
     if (this.stopped) return this.stopped;
     this.stopping = true;
+    this.scheduleAbort.abort();
     if (this.timer) clearTimeout(this.timer);
     const drain = async () => {
       while (this.polling || this.active.size) {

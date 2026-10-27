@@ -54,12 +54,14 @@ export function planPeriodicTasks(configs: unknown, at: Date) {
 export function createPeriodicScheduler(db: PostgresJsDatabase, input: unknown) {
   const configs = parseTaskSchedules(input),
     seen = new Map<string, string>();
-  return async (): Promise<number> => {
-    if (!configs.length) return 0;
+  return async (signal?: AbortSignal): Promise<number> => {
+    if (signal?.aborted || !configs.length) return 0;
     const [clock] = await db.execute(sql`select clock_timestamp() as now`);
+    if (signal?.aborted) return 0;
     const at = new Date(clock!.now as string | Date);
     let created = 0;
     for (const [i, config] of configs.entries()) {
+      if (signal?.aborted) break;
       const task = plans([config], at)[0];
       if (!task) continue;
       const name = `${task.projectId}:${task.idempotencyKey}`;
