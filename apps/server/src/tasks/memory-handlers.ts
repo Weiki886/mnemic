@@ -58,7 +58,7 @@ export function createMemoryTaskHandlers(
   return {
     EXTRACT: async (task, context) => {
       let conversationId: string | undefined;
-      let phase: "extraction" | "ingest" = "extraction";
+      let phase: "extraction" | "gate" | "ingest" = "extraction";
       try {
         context.checkpoint();
         const before = await source(db, task),
@@ -141,6 +141,9 @@ export function createMemoryTaskHandlers(
                   payload: { belief_version_id: args.beliefVersionId },
                   idempotencyKey: `embed:${args.beliefVersionId}`,
                 });
+              },
+              (next) => {
+                phase = next;
               },
             );
             await owned

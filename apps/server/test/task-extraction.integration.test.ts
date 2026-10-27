@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { createProvider } from "../src/providers/repository.js";
 import { claimTasks, enqueueTask } from "../src/tasks/repository.js";
@@ -186,3 +186,38 @@ it("expired model result cannot commit memory effects and emits a content-free f
   expect(JSON.stringify(events)).toContain("memory.write.failed");
   expect(JSON.stringify(events)).not.toContain("memory.write.completed");
 });
+it.each(["legacy", "durable"])(
+  "%s Gate failure preserves the gate diagnostic phase",
+  async (mode) => {
+    const pipeline = await import("../src/gate/pipeline.js");
+    const writeback = await import("../src/chat/writeback.js");
+    const f = await seed(),
+      events: unknown[] = [];
+    const opts = { factory: models.factory, debugTrace: (e: unknown) => events.push(e) };
+    const process = vi
+      .spyOn(pipeline, "processCandidate")
+      .mockRejectedValueOnce(Error("injected gate failure"));
+    try {
+      const work =
+        mode === "legacy"
+          ? writeback.runExtractionWriteback(
+              t.db,
+              TEST_MASTER_KEY,
+              { projectId: f.projectId, evidenceId: f.id, text: "database decision" },
+              opts,
+            )
+          : createMemoryTaskHandlers(t.db, TEST_MASTER_KEY, opts).EXTRACT(
+              await claim(f),
+              context(),
+            );
+      await expect(work).rejects.toThrow("injected gate failure");
+    } finally {
+      process.mockRestore();
+    }
+    expect(events).toContainEqual({
+      event: "memory.write.failed",
+      target_id: f.id,
+      detail: { project_id: f.projectId, conversation_id: f.conversationId, phase: "gate" },
+    });
+  },
+);

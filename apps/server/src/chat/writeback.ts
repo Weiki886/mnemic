@@ -31,9 +31,9 @@ export interface WritebackResult {
 }
 
 /**
- * 提取认领（#7，决策 6）：原子置 extracted_at，返回 true 表示认领成功。
+ * 兼容库调用的旧进程内提取认领（#7，决策 6）：原子置 extracted_at，返回 true 表示认领成功。
  * 同一句话绝不重复提取——单条路径与 commit 批提取都先认领再提取，竞态下只有一方成功。
- * 认领后提取失败仅落日志（重试归 A1 #21 队列），消息不会再次被提取。
+ * 认领后失败不重试；正式服务已改用 #21 outbox，仅成功后才写 extracted_at。
  */
 export async function claimMessageForExtraction(
   db: PostgresJsDatabase,
@@ -99,8 +99,16 @@ export async function runExtractionWriteback(
     if (extraction.degraded) return empty;
 
     phase = "ingest";
-    return await applyExtraction(db, args, evidence.conversationId, extraction, scoped, (a) =>
-      indexBeliefVersion(db, masterKey, a, scoped),
+    return await applyExtraction(
+      db,
+      args,
+      evidence.conversationId,
+      extraction,
+      scoped,
+      (a) => indexBeliefVersion(db, masterKey, a, scoped),
+      (next) => {
+        phase = next;
+      },
     );
   } catch (error) {
     options.debugTrace?.({
@@ -120,6 +128,7 @@ export async function applyExtraction(
   extraction: ExtractionResult,
   scoped: ResolveOptions,
   indexEmbedding: (args: IndexEmbeddingArgs) => Promise<void>,
+  onPhase?: (phase: "gate" | "ingest") => void,
 ): Promise<WritebackResult> {
   const result: WritebackResult = {
     routes: { created: 0, merged: 0, skipped: 0, conflict: 0 },
@@ -132,6 +141,7 @@ export async function applyExtraction(
     const candidate = args.channel
       ? attachAuthority({ ...extracted, source_type: SOURCE_BY_CHANNEL[args.channel] })
       : extracted;
+    onPhase?.("gate");
     const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
     scoped.debugTrace?.({
       event: "memory.gate.decided",
@@ -151,6 +161,7 @@ export async function applyExtraction(
       result.pending += 1;
       continue;
     }
+    onPhase?.("ingest");
     const ingested = await ingestCandidate(db, args.projectId, gate.candidate, args.evidenceId, {
       indexEmbedding,
     });

@@ -52,9 +52,9 @@ export type CommitResult =
   | { kind: "committed"; conversation: ConversationRow; extractionTriggered: boolean };
 
 /**
- * 会话提交（session commit，能力 1.8 的 A0 触发点）：置 ended_at，
- * 有消息时触发批提取（全量转写 → 完整写入路径，候选锚定最后一条消息）。
- * 批提取为进程内异步：返回时 extractionTriggered 仅表示"已登记"，不代表已完成。
+ * 会话提交：逐条提取物理 Evidence，出处锚定消息自身，不复制继承历史。
+ * 正式服务把归档与 outbox 同事务提交；兼容库调用保留进程内路径。
+ * extractionTriggered 仅表示已登记，不代表提取或向量索引已完成。
  */
 export async function commitConversation(
   db: PostgresJsDatabase,
