@@ -520,3 +520,44 @@ it("a handler finishing after a blocked stop deadline cannot publish a late rece
     receipt.mockRestore();
   }
 });
+
+it("never reclaims its own still-running timed-out handler when another concurrency slot is free", async () => {
+  const p = await project(),
+    first = await add(p),
+    block = gate(),
+    calls: string[] = [];
+  let entered = false,
+    signal!: AbortSignal;
+  const w = new TaskWorker({
+    db: t.db,
+    projectId: p,
+    concurrency: 2,
+    leaseMs: 400,
+    heartbeatMs: 100,
+    taskTimeoutMs: 100,
+    handlers: {
+      DECAY: async (row, ctx) => {
+        calls.push(row.id);
+        if (row.id === first.id) {
+          entered = true;
+          signal = ctx.signal;
+          await block.promise;
+        }
+      },
+    },
+  });
+  workers.push(w);
+  await w.tick();
+  await vi.waitFor(() => expect(entered).toBe(true));
+  await vi.waitFor(() => expect(signal.aborted).toBe(true));
+  const owned = await state(first.id);
+  await t.db.execute(
+    sql`select pg_sleep(greatest(0, extract(epoch from (${owned.lease_expires_at}::timestamptz-clock_timestamp()))) + 0.05)`,
+  );
+  const next = await add(p);
+  await w.tick();
+  await vi.waitFor(() => expect(calls).toContain(next.id));
+  expect(calls.filter((id) => id === first.id)).toHaveLength(1);
+  expect((await state(first.id)).attempts).toBe(1);
+  block.release();
+});

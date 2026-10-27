@@ -120,6 +120,7 @@ export class TaskWorker {
     const tasks = await claimTasks(this.db, {
       ...(this.settings.projectId ? { projectId: this.settings.projectId } : {}),
       types: [...this.handlers.keys()],
+      excludeTaskIds: [...this.active.keys()],
       limit: slots,
       leaseMs: this.settings.leaseMs,
     });
@@ -139,7 +140,9 @@ export class TaskWorker {
       this.active.set(task.id, entry);
       entry.promise = this.execute(task, entry)
         .catch(() => this.warn("task worker persistence failed"))
-        .finally(() => this.active.delete(task.id));
+        .finally(() => {
+          if (this.active.get(task.id) === entry) this.active.delete(task.id);
+        });
     }
     return started;
   }

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 import { uuidv7 } from "uuidv7";
@@ -46,6 +46,11 @@ const taskType = z.enum(["EXTRACT", "REEMBED", "DECAY", "COMPILE_PROFILE"]);
 const Claim = z
   .object({
     projectId: uuid.optional(),
+    excludeTaskIds: z
+      .array(uuid)
+      .max(32)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .default([]),
     types: z
       .array(taskType)
       .min(1)
@@ -165,6 +170,7 @@ export async function claimTasks(
   const scope = and(
     options.projectId ? eq(memoryTasks.projectId, options.projectId) : undefined,
     inArray(memoryTasks.type, options.types),
+    options.excludeTaskIds.length ? notInArray(memoryTasks.id, options.excludeTaskIds) : undefined,
   );
   return db.transaction(async (tx) => {
     // Bounded recovery of crashed final attempts; never silently invoke attempt max+1.

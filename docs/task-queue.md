@@ -41,7 +41,7 @@ stateDiagram-v2
   running --> dead: 失败/过期且已用尽尝试
 ```
 
-`claimTasks(db, {projectId?, types?, limit?, leaseMs?})` 是内部 worker 原语；不传项目时可认领全库，
+`claimTasks(db, {projectId?, types?, limit?, leaseMs?, excludeTaskIds?})` 是内部 worker 原语；不传项目时可认领全库，
 不是权限 API。类型数组必须非空且无重复；默认四种。limit 默认1、范围1–100，
 租约默认30s、范围1ms–300s。以 DB 时钟判断到期，`FOR UPDATE SKIP LOCKED` 跳过其他认领者，
 按 run_at/created_at/id 排序；每次认领增加 attempts（包括崩溃后重领）。
@@ -89,6 +89,8 @@ stateDiagram-v2
 `projectId` 可选，配置后只认领本项目，周期配置也必须属于本项目。
 `tick()` 串行化一次“调度→空闲槽位认领”，重复并发调用不扩大并发；等待 handler 不占用认领事务。
 `start()` 开始不重叠的轮询，重复 start 不建第二个循环；停止后的实例不可重新启动。
+认领时以有界 excludeTaskIds（最多32个）排除本实例尚未退出的任务，包含过期扫描，
+避免超时且不响应取消的任务在同实例被重领、覆盖原槽位。只有实际 promise 退出才释放槽位。
 并发上限是本实例，不是跨进程的全局信号量；多个实例的总执行量由部署方控制。
 
 心跳单飞，不积压续租请求。续租返回 false 或数据库失败时中止 signal，停止续租且不确认/重试
