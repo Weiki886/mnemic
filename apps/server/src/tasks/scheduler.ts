@@ -24,6 +24,9 @@ const Schedules = z
     (a) => new Set(a.map((s) => `${s.projectId}:${s.name}`)).size === a.length,
     "duplicate task schedule",
   );
+export function parseTaskSchedules(value: unknown) {
+  return Schedules.parse(value);
+}
 export type TaskSchedule = z.input<typeof Schedule>;
 type ParsedSchedule = z.infer<typeof Schedule>;
 function plans(configs: ParsedSchedule[], at: Date) {
@@ -45,11 +48,11 @@ function plans(configs: ParsedSchedule[], at: Date) {
 }
 /** Pure schedule specification: one current bucket, no historical replay after downtime. */
 export function planPeriodicTasks(configs: unknown, at: Date) {
-  return plans(Schedules.parse(configs), at);
+  return plans(parseTaskSchedules(configs), at);
 }
 /** In-memory cursor is an optimization only: DB uniqueness also deduplicates process restarts. */
 export function createPeriodicScheduler(db: PostgresJsDatabase, input: unknown) {
-  const configs = Schedules.parse(input),
+  const configs = parseTaskSchedules(input),
     seen = new Map<string, string>();
   return async (): Promise<number> => {
     if (!configs.length) return 0;
