@@ -1,9 +1,10 @@
-# 表驱动任务队列（#21，拆分 1/3）
+# 表驱动任务队列（#21，拆分 1/3 + 2/3）
 
-本轮交付 `memory_tasks` 的迁移与内部仓储，owner 为 tasks（ADR-006）。
-Refs #21，尚不关闭 Issue：worker、并发执行限制、周期调度与聊天 EXTRACT 的可靠接线分后续两轮完成。
+已交付 `memory_tasks` 的迁移、内部仓储、worker 引擎及周期调度，owner 为 tasks（ADR-006）。
+Refs #21，尚不关闭 Issue：3/3 再接入真实 EXTRACT 与业务副作用幂等，并完成端到端验收。
 现有进程内 `trackJob`/`extracted_at` 路径未改，不能用本轮合并宣称聊天任务已经不会因崩溃丢失。
-不新增 Redis、依赖、公开 HTTP 端点或客户端命令，也不自动运行任何新任务。
+不新增 Redis、依赖、公开 HTTP 端点或客户端命令。默认服务入口尚未创建 worker；
+只有受信代码显式注入真实处理器与引擎时才会运行，不会用空处理器把任务伪造成成功。
 
 ## 任务与身份
 
@@ -40,7 +41,7 @@ stateDiagram-v2
   running --> dead: 失败/过期且已用尽尝试
 ```
 
-`claimTasks(db, {projectId?, types?, limit?, leaseMs?})` 是内部 worker 原语；不传项目时可认领全库，
+`claimTasks(db, {projectId?, types?, limit?, leaseMs?, excludeTaskIds?})` 是内部 worker 原语；不传项目时可认领全库，
 不是权限 API。类型数组必须非空且无重复；默认四种。limit 默认1、范围1–100，
 租约默认30s、范围1ms–300s。以 DB 时钟判断到期，`FOR UPDATE SKIP LOCKED` 跳过其他认领者，
 按 run_at/created_at/id 排序；每次认领增加 attempts（包括崩溃后重领）。
@@ -57,7 +58,7 @@ stateDiagram-v2
 策略持久化，每项1ms–24h且 base≤cap。重试不再持有 lease，run_at 到期后才能重领。
 最后一次执行失败直接 dead；最后一次执行崩溃则在下一次 claim 的过期扫描中转 dead。
 该扫描每批最多100行，与本次认领 limit 独立；大量过期行需要后续 claim 继续扫描。
-因此没有 worker 调用 claim 时，过期状态不会自动变化；本轮没有定时清扫器。
+因此没有 worker 调用 claim 时，过期状态不会自动变化；worker 的每次认领复用此扫描。
 
 `last_error_code` 只允许 HANDLER_FAILED/TIMEOUT/LEASE_EXPIRED，不存异常消息/堆栈或 provider 响应。
 `listDeadTasks(db, {projectId, limit?, offset?})` 要求项目，默认50条、上限1000，按 created_at/id 稳定排序；
@@ -69,11 +70,77 @@ stateDiagram-v2
 旧 token 拒绝、等待锁后过期的三种操作、指数退避/封顶、最终死信、分页与项目隔离。
 新连接恢复证明持久层不依赖进程内状态，不等于完整 worker 进程重启验收。
 
-2/3 将提供同进程 worker、执行并发限制、停止排空与周期任务调度；3/3 再接线 EXTRACT，
-处理 handler 幂等、业务写入与任务回执、故障恢复，并终验 #21。
-租约 token 目前只保护队列行：旧 worker 若继续执行外部副作用，不会自动被数据库撤销；
-后续 handler 需用业务幂等键/事务及租约检查解决，不能将仓储层 fencing 冒充业务 exactly-once。
-REEMBED/DECAY/COMPILE_PROFILE 在本轮只有类型与引用契约，不伪造尚未实现的业务处理结果。
+## Worker 引擎（2/3）
+
+`TaskWorker` 导出自 `apps/server/src/tasks/worker.ts`，要求 db 与至少一个受信 handler。
+处理器按 EXTRACT/REEMBED/DECAY/COMPILE_PROFILE 注册；只认领注册表中的类型，未注册类型也
+不会被该 worker 清扫或标成成功。注册表在构造时复制；原型上的属性不算注册。
+每次 handler 获得独立的 task 副本和 `{signal: AbortSignal}`，不能通过改写对象重定向回执。
+执行前重新校验 payload 与引用归属；当前版本、软删除、业务写入等策略仍由具体 handler 负责。
+
+| 设置          | 默认             | 范围                             |
+| ------------- | ---------------- | -------------------------------- |
+| concurrency   | 2                | 1–32，每个 worker 实例的执行上限 |
+| leaseMs       | 30000            | 100–300000                       |
+| heartbeatMs   | floor(leaseMs/3) | 正整数且小于 leaseMs/2           |
+| pollMs        | 1000             | 10–60000                         |
+| taskTimeoutMs | 300000           | 10–3600000                       |
+
+`projectId` 可选，配置后只认领本项目，周期配置也必须属于本项目。
+`tick()` 串行化一次“调度→空闲槽位认领”，重复并发调用不扩大并发；等待 handler 不占用认领事务。
+`start()` 开始不重叠的轮询，重复 start 不建第二个循环；停止后的实例不可重新启动。
+认领时以有界 excludeTaskIds（最多32个）排除本实例尚未退出的任务，包含过期扫描，
+避免超时且不响应取消的任务在同实例被重领、覆盖原槽位。只有实际 promise 退出才释放槽位。
+并发上限是本实例，不是跨进程的全局信号量；多个实例的总执行量由部署方控制。
+
+心跳单飞，不积压续租请求。续租返回 false 或数据库失败时中止 signal，停止续租且不确认/重试
+不确定的租约。超时中止 signal；handler 真正退出后，若仍持有有效租约才记录 TIMEOUT 并退避。
+执行截止时间以 performance.now 单调时钟捕获，在 handler 前及退出时复查，
+防止 CPU/连续微任务阻塞定时器后被误记成功。普通 handler 异常只写 HANDLER_FAILED。所有警告使用固定文案，logger 抛错不回退原始对象。
+
+**取消是协作式的**：JavaScript Promise 不会被强制终止。不响应 signal 的 handler 继续占用本地槽位，
+不能提前释放槽位后悄悄叠加新执行。超时会停止后续心跳；在途续租 SQL 仍可能完成一次。
+其他 worker 可在租约过期后回收，因此具体 handler 仍须处理过期执行者可能产生的副作用。
+队列 token 不自动撤销外部操作，也不是停止模型计费的证明。
+
+`stop(timeoutMs=10000)` 停止发起新轮询和新周期入队，等待已发出的认领 SQL 与本地执行。
+超时后中止信号、停止续租；迟到的认领不启动 handler，迟到 handler 不再确认/重试。
+在途数据库语句不能被此接口撤回，可能留下 running 租约，待其他 worker 过期回收。
+停机也使用单调截止时间，在认领返回、调用/确认前、心跳和最终结果处复查，防止延后的定时器放行迟到工作。
+同步 CPU 工作无法被强制打断，可能延迟接口返回；事件循环恢复后仍按真实截止时间拒绝迟到回执。
+返回 `{drained}` 表示本地工作是否全部结束，不表示全库队列清空或所有任务成功；重复 stop 复用结果。
+
+Fastify 通过显式 `buildApp({taskWorker})` 在 ready 时启动、close 时排空，再等旧 chat jobs；
+共用 shutdownDrainMs 的总时间上限；注入 worker 时该值须为0–60000的整数，否则在启动前拒绝。
+worker 引用与排空预算在 buildApp 时捕获，外部修改 options 不会改变正在管理的实例。没有注入时保持旧行为；本轮不更改正式 index 的默认消费路径，
+也未替换 extracted_at/trackJob，避免在真实 handler 尚未就绪时消费队列。
+
+## 周期调度
+
+`COMPILE_PROFILE` 周期配置包含 projectId/name/everyMs/可选 startsAt（UTC epoch 默认0）。
+name 为1–64个 ASCII 字母/数字/`._-`，everyMs 为100ms–30天，startsAt 不早于 epoch；
+每个引擎最多100份配置，同项目/name 不能重复。必须已注册 COMPILE_PROFILE handler。
+目前没有 cron 语法、数据库配置 API、真实画像重写或默认空 handler。
+
+调度器用 DB 时钟计算当前时间桶；幂等键包含 name、间隔、起点与桶号，run_at 是桶起点。
+同桶跨 tick、跨实例、进程重启仍由队列唯一键去重。进程内游标只做优化且仅在入队成功后推进，
+按配置数量有界；某个项目不存在/入队失败只跳过该项，本轮固定告警一次，健康配置继续入队。
+停止信号在时钟读取后及每次入队前检查；已经发出的 SQL 可以完成，但不会继续产生后续项。
+
+停机期间不补跑全部历史周期，只在恢复时为当前桶产生一份任务；轮询间隔长于周期时同样合并遗漏桶。
+配置变更会产生新的时间桶身份；已经入队的旧任务不会自动删除。
+设置合理间隔并管理保留策略，周期生产并不等于每个任务已执行；真实业务仍取决于注册 handler。
+
+## 验收与限制
+
+2/3 额外验证了真实独立 Node worker 进程：任务进入 handler 后 SIGKILL，队列仍为 running；
+新进程等待租约到期，重领同一 ID，attempts=2，完成一条注入的离线审计副作用。
+测试核对实际 worker PID，直接 node --import tsx 启动，避免仅杀掉 CLI 包装进程。
+这证明 worker 的崩溃恢复链路，不冒充“业务写入成功但回执前崩溃”场景下的 exactly-once。
+
+COMPILE_PROFILE 用注入的离线 handler 验证实际周期桶执行，不代表 #41 画像重写已实现。
+REEMBED/DECAY 同样只消费显式注册处理器；生产业务实现归其对应 Issue。
+3/3 再接线 EXTRACT，处理事务、业务幂等及异常窗口，并终验 #21。
 
 任务表没有自动清理，幂等记录长期保留；保留/清理策略由后续运维需求决定。
 回滚应用代码可以保留新增表和枚举，不自动删除已持久化任务。

@@ -247,6 +247,7 @@ it("strict input validation rejects content/unknown task types and invalid budge
     { leaseMs: 0 },
     { types: [] },
     { types: ["DECAY", "DECAY"] },
+    { excludeTaskIds: Array.from({ length: 33 }, () => uuidv7()) },
   ];
   for (const options of invalidClaims) await expect(claimTasks(t.db, options)).rejects.toThrow();
   expect(await t.sql`select id from memory_tasks where project_id=${f.projectId}`).toHaveLength(0);

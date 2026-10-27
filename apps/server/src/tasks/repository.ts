@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 import { uuidv7 } from "uuidv7";
@@ -46,6 +46,11 @@ const taskType = z.enum(["EXTRACT", "REEMBED", "DECAY", "COMPILE_PROFILE"]);
 const Claim = z
   .object({
     projectId: uuid.optional(),
+    excludeTaskIds: z
+      .array(uuid)
+      .max(32)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .default([]),
     types: z
       .array(taskType)
       .min(1)
@@ -63,46 +68,67 @@ export type TaskRow = typeof memoryTasks.$inferSelect;
 export type ClaimedTask = TaskRow & { leaseToken: string; leaseExpiresAt: Date };
 export type TaskLease = { id: string; projectId: string; leaseToken: string };
 
+async function checkTaskReference(
+  tx: PostgresJsDatabase | Transaction,
+  input: z.infer<typeof Input>,
+) {
+  let scoped: { id: string } | undefined;
+  if (input.type === "EXTRACT") {
+    [scoped] = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(
+        and(
+          eq(messages.id, input.payload.evidence_id),
+          eq(conversations.projectId, input.projectId),
+        ),
+      )
+      .limit(1)
+      .for("key share");
+  } else if (input.type === "REEMBED") {
+    [scoped] = await tx
+      .select({ id: beliefVersions.id })
+      .from(beliefVersions)
+      .innerJoin(beliefs, eq(beliefVersions.beliefId, beliefs.id))
+      .where(
+        and(
+          eq(beliefVersions.id, input.payload.belief_version_id),
+          eq(beliefs.projectId, input.projectId),
+        ),
+      )
+      .limit(1)
+      .for("key share");
+  } else {
+    [scoped] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, input.projectId))
+      .limit(1)
+      .for("key share");
+  }
+  if (!scoped) throw Error("invalid task scope");
+}
+/** Revalidate persisted JSON references before a worker invokes a handler. Never spread a task row. */
+export async function assertTaskScope(db: PostgresJsDatabase, task: TaskRow): Promise<void> {
+  const input = Input.parse({
+    projectId: task.projectId,
+    type: task.type,
+    payload: task.payload,
+    idempotencyKey: task.idempotencyKey,
+    maxAttempts: task.maxAttempts,
+    backoffBaseMs: task.backoffBaseMs,
+    backoffCapMs: task.backoffCapMs,
+    runAt: task.runAt,
+  });
+  await db.transaction((tx) => checkTaskReference(tx, input));
+}
+
 /** Canonical type-specific reference payloads only. Repeated identity never changes the original task. */
 export async function enqueueTask(db: PostgresJsDatabase, value: unknown) {
   const input = Input.parse(value);
   return db.transaction(async (tx) => {
-    let scoped: { id: string } | undefined;
-    if (input.type === "EXTRACT") {
-      [scoped] = await tx
-        .select({ id: messages.id })
-        .from(messages)
-        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
-        .where(
-          and(
-            eq(messages.id, input.payload.evidence_id),
-            eq(conversations.projectId, input.projectId),
-          ),
-        )
-        .limit(1)
-        .for("key share");
-    } else if (input.type === "REEMBED") {
-      [scoped] = await tx
-        .select({ id: beliefVersions.id })
-        .from(beliefVersions)
-        .innerJoin(beliefs, eq(beliefVersions.beliefId, beliefs.id))
-        .where(
-          and(
-            eq(beliefVersions.id, input.payload.belief_version_id),
-            eq(beliefs.projectId, input.projectId),
-          ),
-        )
-        .limit(1)
-        .for("key share");
-    } else {
-      [scoped] = await tx
-        .select({ id: projects.id })
-        .from(projects)
-        .where(eq(projects.id, input.projectId))
-        .limit(1)
-        .for("key share");
-    }
-    if (!scoped) throw Error("invalid task scope");
+    await checkTaskReference(tx, input);
     const { runAt, ...persisted } = input;
     const [created] = await tx
       .insert(memoryTasks)
@@ -144,6 +170,7 @@ export async function claimTasks(
   const scope = and(
     options.projectId ? eq(memoryTasks.projectId, options.projectId) : undefined,
     inArray(memoryTasks.type, options.types),
+    options.excludeTaskIds.length ? notInArray(memoryTasks.id, options.excludeTaskIds) : undefined,
   );
   return db.transaction(async (tx) => {
     // Bounded recovery of crashed final attempts; never silently invoke attempt max+1.

@@ -22,6 +22,7 @@ import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
 import { sanitizeText } from "./gate/secrets.js";
 import { createModelDebug } from "./debug/model-content.js";
+import type { TaskWorker } from "./tasks/worker.js";
 import { createDebugTrace } from "./debug/trace.js";
 
 /** 明确映射的状态码 → 错误码；未列出的按 >=500 / 其余 4xx 两个兜底分支处理 */
@@ -52,6 +53,8 @@ export interface BuildAppOptions {
   chatDeps?: { retrieveFn?: typeof retrieve; streamTimeoutMs?: number } | undefined;
   /** 停机等待异步写回任务的超时上限（毫秒），默认 10s；测试可调小 */
   shutdownDrainMs?: number | undefined;
+  /** Explicit handler-backed engine only. No default worker until durable EXTRACT is wired. */
+  taskWorker?: Pick<TaskWorker, "start" | "stop">;
   /** CORS 允许的源（#8 Web 记忆中心跨源调 API）；未配置则不启用 CORS */
   corsOrigin?: string | undefined;
 }
@@ -62,6 +65,10 @@ const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.debugContent && !options.debugMode)
     throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
+  const taskWorker = options.taskWorker;
+  const drainMs = options.shutdownDrainMs ?? DEFAULT_SHUTDOWN_DRAIN_MS;
+  if (taskWorker && (!Number.isInteger(drainMs) || drainMs < 0 || drainMs > 60000))
+    throw new Error("managed worker shutdownDrainMs must be an integer from 0 to 60000");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const app = Fastify({
     logger: {
@@ -125,14 +132,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     reply.header("x-request-id", request.id);
   });
 
+  if (taskWorker)
+    app.addHook("onReady", async () => {
+      taskWorker.start();
+    });
+
   // 优雅停机衔接异步写回（#62）：app.close() 先等 chat commit 的 pending
   // 写回任务排空，否则刚返回成功的 commit 在停机时静默丢失；挂死任务超时放行
   app.addHook("onClose", async () => {
-    const drainMs = options.shutdownDrainMs ?? DEFAULT_SHUTDOWN_DRAIN_MS;
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
-        waitForChatJobs(),
+        (async () => {
+          if (taskWorker) {
+            try {
+              const result = await taskWorker.stop(drainMs);
+              if (!result.drained) app.log.warn("task worker shutdown drain timeout");
+            } catch {
+              app.log.warn("task worker shutdown failed");
+            }
+          }
+          await waitForChatJobs();
+        })(),
         new Promise<void>((resolve) => {
           timer = setTimeout(() => {
             app.log.warn({ drainMs }, "shutdown drain timeout: pending writeback jobs abandoned");
