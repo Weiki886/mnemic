@@ -106,7 +106,8 @@ stateDiagram-v2
 返回 `{drained}` 表示本地工作是否全部结束，不表示全库队列清空或所有任务成功；重复 stop 复用结果。
 
 Fastify 通过显式 `buildApp({taskWorker})` 在 ready 时启动、close 时排空，再等旧 chat jobs；
-共用 shutdownDrainMs 的总时间上限。没有注入时保持旧行为；本轮不更改正式 index 的默认消费路径，
+共用 shutdownDrainMs 的总时间上限；注入 worker 时该值须为0–60000的整数，否则在启动前拒绝。
+worker 引用与排空预算在 buildApp 时捕获，外部修改 options 不会改变正在管理的实例。没有注入时保持旧行为；本轮不更改正式 index 的默认消费路径，
 也未替换 extracted_at/trackJob，避免在真实 handler 尚未就绪时消费队列。
 
 ## 周期调度

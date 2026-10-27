@@ -65,6 +65,10 @@ const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.debugContent && !options.debugMode)
     throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
+  const taskWorker = options.taskWorker;
+  const drainMs = options.shutdownDrainMs ?? DEFAULT_SHUTDOWN_DRAIN_MS;
+  if (taskWorker && (!Number.isInteger(drainMs) || drainMs < 0 || drainMs > 60000))
+    throw new Error("managed worker shutdownDrainMs must be an integer from 0 to 60000");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const app = Fastify({
     logger: {
@@ -128,22 +132,21 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     reply.header("x-request-id", request.id);
   });
 
-  if (options.taskWorker)
+  if (taskWorker)
     app.addHook("onReady", async () => {
-      options.taskWorker!.start();
+      taskWorker.start();
     });
 
   // 优雅停机衔接异步写回（#62）：app.close() 先等 chat commit 的 pending
   // 写回任务排空，否则刚返回成功的 commit 在停机时静默丢失；挂死任务超时放行
   app.addHook("onClose", async () => {
-    const drainMs = options.shutdownDrainMs ?? DEFAULT_SHUTDOWN_DRAIN_MS;
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
         (async () => {
-          if (options.taskWorker) {
+          if (taskWorker) {
             try {
-              const result = await options.taskWorker.stop(drainMs);
+              const result = await taskWorker.stop(drainMs);
               if (!result.drained) app.log.warn("task worker shutdown drain timeout");
             } catch {
               app.log.warn("task worker shutdown failed");
