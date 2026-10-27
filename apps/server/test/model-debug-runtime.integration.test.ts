@@ -1,3 +1,10 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseDebugLine } from "@mnemic/shared/debug";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { MockLanguageModelV2 } from "ai/test";
@@ -213,3 +220,64 @@ it.each(["commit", "resume"] as const)(
     }
   },
 );
+
+it("actual HTTP JSONL is accepted by the offline CLI process with no content unless explicitly requested", async () => {
+  const f = await fixture({ debugMode: true, debugContent: true });
+  const dir = await mkdtemp(join(tmpdir(), "mnemic-debug-e2e-"));
+  try {
+    const conv = await f.api.createConversation(f.p);
+    await f.api.sendMessage(f.p, conv.id, "CLI_CAPTURED_DIRECTIVE");
+    await waitForChatJobs();
+    const log = f.log();
+    const accepted = log
+      .split("\n")
+      .filter(Boolean)
+      .map(parseDebugLine)
+      .filter((r) => r !== null);
+    expect(accepted.filter((r) => r.event.startsWith("model."))).toHaveLength(4);
+    const file = join(dir, "snapshot.jsonl");
+    await writeFile(file, log);
+    const path = (value: string) => fileURLToPath(new URL(value, import.meta.url));
+    const run = (content: boolean) =>
+      promisify(execFile)(
+        process.execPath,
+        [
+          path("../node_modules/tsx/dist/cli.mjs"),
+          "--tsconfig",
+          path("../tsconfig.json"),
+          path("../../cli/src/index.ts"),
+          "debug",
+          "--file",
+          file,
+          "--project",
+          f.p,
+          "--conversation",
+          conv.id,
+          "--json",
+          ...(content ? ["--content"] : []),
+        ],
+        {
+          env: {
+            ...process.env,
+            DEEPSEEK_API_KEY: "",
+            DASHSCOPE_API_KEY: "",
+            MNEMIC_SERVER_URL: "invalid-offline-server",
+          },
+          timeout: 15000,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+    const meta = await run(false);
+    expect(JSON.parse(meta.stdout).shown).toBe(5); // 4 model records + extraction metadata.
+    expect(meta.stdout).not.toContain("CLI_CAPTURED_DIRECTIVE");
+    const full = await run(true);
+    expect(full.stderr).toBe("");
+    expect(full.stdout).toContain("CLI_CAPTURED_DIRECTIVE");
+    expect(full.stdout).toContain("ANSWER [REDACTED]");
+    for (const value of [key, token, secret, masterHex, master64])
+      expect(full.stdout).not.toContain(value);
+  } finally {
+    await f.app.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

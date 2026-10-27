@@ -43,6 +43,10 @@
     "./memory": {
       "types": "./dist/memory.d.ts",
       "import": "./dist/memory.js"
+    },
+    "./debug": {
+      "types": "./dist/debug.d.ts",
+      "import": "./dist/debug.js"
     }
   },
   "scripts": {

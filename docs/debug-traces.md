@@ -1,7 +1,6 @@
-# 调试轨迹（#37，拆分 1/3 + 2/3）
+# 调试轨迹（#37）
 
-已交付服务端元数据轨迹、应用日志安全和显式开启的脱敏 prompt/生成文本捕获；Refs #37，不关闭 Issue。
-客户端查看、其他记忆操作入口的接线归 3/3。
+三部分交付：服务端元数据与日志安全、显式正文捕获、本地 CLI 查看器及人工记忆操作轨迹。
 不把内容复制到派生表，不新增数据库表、依赖、公开 debug API 或 Tools 执行器。
 
 ## 开关与输出
@@ -31,8 +30,10 @@
 失败事件不表示回滚：例如 Observation 已落库而索引失败，需沿 Evidence ID 查询已有结果。
 提取降级是明确的 extraction.completed(degraded=true)，不会伪造写入成功。
 同一条消息多个候选会有多个 gate/write 事件；这不是重复 Evidence 或新增佐证。
-当前覆盖 JSON/SSE 聊天、commit/resume 写回与手动 recall；不声称已覆盖人工修正、
-PENDING 生命周期、Resolver 所有分支或尚未实现的工具调用。完整得分与消解决策仍以原有
+当前覆盖 JSON/SSE 聊天、commit/resume 写回、手动 recall、人工修正、软删除/恢复与 PENDING 确认/拒绝。
+PENDING retry/expire 函数提供显式 sink 参数；尚无自动调度器，不宣称后台自动产生这些事件。
+尚未实现的工具执行没有虚构轨迹；现有审批决策可经 `/permissions history` 查看。
+Resolver 的结果关系随写入事件提供，完整得分与消解决策仍以原有
 retrieval_traces/resolution_traces 为事实源，调试事件只存引用和计数。
 
 ## 查看 prompt 与模型生成文本（2/3）
@@ -74,7 +75,55 @@ master key 的 hex/大写 hex/base64 及本次所选 provider key 的精确匹�
 这些凭据只用于内存脱敏，不进入记录；业务 prompt/模型返回不因日志脱敏而被改写。
 未解密其他 provider 的 key，不保证未知凭据、编码后的密钥或完整 PII 检测。
 **脱敏后的正文仍可能敏感**：只在受控排障窗口开启，操作者负责收集权限、保留和清理。
-本轮没有公开查询 API、数据库内容快照或 CLI/Web 查看器，也不承诺防 prompt injection。
+没有公开查询 API、数据库内容快照或 Web 查看器；CLI 只读本地文件，也不承诺防 prompt injection。
+
+## 在 CLI 查看本地快照（3/3）
+
+将操作者收集的应用 stdout 复制为一个稳定的本地文件，再运行（仓库开发入口）：
+
+```sh
+node apps/cli/dist/index.js debug --file /绝对路径/server.snapshot.jsonl --project <项目UUID>
+node apps/cli/dist/index.js debug --file /绝对路径/server.snapshot.jsonl --project <项目UUID> --conversation <物理会话UUID> --content --json
+```
+
+先按 Quickstart 构建 CLI/shared；将绝对路径及 UUID 替换为实际值。从仓库根运行上述 node 命令可得到无 pnpm 包装文字的输出。
+命令只读显式指定的文件，不连接服务、不读取服务端配置、不解密 provider key、不调用模型，
+不接收 `--server`/`--probe`，也不能开启服务端正文捕获。默认只显示元数据，`--content` 才显示
+已经捕获的完整受支持文本；完整性和省略原因原样保留，不补造缺失响应。
+
+`--project` 必填，可加 `--conversation` 与 `--target`（事件的 target_id）精确筛选 UUID；大小写归一。
+元数据写回事件新增物理 conversation_id，便于同轮查看；删除/恢复和 PENDING 等项目级事件没有
+会话字段，因此设置会话筛选时不会显示这些事件。旧版不带会话的元数据同理，可用项目或 target 查看。
+文件顺序保留，默认前50条、`--limit` 为1–1000；报告 matched/shown/ignored/limited，
+达到条数限制时明确提示。可按单个 invocation target 筛选一对 prompt/response，重试使用不同 ID。
+
+只接受 shared 契约中的事件、字段和文本类型，额外 detail 字段会使整行忽略。
+普通访问日志、启动器文本、无效/未结束 JSON 与无效 UTF-8 只计 ignored，不回显原行或解析异常。
+未知 pino 信封字段丢弃，不输出其中的异常/请求头。所有字符串按 JSON 转义展示，含 C0/C1、
+方向控制符的文本不会作为终端指令执行；`--json` 输出可解析的单个对象，非直接复制原始 JSONL。
+
+文件最多64MiB，单行最多16MiB，选中记录序列化总量最多8MiB（另有固定摘要开销）。
+拒绝目录、FIFO、末组件符号链接；按已打开文件读取，发现读取期间大小/mtime/ctime 改变即失败。
+读取失败、超限或变化时不会先输出部分记录，返回固定提示、退出码1；参数错误返回2。
+不要直接读持续追加的日志，先复制并管理快照权限；过大时缩小采集范围或按 target/limit 降低输出。
+
+文件读取权由操作系统决定，项目筛选只是操作便利，**不是项目鉴权或日志真实性证明**。
+查看器没有额外密钥清单、没有重新脱敏承诺：使用受控来源已由服务端脱敏的快照。
+恶意改写的文件可能伪造合法内容/来源；即使 schema 合法也不代表没有秘密，正文仍可能含 PII。
+终端及重定向输出需要同等保护。没有 live-follow、轮转恢复或 Web/远程日志查询功能。
+
+### 人工记忆操作事件
+
+| event                        | target_id  | detail                                                                |
+| ---------------------------- | ---------- | --------------------------------------------------------------------- |
+| memory.belief.corrected      | belief ID  | project_id、专用修正 conversation_id、observation_id、route、relation |
+| memory.belief.status_changed | belief ID  | project_id、active/deleted                                            |
+| memory.pending.decided       | pending ID | project_id、evidence_id、confirmed/rejected/promoted/expired 等状态   |
+
+人工修正仅在外层事务成功提交后输出，rollback/404/409/鉴权失败不产生成功事件。
+删除/恢复仅在原子条件更新命中后输出；PENDING API 从已写入的行取项目和 Evidence。
+retry/expire 的显式 sink 供未来调用者使用，未注入时保持原行为；状态记录不代表已提升为正式记忆。
+不记录候选/修正值、subject/attribute、原始错误或密钥，不新增持久审计与内容快照。
 
 ## 安全与可用性
 

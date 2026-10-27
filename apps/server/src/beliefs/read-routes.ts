@@ -5,6 +5,7 @@ import { z } from "zod";
 import { MemoryListQuerySchema } from "@mnemic/shared/memory";
 import { beliefs, beliefVersions, messages, observations } from "../db/schema.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
+import { emitDebugTrace, type DebugTrace } from "../debug/trace.js";
 import { toApiNumber } from "./serialization.js";
 
 /** 记忆中心只读 API + 基础软删除（#8）：列表/详情/版本时间线/删除/恢复。
@@ -18,7 +19,11 @@ const ListQuery = MemoryListQuerySchema.extend({
 const ProjectParams = z.object({ projectId: z.string().uuid() });
 const BeliefParams = ProjectParams.extend({ id: z.string().uuid() });
 
-export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
+export function registerBeliefReadRoutes(
+  app: FastifyInstance,
+  db: PostgresJsDatabase,
+  debugTrace?: DebugTrace,
+): void {
   // ILIKE 通配符转义：用户输入的 % / _ / \ 一律按字面量处理
   const contains = (column: typeof beliefs.subject | typeof beliefs.attribute, q: string) => {
     const escaped = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
@@ -178,7 +183,14 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
         and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "active")),
       )
       .returning({ id: beliefs.id });
-    if (updated.length > 0) return { id, status: "deleted" };
+    if (updated.length > 0) {
+      emitDebugTrace(debugTrace, {
+        event: "memory.belief.status_changed",
+        target_id: id,
+        detail: { project_id: projectId, status: "deleted" },
+      });
+      return { id, status: "deleted" };
+    }
     // 未命中：区分不存在（404）与状态不允许（409）
     const [belief] = await db
       .select()
@@ -202,7 +214,14 @@ export function registerBeliefReadRoutes(app: FastifyInstance, db: PostgresJsDat
         and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "deleted")),
       )
       .returning({ id: beliefs.id });
-    if (updated.length > 0) return { id, status: "active" };
+    if (updated.length > 0) {
+      emitDebugTrace(debugTrace, {
+        event: "memory.belief.status_changed",
+        target_id: id,
+        detail: { project_id: projectId, status: "active" },
+      });
+      return { id, status: "active" };
+    }
     const [belief] = await db
       .select()
       .from(beliefs)

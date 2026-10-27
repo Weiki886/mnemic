@@ -161,6 +161,13 @@ CSV/JSON 分页导出与价格配置见 [用量 API](docs/usage-reports.md)。
 默认关闭且只记录元数据。如确需查看脱敏后的 prompt 与模型生成文本，还须显式设置
 `MNEMIC_DEBUG_CONTENT=1`；正文可能含业务秘密和 PII，使用前应管理日志权限与保留期限。
 范围、省略条件和安全边界见 [调试轨迹](docs/debug-traces.md)。
+本地查看已有日志快照（默认仅元数据，`--content` 才显示已有正文）：
+
+```sh
+pnpm cli debug --file /绝对路径/server.snapshot.jsonl --project <项目UUID>
+```
+
+该命令不联网、不调用模型，也不会开启服务端调试；快照和终端输出仍需按敏感资料保护。
 
 ## 仓库结构
 
