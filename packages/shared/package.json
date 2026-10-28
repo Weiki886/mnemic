@@ -47,6 +47,10 @@
     "./debug": {
       "types": "./dist/debug.d.ts",
       "import": "./dist/debug.js"
+    },
+    "./flags": {
+      "types": "./dist/flags.d.ts",
+      "import": "./dist/flags.js"
     }
   },
   "scripts": {
