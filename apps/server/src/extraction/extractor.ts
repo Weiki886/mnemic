@@ -77,7 +77,7 @@ export async function extractCandidates(
     try {
       const { text } = await generateText({
         model,
-        ...(options.signal ? { ...(options.signal ? { abortSignal: options.signal } : {}) } : {}),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
         prompt: buildExtractionPrompt(input, today, feedback),
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       });
