@@ -23,6 +23,18 @@ export async function indexBeliefVersion(
   args: { beliefVersionId: string; subject: string; attribute: string; value: unknown },
   options: ResolveOptions = {},
 ): Promise<void> {
+  const prepared = await prepareBeliefEmbedding(db, masterKey, args, options);
+  await db.insert(memoryEmbeddings).values({ id: uuidv7(), ...prepared });
+}
+
+/** Provider invocation is outside the durable business transaction. */
+export async function prepareBeliefEmbedding(
+  db: PostgresJsDatabase,
+  masterKey: Buffer,
+  args: { beliefVersionId: string; subject: string; attribute: string; value: unknown },
+  options: ResolveOptions & { signal?: AbortSignal } = {},
+): Promise<{ beliefVersionId: string; embedding: number[]; model: string }> {
+  options.signal?.throwIfAborted();
   const text = `${args.subject} ${args.attribute}: ${
     typeof args.value === "string" ? args.value : JSON.stringify(args.value)
   }`;
@@ -40,11 +52,11 @@ export async function indexBeliefVersion(
     ...options,
     usageContext: { ...scope, purpose: "embedding_index" },
   });
-  const { embedding } = await embed({ model, value: text });
-  await db.insert(memoryEmbeddings).values({
-    id: uuidv7(),
-    beliefVersionId: args.beliefVersionId,
-    embedding,
-    model: modelId,
+  const { embedding } = await embed({
+    model,
+    value: text,
+    ...(options.signal ? { abortSignal: options.signal } : {}),
   });
+  options.signal?.throwIfAborted();
+  return { beliefVersionId: args.beliefVersionId, embedding, model: modelId };
 }

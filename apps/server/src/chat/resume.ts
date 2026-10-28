@@ -4,6 +4,7 @@ import { uuidv7 } from "uuidv7";
 import { conversations } from "../db/schema.js";
 import { CORRECTIONS_CONVERSATION_TITLE } from "./conversation-titles.js";
 import { loadConversationMessages, messageViews } from "./context.js";
+import { enqueueConversationExtraction } from "../tasks/extraction-outbox.js";
 import { scheduleConversationWriteback } from "./service.js";
 
 export async function resumeConversation(
@@ -35,6 +36,8 @@ export async function resumeConversation(
     const views = await messageViews(tx, projectId, history);
     // Switching away also archives/extracts the current conversation. Validate it before ANY mutation.
     for (const row of rows) if (row.id !== source.id) await loadConversationMessages(tx, row);
+    if (options.durableExtraction)
+      for (const row of rows) await enqueueConversationExtraction(tx, projectId, row.id);
     const archived = rows.filter((r) => !r.endedAt);
     if (archived.length)
       await tx
@@ -72,7 +75,7 @@ export async function resumeConversation(
       },
     } as const;
   });
-  if (result.kind === "resumed") {
+  if (result.kind === "resumed" && !options.durableExtraction) {
     for (const row of result.archived)
       await scheduleConversationWriteback(db, masterKey, row.id, projectId, options);
   }

@@ -42,6 +42,7 @@ const app = buildApp({
   usagePricing,
   debugMode,
   debugContent,
+  ...(db && masterKey ? { extractionQueue: {} } : {}),
 });
 if (db) {
   app.log.info("embedding 维度守卫通过");

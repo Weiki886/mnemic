@@ -22,6 +22,7 @@ import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
 import { sanitizeText } from "./gate/secrets.js";
 import { createModelDebug } from "./debug/model-content.js";
+import { createMemoryWorker, type ExtractionQueueOptions } from "./tasks/memory-worker.js";
 import type { TaskWorker } from "./tasks/worker.js";
 import { createDebugTrace } from "./debug/trace.js";
 
@@ -53,7 +54,9 @@ export interface BuildAppOptions {
   chatDeps?: { retrieveFn?: typeof retrieve; streamTimeoutMs?: number } | undefined;
   /** 停机等待异步写回任务的超时上限（毫秒），默认 10s；测试可调小 */
   shutdownDrainMs?: number | undefined;
-  /** Explicit handler-backed engine only. No default worker until durable EXTRACT is wired. */
+  /** Library opt-in; official server enables durable extraction whenever DB + master key are configured. */
+  extractionQueue?: ExtractionQueueOptions;
+  /** Explicit externally managed engine; mutually exclusive with extractionQueue. */
   taskWorker?: Pick<TaskWorker, "start" | "stop">;
   /** CORS 允许的源（#8 Web 记忆中心跨源调 API）；未配置则不启用 CORS */
   corsOrigin?: string | undefined;
@@ -65,9 +68,14 @@ const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.debugContent && !options.debugMode)
     throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
-  const taskWorker = options.taskWorker;
+  if (options.extractionQueue && (!options.db || !options.masterKey))
+    throw Error("durable extraction requires database and master key");
+  if (options.extractionQueue && options.taskWorker) throw Error("choose one managed task worker");
   const drainMs = options.shutdownDrainMs ?? DEFAULT_SHUTDOWN_DRAIN_MS;
-  if (taskWorker && (!Number.isInteger(drainMs) || drainMs < 0 || drainMs > 60000))
+  if (
+    (options.taskWorker || options.extractionQueue) &&
+    (!Number.isInteger(drainMs) || drainMs < 0 || drainMs > 60000)
+  )
     throw new Error("managed worker shutdownDrainMs must be an integer from 0 to 60000");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const app = Fastify({
@@ -119,6 +127,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           : []),
       ])
     : undefined;
+  const taskWorker = options.extractionQueue
+    ? createMemoryWorker(
+        options.db!,
+        options.masterKey!,
+        options.extractionQueue,
+        {
+          debugTrace,
+          ...(modelDebug ? { modelDebug } : {}),
+          usageLogger: app.log,
+          ...(options.providerFactory ? { factory: options.providerFactory } : {}),
+        },
+        { warn: (msg) => app.log.warn(msg) },
+      )
+    : options.taskWorker;
   if (authToken !== undefined) registerBearerAuth(app, authToken, options.corsOrigin);
   if (options.corsOrigin) {
     app.register(cors, {
@@ -189,6 +211,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
+      ...(options.extractionQueue ? { durableExtraction: true } : {}),
       debugTrace,
       ...(modelDebug ? { modelDebug } : {}),
       ...(options.providerFactory ? { factory: options.providerFactory } : {}),

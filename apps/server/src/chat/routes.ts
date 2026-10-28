@@ -21,6 +21,7 @@ import type { DebugTrace } from "../debug/trace.js";
 /** 对话闭环 API（#7）：会话创建/提交/消息应答 */
 
 export interface ChatRouteDeps {
+  durableExtraction?: boolean;
   debugTrace?: DebugTrace;
   modelDebug?: ModelDebug;
   /** 测试注入 Fake 工厂；生产缺省真实双协议工厂 */
@@ -50,6 +51,7 @@ export function registerChatRoutes(
   deps: ChatRouteDeps = {},
 ): void {
   const modelOpts = {
+    ...(deps.durableExtraction ? { durableExtraction: true } : {}),
     ...(deps.factory ? { factory: deps.factory } : {}),
     usageLogger: app.log,
     ...(deps.modelDebug ? { modelDebug: deps.modelDebug } : {}),

@@ -290,6 +290,31 @@ export async function completeTask(db: PostgresJsDatabase, lease: TaskLease): Pr
   );
   return rows.length > 0;
 }
+/** DB-only effects and receipt share one transaction. Any loss of ownership rolls both back. */
+export async function completeTaskWith<R>(
+  db: PostgresJsDatabase,
+  lease: TaskLease,
+  work: (tx: Transaction) => Promise<R>,
+): Promise<R> {
+  const result = await withOwnedLease<{ value: R } | undefined>(
+    db,
+    lease,
+    async (tx, current) => {
+      // Lock predicates can have been evaluated before waiting; use fresh DB time before effects too.
+      const [valid] = await tx
+        .select({ id: memoryTasks.id })
+        .from(memoryTasks)
+        .where(owned(current));
+      if (!valid) throw Error("task lease lost");
+      const value = await work(tx);
+      if (!(await completeTask(tx, current))) throw Error("task lease lost");
+      return { value };
+    },
+    undefined,
+  );
+  if (!result) throw Error("task lease lost");
+  return result.value;
+}
 export async function retryTask(
   db: PostgresJsDatabase,
   lease: TaskLease,

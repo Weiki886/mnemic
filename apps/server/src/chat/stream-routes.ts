@@ -66,7 +66,14 @@ export function registerChatStreamRoutes(
     if (reply.raw.destroyed) closed();
     let admitted = false;
     try {
-      const entered = await enterMessage(db, id, body.data.text, projectId, body.data.attachments);
+      const entered = await enterMessage(
+        db,
+        id,
+        body.data.text,
+        projectId,
+        body.data.attachments,
+        options.durableExtraction,
+      );
       if (entered.kind === "not_found") return missing(reply, request.id);
       if (entered.kind !== "ok")
         return reply
