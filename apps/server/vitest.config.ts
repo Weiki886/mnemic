@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@mnemic/shared/flags": fileURLToPath(
+        new URL("../../packages/shared/src/flags.ts", import.meta.url),
+      ),
       "@mnemic/shared/debug": fileURLToPath(
         new URL("../../packages/shared/src/debug.ts", import.meta.url),
       ),
