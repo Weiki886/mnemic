@@ -1,3 +1,4 @@
+import { captureFeatureFlags } from "../flags/runtime.js";
 import { embed } from "ai";
 import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -57,33 +58,36 @@ export async function retrieve(
 ): Promise<RetrieveResult> {
   const topK = options.topK ?? DEFAULT_TOP_K;
   const threshold = options.threshold ?? ABSTAIN_THRESHOLD;
-  const reinforce = options.reinforce ?? process.env.MNEMIC_READ_REINFORCE === "1";
+  const flagsSnapshot = await captureFeatureFlags(db, options);
+  const reinforce = flagsSnapshot.flags.read_time_reinforcement;
 
   // 1. 查询向量化（无 embedding 配置时降级为仅关键词路，向量路空集）
   let queryVec: number[] | null = null;
-  try {
-    const { model } = await resolveModel(db, masterKey, "embedding", {
-      ...options,
-      usageContext: {
-        projectId,
-        conversationId:
-          options.usageContext?.projectId === projectId
-            ? options.usageContext.conversationId
-            : null,
-        purpose: "embedding_query",
-      },
-    });
-    queryVec = (
-      await embed({
-        model,
-        value: query,
-        ...(options.signal ? { abortSignal: options.signal, maxRetries: 0 } : {}),
-      })
-    ).embedding;
-    // 零向量无余弦方向；错误数值也不能进入 pgvector 排序/trace。
-    if (!queryVec.every(Number.isFinite) || queryVec.every((n) => n === 0)) queryVec = null;
-  } catch {
-    queryVec = null;
+  if (flagsSnapshot.flags.retrieval_vector) {
+    try {
+      const { model } = await resolveModel(db, masterKey, "embedding", {
+        ...options,
+        usageContext: {
+          projectId,
+          conversationId:
+            options.usageContext?.projectId === projectId
+              ? options.usageContext.conversationId
+              : null,
+          purpose: "embedding_query",
+        },
+      });
+      queryVec = (
+        await embed({
+          model,
+          value: query,
+          ...(options.signal ? { abortSignal: options.signal, maxRetries: 0 } : {}),
+        })
+      ).embedding;
+      // 零向量无余弦方向；错误数值也不能进入 pgvector 排序/trace。
+      if (!queryVec.every(Number.isFinite) || queryVec.every((n) => n === 0)) queryVec = null;
+    } catch {
+      queryVec = null;
+    }
   }
   // 向量字面量占位：queryVec 为 null 时 vec CTE 零行（where false），
   // 占位用单位向量——零向量会使 cosine 距离产生 NaN，必须避开
@@ -113,7 +117,7 @@ export async function retrieve(
       select e.version_id,
              ts_rank(to_tsvector('simple', e.value::text), plainto_tsquery('simple', ${query})) as kscore
       from eligible e
-      where to_tsvector('simple', e.value::text) @@ plainto_tsquery('simple', ${query})
+      where ${flagsSnapshot.flags.retrieval_keyword} and to_tsvector('simple', e.value::text) @@ plainto_tsquery('simple', ${query})
     ), kwn as (
       -- ts_rank 原始值（~0.01-0.1）与 cosine（0~1）量级悬殊，按本查询内最大值归一
       -- 使两路可加权融合；本查询零命中时 CTE 为空集，不受影响
@@ -170,6 +174,7 @@ export async function retrieve(
     })),
     abstained,
     reinforceEnabled: reinforce,
+    flagsSnapshot,
   });
 
   // 5. 读时强化实验钩子（默认关闭；开启时入选 belief 的 salience 提升并落库）
