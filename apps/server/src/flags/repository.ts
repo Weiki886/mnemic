@@ -21,7 +21,7 @@ function snapshot(row: Row | undefined): FeatureFlagSnapshot {
     throw Error("invalid feature flag configuration");
   }
 }
-/** Singleton server configuration. No behavior reads this repository until subsequent #22 wiring. */
+/** Persisted server configuration; runtime consumers materialize their own effective snapshot. */
 export async function readFeatureFlags(db: PostgresJsDatabase): Promise<FeatureFlagSnapshot> {
   const [row] = await db
     .select()
@@ -29,6 +29,11 @@ export async function readFeatureFlags(db: PostgresJsDatabase): Promise<FeatureF
     .where(eq(featureFlags.scope, "server"))
     .limit(1);
   return snapshot(row);
+}
+export class FeatureFlagRevisionExhaustedError extends Error {
+  constructor() {
+    super("feature flag revision exhausted");
+  }
 }
 export type FeatureFlagUpdateResult = {
   kind: "updated" | "unchanged" | "conflict";
@@ -56,7 +61,7 @@ export async function updateFeatureFlags(
       )
     )
       return { kind: "unchanged", snapshot: before };
-    if (before.revision === Number.MAX_SAFE_INTEGER) throw Error("feature flag revision exhausted");
+    if (before.revision === Number.MAX_SAFE_INTEGER) throw new FeatureFlagRevisionExhaustedError();
     const next = createFeatureFlagSnapshot({
       schema_version: 1,
       revision: before.revision + 1,

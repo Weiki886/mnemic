@@ -14,7 +14,7 @@ export function registerBearerAuth(app: FastifyInstance, token: string, corsOrig
       corsOrigin &&
       request.method === "OPTIONS" &&
       request.headers.origin === corsOrigin &&
-      /^(GET|HEAD|POST|PATCH|DELETE|OPTIONS)$/.test(
+      /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/.test(
         request.headers["access-control-request-method"] ?? "",
       )
     )

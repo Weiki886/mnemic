@@ -18,6 +18,7 @@ import { registerManagementRoutes } from "./providers/management-routes.js";
 import { registerBearerAuth } from "./auth.js";
 import { resolveAuthToken } from "./config.js";
 import { registerApprovalAuditRoutes } from "./approval/routes.js";
+import { registerFeatureFlagRoutes } from "./flags/routes.js";
 import { registerUsageRoutes } from "./usage/routes.js";
 import type { UsagePricing } from "./usage/pricing.js";
 import { sanitizeText } from "./gate/secrets.js";
@@ -145,7 +146,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.corsOrigin) {
     app.register(cors, {
       origin: options.corsOrigin,
-      methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+      methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["authorization", "content-type"],
     });
   }
@@ -201,6 +202,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory, debugTrace);
   }
   if (options.db) {
+    registerFeatureFlagRoutes(app, options.db);
     registerUsageRoutes(app, options.db, options.usagePricing);
     registerApprovalAuditRoutes(app, options.db);
     registerManagementRoutes(app, options.db);
