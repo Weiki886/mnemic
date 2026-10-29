@@ -1,3 +1,4 @@
+import { FeatureFlagSnapshotSchema } from "./flags.js";
 import { z } from "zod";
 
 /** 当前版本的来源 Observation 类型；缺少可验证来源时为 null，不推测历史类型。 */
@@ -68,6 +69,7 @@ export const RecallResultSchema = z
       .object({
         id: z.string().uuid(),
         reinforce_enabled: z.literal(false),
+        flags_snapshot: FeatureFlagSnapshotSchema.nullable().optional(),
         candidate_count: z.number().int().nonnegative(),
         truncated: z.boolean(),
         candidates: z.array(traceCandidate).max(200),
@@ -76,6 +78,12 @@ export const RecallResultSchema = z
   })
   .strict()
   .superRefine((r, ctx) => {
+    if (r.trace.flags_snapshot?.flags.read_time_reinforcement)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["trace", "flags_snapshot"],
+        message: "手动召回快照必须关闭读时强化",
+      });
     const shown = r.trace.candidates;
     const selected = shown.filter((c) => c.selected);
     if (

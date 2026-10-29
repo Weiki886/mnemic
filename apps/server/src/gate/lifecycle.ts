@@ -1,3 +1,4 @@
+import { captureFeatureFlags, type FeatureFlagOptions } from "../flags/runtime.js";
 import { and, eq, lt, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { emitDebugTrace, type DebugTrace } from "../debug/trace.js";
@@ -22,7 +23,9 @@ export async function retryPendingGroup(
   subject: string,
   attribute: string,
   debugTrace?: DebugTrace,
+  options: FeatureFlagOptions = {},
 ): Promise<PendingRow[]> {
+  const flagsSnapshot = await captureFeatureFlags(db, options);
   const rows = await db
     .select()
     .from(pendingCandidates)
@@ -42,7 +45,9 @@ export async function retryPendingGroup(
       ...candidate,
       confidence: Math.min(1, candidate.confidence + CORROBORATION_BOOST),
     };
-    const { decision } = evaluateGate(boosted, { beliefExists: true });
+    const decision = flagsSnapshot.flags.memory_gate
+      ? evaluateGate(boosted, { beliefExists: true }).decision
+      : "WRITE";
     if (decision === "WRITE") {
       promoted.push(await updatePendingStatus(db, row.id, "promoted", debugTrace));
     }

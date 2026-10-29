@@ -286,6 +286,8 @@ export const resolutionTraces = pgTable("resolution_traces", {
   confidenceAfter: score("confidence_after"),
   policies: jsonb("policies").notNull(),
   modelSnapshot: jsonb("model_snapshot"),
+  /** Null means historical/unknown configuration, never synthesized from current defaults. */
+  flagsSnapshot: jsonb("flags_snapshot"),
   resolverVersion: text("resolver_version").notNull(),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
@@ -304,6 +306,7 @@ export const retrievalTraces = pgTable("retrieval_traces", {
   candidates: jsonb("candidates").notNull(),
   abstained: boolean("abstained").notNull(),
   reinforceEnabled: boolean("reinforce_enabled").notNull().default(false),
+  flagsSnapshot: jsonb("flags_snapshot"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 

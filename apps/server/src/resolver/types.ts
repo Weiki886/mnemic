@@ -1,3 +1,4 @@
+import type { FeatureFlagSnapshot } from "@mnemic/shared/flags";
 import type { beliefVersions, observations } from "../db/schema.js";
 import type { ValueRelation } from "./value-compare.js";
 
@@ -38,6 +39,7 @@ export interface ResolutionTraceRecord {
   previousVersionId: string | null;
   resultVersionId: string | null;
   resolverVersion: string;
+  flagsSnapshot?: FeatureFlagSnapshot;
 }
 
 export interface ResolutionTraceWriter {

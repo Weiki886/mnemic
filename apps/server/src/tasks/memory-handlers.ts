@@ -1,3 +1,4 @@
+import { captureFeatureFlags } from "../flags/runtime.js";
 import { and, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
@@ -66,6 +67,7 @@ export function createMemoryTaskHandlers(
         conversationId = message.conversationId;
         const scoped: ResolveOptions = {
           ...opts,
+          flagsSnapshot: await captureFeatureFlags(db, opts),
           debugEvidenceId: message.id,
           usageContext: {
             projectId: task.projectId,

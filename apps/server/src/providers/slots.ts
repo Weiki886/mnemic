@@ -9,12 +9,13 @@ import { selectSlotProvider } from "./selection.js";
 import { observeEmbedding, observeLanguage, type UsageLogger } from "../usage/models.js";
 import { writeModelUsage, type UsageContext, type UsageRecord } from "../usage/repository.js";
 import type { ModelDebug, ModelDebugFactory } from "../debug/model-content.js";
+import type { FeatureFlagOptions } from "../flags/runtime.js";
 import type { DebugTrace } from "../debug/trace.js";
 
 /** 模型三槽位（ADR-005）：调用方只按用途取模型，不感知厂商与协议 */
 export type Slot = keyof Required<ModelSlots>;
 
-export interface ResolveOptions {
+export interface ResolveOptions extends FeatureFlagOptions {
   debugTrace?: DebugTrace;
   modelDebug?: ModelDebug;
   /** Server-resolved physical Evidence; never taken from HTTP model options. */

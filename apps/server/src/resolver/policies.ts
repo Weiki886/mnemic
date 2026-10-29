@@ -12,6 +12,7 @@ import type { ConflictRelation } from "./types.js";
  */
 
 export interface PolicyContext {
+  authorityEnabled?: boolean;
   /** 新证据权威（observations.authority：70→10，大者胜） */
   incomingAuthority: number;
   /** 当前版本来源 Observation 的权威 */
@@ -77,11 +78,11 @@ export function decideRelation(ctx: PolicyContext): PolicyOutcome {
     detail.reason = "temporal";
     return { relation: "supersede", detail };
   }
-  if (authorityVerdict === "higher") {
+  if (ctx.authorityEnabled !== false && authorityVerdict === "higher") {
     detail.reason = "authority";
     return { relation: "supersede", detail };
   }
-  if (authorityVerdict === "lower") {
+  if (ctx.authorityEnabled !== false && authorityVerdict === "lower") {
     detail.reason = "authority";
     return { relation: "weaken", detail };
   }
