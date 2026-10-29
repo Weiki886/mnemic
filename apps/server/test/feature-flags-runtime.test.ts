@@ -43,3 +43,11 @@ it("invalid externally forged snapshot is rejected before database/model access"
     }),
   ).rejects.toThrow();
 });
+it.each([null, false, 0])(
+  "explicit malformed snapshot %s cannot fall back to a database read",
+  async (value) => {
+    await expect(captureFeatureFlags(db, { flagsSnapshot: value as never })).rejects.toMatchObject({
+      name: "ZodError",
+    });
+  },
+);

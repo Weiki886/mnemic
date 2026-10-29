@@ -17,9 +17,10 @@ export async function captureFeatureFlags(
   db: PostgresJsDatabase,
   options: FeatureFlagOptions & { reinforce?: boolean } = {},
 ): Promise<FeatureFlagSnapshot> {
-  const supplied = options.flagsSnapshot
-    ? createFeatureFlagSnapshot(options.flagsSnapshot)
-    : undefined;
+  const supplied =
+    options.flagsSnapshot !== undefined
+      ? createFeatureFlagSnapshot(options.flagsSnapshot)
+      : undefined;
   const override =
     options.reinforce ??
     (process.env.MNEMIC_READ_REINFORCE !== undefined
