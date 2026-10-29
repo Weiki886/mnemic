@@ -1,3 +1,4 @@
+import { captureFeatureFlags } from "../flags/runtime.js";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { and, eq, sql } from "drizzle-orm";
 import { conversations, messages } from "../db/schema.js";
@@ -73,6 +74,7 @@ export async function runExtractionWriteback(
   if (!evidence) throw new Error("invalid extraction usage scope");
   const scoped: ResolveOptions = {
     ...options,
+    flagsSnapshot: await captureFeatureFlags(db, options),
     debugEvidenceId: args.evidenceId,
     usageContext: {
       projectId: args.projectId,
@@ -130,6 +132,7 @@ export async function applyExtraction(
   indexEmbedding: (args: IndexEmbeddingArgs) => Promise<void>,
   onPhase?: (phase: "gate" | "ingest") => void,
 ): Promise<WritebackResult> {
+  const flagsSnapshot = await captureFeatureFlags(db, scoped);
   const result: WritebackResult = {
     routes: { created: 0, merged: 0, skipped: 0, conflict: 0 },
     pending: 0,
@@ -142,7 +145,9 @@ export async function applyExtraction(
       ? attachAuthority({ ...extracted, source_type: SOURCE_BY_CHANNEL[args.channel] })
       : extracted;
     onPhase?.("gate");
-    const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId);
+    const gate = await processCandidate(db, args.projectId, candidate, args.evidenceId, {
+      flagsSnapshot,
+    });
     scoped.debugTrace?.({
       event: "memory.gate.decided",
       target_id: args.evidenceId,
@@ -164,6 +169,7 @@ export async function applyExtraction(
     onPhase?.("ingest");
     const ingested = await ingestCandidate(db, args.projectId, gate.candidate, args.evidenceId, {
       indexEmbedding,
+      flagsSnapshot,
     });
     result.routes[ingested.route] += 1;
     scoped.debugTrace?.({

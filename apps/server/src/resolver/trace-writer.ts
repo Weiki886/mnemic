@@ -1,3 +1,4 @@
+import { createFeatureFlagSnapshot } from "@mnemic/shared/flags";
 import { asc } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
@@ -26,6 +27,7 @@ export class DbResolutionTraceWriter implements ResolutionTraceWriter {
       confidenceBefore: record.confidenceBefore === null ? null : String(record.confidenceBefore),
       confidenceAfter: record.confidenceAfter === null ? null : String(record.confidenceAfter),
       policies: record.policies,
+      flagsSnapshot: record.flagsSnapshot ? createFeatureFlagSnapshot(record.flagsSnapshot) : null,
       modelSnapshot: await loadModelSnapshot(this.db),
       resolverVersion: record.resolverVersion,
     });

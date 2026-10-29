@@ -1,3 +1,4 @@
+import { captureFeatureFlags, type FeatureFlagOptions } from "../flags/runtime.js";
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { beliefs } from "../db/schema.js";
@@ -16,7 +17,7 @@ import { sanitizeText } from "./secrets.js";
 export const PENDING_TTL_MS = 7 * 24 * 3600 * 1000;
 
 export type ProcessResult =
-  | { decision: "WRITE"; candidate: CandidateWithAuthority; scores: GateScores }
+  | { decision: "WRITE"; candidate: CandidateWithAuthority; scores: GateScores | null }
   | { decision: "SKIP"; scores: GateScores }
   | { decision: "PENDING"; pendingId: string; scores: GateScores };
 
@@ -27,24 +28,28 @@ export async function processCandidate(
   projectId: string,
   input: CandidateWithAuthority,
   evidenceId: string,
+  options: FeatureFlagOptions = {},
 ): Promise<ProcessResult> {
-  // 1. 脱敏：命中即替换并逐字段写审计（meta 只记模式名，绝不记密钥本体）
-  const candidate = { ...input };
-  for (const field of SANITIZE_FIELDS) {
-    const r = sanitizeText(candidate[field]);
-    if (r.hits.length > 0) {
-      candidate[field] = r.text;
-      for (const hit of r.hits) {
-        await writeAuditLog(db, {
-          actor: "gate",
-          action: "redact",
-          target: `candidate.${field}`,
-          decision: "redacted",
-          meta: { pattern: hit.pattern, count: hit.count },
-        });
-      }
-    }
-  }
+  const candidate = { ...input, entities: [...input.entities] };
+  const flagsSnapshot = await captureFeatureFlags(db, options);
+  // Secret sanitization and its audit are mandatory even when quality scoring is disabled.
+  const scrub = async (text: string, field: (typeof SANITIZE_FIELDS)[number] | "entities") => {
+    const result = sanitizeText(text);
+    for (const hit of result.hits)
+      await writeAuditLog(db, {
+        actor: "gate",
+        action: "redact",
+        target: `candidate.${field}`,
+        decision: "redacted",
+        meta: { pattern: hit.pattern, count: hit.count },
+      });
+    return result.text;
+  };
+  for (const field of SANITIZE_FIELDS) candidate[field] = await scrub(candidate[field], field);
+  for (let i = 0; i < candidate.entities.length; i++)
+    candidate.entities[i] = await scrub(candidate.entities[i]!, "entities");
+
+  if (!flagsSnapshot.flags.memory_gate) return { decision: "WRITE", candidate, scores: null };
 
   // 2. novelty 上下文：同 subject+attribute 是否已有 Belief
   const existing = await db

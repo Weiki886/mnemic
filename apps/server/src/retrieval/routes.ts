@@ -108,6 +108,7 @@ export function registerRecallRoutes(
           trace: {
             id: trace.id,
             reinforce_enabled: false,
+            flags_snapshot: trace.flagsSnapshot,
             candidate_count: trace.candidates.length,
             truncated: trace.candidates.length > 200,
             candidates: trace.candidates.slice(0, 200),

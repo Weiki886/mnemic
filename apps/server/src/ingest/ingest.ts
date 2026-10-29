@@ -1,3 +1,4 @@
+import { captureFeatureFlags } from "../flags/runtime.js";
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
@@ -51,6 +52,7 @@ export async function ingestCandidate(
   evidenceId: string,
   deps: IngestDeps = {},
 ): Promise<IngestResult> {
+  const flagsSnapshot = await captureFeatureFlags(db, deps);
   const subject = normalizeTerm(candidate.subject);
   const attribute = normalizeTerm(candidate.attribute);
 
@@ -163,6 +165,7 @@ export async function ingestCandidate(
     { projectId, observation: obs!, belief },
     {
       ...deps,
+      flagsSnapshot,
       traceWriter: deps.traceWriter ?? new DbResolutionTraceWriter(db),
     },
   );

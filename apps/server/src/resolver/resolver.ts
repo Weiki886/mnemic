@@ -1,3 +1,4 @@
+import { captureFeatureFlags, type FeatureFlagOptions } from "../flags/runtime.js";
 import { eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
@@ -11,7 +12,7 @@ export type ObservationRow = typeof observations.$inferSelect;
 export type BeliefRow = typeof beliefs.$inferSelect;
 
 /** Resolver 版本：写入 belief_versions.resolver_version 与 trace（算法变更需升版，否则历史不可比） */
-export const RESOLVER_VERSION = "0.1.0";
+export const RESOLVER_VERSION = "0.2.0";
 
 // A0 启发式系数（校准归 #12 评测平台，勿分散硬编码）
 export const STRENGTHEN_BOOST = 0.1;
@@ -31,7 +32,7 @@ export interface ResolveResult {
   resultVersionId: string | null;
 }
 
-export interface ResolverDeps {
+export interface ResolverDeps extends FeatureFlagOptions {
   intentPolicy?: IntentPolicy;
   traceWriter?: ResolutionTraceWriter;
   now?: () => Date;
@@ -53,7 +54,11 @@ export async function resolveObservation(
   deps: ResolverDeps = {},
 ): Promise<ResolveResult> {
   const intentPolicy = deps.intentPolicy ?? new AssertionIntentPolicy();
-  const traceWriter = deps.traceWriter ?? noopTraceWriter;
+  const flagsSnapshot = await captureFeatureFlags(db, deps);
+  const sink = deps.traceWriter ?? noopTraceWriter;
+  const traceWriter: ResolutionTraceWriter = {
+    write: (record) => sink.write({ ...record, flagsSnapshot }),
+  };
   const now = deps.now ?? (() => new Date());
   const { observation, belief, projectId } = params;
 
@@ -134,6 +139,7 @@ export async function resolveObservation(
   // 3. Temporal/Conflict 判定（valid_time 兜底规则见 schema 注释，#3 已固化）
   const incomingValidFrom = observation.validTime ?? observation.recordedAt;
   const outcome = decideRelation({
+    authorityEnabled: flagsSnapshot.flags.authority_resolution,
     incomingAuthority: observation.authority,
     currentAuthority,
     incomingValidFrom,

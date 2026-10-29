@@ -67,7 +67,7 @@ it("vector off sends zero query embeddings but keyword recall and snapshot remai
   const [trace] = await t.sql`select flags_snapshot from retrieval_traces where id=${r.traceId}`;
   expect(trace!.flags_snapshot).toEqual(snapshot);
 });
-it("keyword off stops keyword-only facts; vector-only scores still work", async () => {
+it("keyword off stops keyword-only facts", async () => {
   const f = await seed(false);
   await configure({ retrieval_keyword: false });
   const r = await retrieve(t.db, TEST_MASTER_KEY, f.p, "PostgreSQL", options);
@@ -146,4 +146,66 @@ it("legacy traces retain unknown snapshot rather than receiving fabricated defau
   expect(
     (await t.sql`select flags_snapshot from retrieval_traces where id=${id}`)[0]!.flags_snapshot,
   ).toBeNull();
+});
+it("manual recall exposes its effective snapshot and rejects HTTP flag overrides", async () => {
+  const { buildApp } = await import("../src/app.js");
+  const { RecallResultSchema } = await import("@mnemic/shared/memory");
+  const f = await seed();
+  await configure({ retrieval_vector: false, read_time_reinforcement: true });
+  const app = buildApp({
+    auth: false,
+    db: t.db,
+    masterKey: TEST_MASTER_KEY,
+    providerFactory: model.factory,
+    logStream: { write: () => {} },
+  });
+  try {
+    const bad = await app.inject({
+      method: "POST",
+      url: `/projects/${f.p}/recall`,
+      payload: { query: "PostgreSQL", flags: { retrieval_vector: true } },
+    });
+    expect(bad.statusCode).toBe(400);
+    const r = await app.inject({
+      method: "POST",
+      url: `/projects/${f.p}/recall`,
+      payload: { query: "PostgreSQL" },
+    });
+    expect(r.statusCode).toBe(200);
+    const result = RecallResultSchema.parse(r.json());
+    expect(result.trace.flags_snapshot?.flags).toMatchObject({
+      retrieval_vector: false,
+      read_time_reinforcement: false,
+    });
+    expect(model.embedding).not.toHaveBeenCalled();
+  } finally {
+    await app.close();
+  }
+});
+
+it("keyword off still returns finite vector scores without a keyword component", async () => {
+  const f = await seed();
+  await configure({ retrieval_keyword: false });
+  const r = await retrieve(t.db, TEST_MASTER_KEY, f.p, "PostgreSQL", options);
+  expect(r.candidates).toHaveLength(1);
+  expect(r.candidates[0]!.keywordScore).toBeNull();
+  expect(r.candidates[0]!.vectorScore).toBe(1);
+});
+it("trace-column migration replays without changing existing effective snapshots", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const f = await seed(),
+    r = await retrieve(t.db, TEST_MASTER_KEY, f.p, "PostgreSQL", options);
+  const before = (
+    await t.sql`select flags_snapshot from retrieval_traces where id=${r.traceId}`
+  )[0]!.flags_snapshot;
+  const script = await readFile(
+    new URL("../drizzle/0014_trace_flag_snapshots.sql", import.meta.url),
+    "utf8",
+  );
+  for (const statement of script.split("--> statement-breakpoint"))
+    if (statement.trim()) await t.sql.unsafe(statement);
+  expect(
+    (await t.sql`select flags_snapshot from retrieval_traces where id=${r.traceId}`)[0]!
+      .flags_snapshot,
+  ).toEqual(before);
 });

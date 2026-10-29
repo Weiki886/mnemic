@@ -1,3 +1,4 @@
+import type { FeatureFlagSnapshot } from "./flags.js";
 /** 类型化 API client（#8）：Web 记忆中心经 packages/shared 调 server API。
  *  - 键名与 server 响应保持一致：读路由为 snake_case，resolutions 为 drizzle 直出的 camelCase。
  *  - 错误统一转 ApiError：problem+json → 结构化字段；非 problem 体 → status + 原始文本。
@@ -81,6 +82,8 @@ export interface ResolutionTrace {
   confidenceAfter: number | null;
   policies: unknown;
   modelSnapshot: unknown;
+  /** Optional for older servers; null is historical/unknown, never current defaults. */
+  flagsSnapshot?: FeatureFlagSnapshot | null;
   resolverVersion: string;
   createdAt: string;
 }
