@@ -1,8 +1,8 @@
-# 特性开关（#22，拆分 1/3 + 2/3）
+# 特性开关（#22，拆分 1/3 + 2/3 + 3/3）
 
 已交付严格配置、持久化/审计，以及五项已有行为的接线：向量路、关键词路、Gate 评分、数值权威裁决、读时强化。
 retrieval_traces / resolution_traces 新记录保存实际使用的配置快照。Refs #22，不关闭 Issue。
-**尚未开放配置 HTTP API、CLI/Web 管理入口**；内部仓储不是权限边界。
+已提供鉴权配置 HTTP API；尚无 CLI/Web 管理界面。内部仓储不是权限边界。
 实体/时间/衰减/Reranker/读时消解业务仍归 #9/#10，不能用配置状态冒充已实现。
 
 ## 作用域与契约
@@ -53,11 +53,62 @@ revision 为 0 到 Number.MAX_SAFE_INTEGER 的整数，PG bigint CHECK 同样限
 - 实际修改增加 revision 并更新 updated_at，返回 `updated`。若 revision 已耗尽则拒绝修改。
 - 同事务写入 audit_log：actor='server'、action='flags.update'、target='server'、decision='updated'，
   meta 只有 schema_version、previous_revision、revision 以及完整 before/after 布尔映射。
-  actor 表示当前应用写入方，不声称识别具体操作人员；后续 API 必须先经过既有鉴权。
+  actor 表示当前应用写入方，不声称识别具体操作人员；管理 API 先经过既有全局 Bearer 鉴权。
   审计写入失败或外层事务回滚，配置与审计一起回滚；无重试、静默降级或原始异常日志旁路。
 
 PG CHECK 同时限制单例 scope、契约版本、安全 revision、十个键齐全且无扩展字段、每项为布尔值。
 SQL 迁移是冻结历史，初始种子与共享默认值的完整一致性由集成测试验证，不依赖维护者手工记住。
+
+## 配置管理 API（3/3）
+
+正式服务的全局 Bearer onRequest 在解析请求体或访问 DB 前鉴权。这是服务端全局操作者权限，
+不是项目级设置、按用户灰度或新的角色系统。持有现有 Token 的操作者可以关闭 Gate/权威裁决等实验项。
+GET/PUT 及其业务错误均返回 Cache-Control: no-store；不从 query/body 接收 Token、actor 或任意元数据。
+
+| 请求                 | 输入/结果                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| GET /v1/config/flags | 返回持久化的完整 schema_version/revision/flags 快照，无业务副作用、无模型调用                  |
+| PUT /v1/config/flags | JSON 完整替换 `{expected_revision, flags}`；成功返回 `{kind:'updated'或'unchanged', snapshot}` |
+
+GET 返回持久配置，**不应用 env 或内部 reinforce 覆盖**；具体操作实际采用什么仍以其 trace 快照为准。
+五项未支持字段任一为 true，PUT 返回400，errors 指向 `flags.<字段>`，不访问配置仓储或写审计。
+若受信内部代码/SQL 已写入未支持配置，GET 仍可读取；用当前 revision 和这些字段为 false 的完整 flags 修复。
+
+```sh
+mnemic_base_url=http://127.0.0.1:3000
+curl -H "Authorization: Bearer $MNEMIC_AUTH_TOKEN" \
+  "$mnemic_base_url/v1/config/flags"
+
+# 把 expected_revision 的示例 0 换成刚才 GET 得到的 revision。
+# 例：仅停用查询向量路，保留关键词路；索引任务不随之停止。
+curl --request PUT "$mnemic_base_url/v1/config/flags" \
+  -H "Authorization: Bearer $MNEMIC_AUTH_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{
+    "expected_revision": 0,
+    "flags": {
+      "retrieval_vector": false,
+      "retrieval_keyword": true,
+      "retrieval_entity": false,
+      "retrieval_time": false,
+      "memory_gate": true,
+      "decay": false,
+      "reranker": false,
+      "authority_resolution": true,
+      "read_time_resolution": false,
+      "read_time_reinforcement": false
+    }
+  }'
+```
+
+- 401：Token 缺失/错误，且先于 JSON 解析和 DB 访问；已有可信 CORS 源的 PUT 预检可204，但业务 PUT 仍需 Token。
+- 400：字段缺失、类型错误、额外字段/query 或启用未支持字段，problem+json 携带结构化 errors。
+- 409：revision 已变化或耗尽，错误码 CONFLICT。冲突时重新 GET、人工核对改动再提交，不自动覆盖/重放。
+- 415：PUT 不使用 application/json；审计/DB 故障则安全500，不回显 SQL/凭据，且配置修改回滚。
+
+并发同 expected_revision 仅一份提交成功；无变化不增加 revision，也不伪造修改审计。
+恢复旧配置同样要先 GET 新 revision，再 PUT 旧 flags，不能倒退 revision 或靠重放迁移重置数据。
+该 API 不触发模型探测、不重启服务，也不重放已进死信的任务。配置在下一个操作的冻结点生效，不改变已开始的操作。
 
 ## 运行时冻结边界与优先级
 
@@ -83,7 +134,7 @@ HTTP 或模型输出不能设置 flagsSnapshot；现有输入契约仍拒绝额�
 当前不支持启用 retrieval_entity/retrieval_time/decay/reranker/read_time_resolution；内部配置可以表达它们，
 但记忆操作入口检测到 true 会以固定错误拒绝，在查询嵌入/提取调用和记忆写入之前停止，不能静默当成已运行。
 聊天仍沿用既有“检索失败→无记忆回答”降级：可能继续调用聊天模型、保存聊天消息，这不是整个聊天请求的计费关闭开关。
-这可能让待提取任务退避、最终进入死信；修正配置不会自动重置既有死信。后续管理 API 必须阻止不受支持的启用。
+这可能让待提取任务退避、最终进入死信；修正配置不会自动重置既有死信。管理 API 已拒绝不受支持的启用；GET 仍可读取这种内部状态，便于修复。
 既有未配置的路径没有降级到默认值：缺失/损坏配置同样拒绝执行。
 
 ## trace 快照与历史
@@ -102,4 +153,8 @@ Resolver 新增受控 authority-off 分支，算法版本升为 0.2.0。
 以及模型调用中改变全局配置时旧写回/持久 worker/检索都使用已冻结值。
 历史列保持 null，新增列 SQL 可重复执行；没有调用付费模型或重启用户服务。
 回滚应用代码可保留新增列，不能通过默认回填或清空配置来伪造历史。
-配置管理 API 和未实现模块的行为验收尚未完成，#22 保持 OPEN。
+配置管理 API 已完成；未实现模块与完整消融矩阵的验收仍依赖 #9/#10，#22 保持 OPEN。
+
+3/3 测试额外覆盖鉴权/无效输入先于 DB、全五项未支持字段拒绝、GET 诊断与修复、HTTP 并发 CAS、
+审计失败回滚、no-op/409/耗尽、PUT 预检与实际鉴权、500 日志不含原始异常；
+真实 TCP HTTP GET→PUT→recall 的响应/trace 闭环使用两路关闭和禁止模型调用的替身。
