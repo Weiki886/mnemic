@@ -27,7 +27,7 @@ beforeAll(async () => {
     protocol: "openai-compatible",
     baseUrl: "https://example.invalid",
     apiKey: "offline",
-    models: { extraction: "extract", embedding: "embed" },
+    models: { chat: "chat", extraction: "extract", embedding: "embed" },
   });
 }, 180000);
 beforeEach(async () => {
@@ -293,3 +293,38 @@ it.each(["legacy", "durable"])(
     expect(await t.sql`select * from observations where evidence_id=${f.m}`).toHaveLength(0);
   },
 );
+
+it("unsupported memory config preserves existing no-memory chat degradation without extraction calls", async () => {
+  const f = await seed();
+  await configure({ reranker: true });
+  const { buildApp } = await import("../src/app.js");
+  const app = buildApp({
+    auth: false,
+    db: t.db,
+    masterKey: TEST_MASTER_KEY,
+    providerFactory: models.factory,
+    extractionQueue: { projectId: f.p, pollMs: 10 },
+    logStream: { write: () => {} },
+  });
+  try {
+    const r = await app.inject({
+      method: "POST",
+      url: `/projects/${f.p}/conversations/${f.c}/messages`,
+      payload: { text: "new chat" },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().abstained).toBe(true);
+    expect(r.json().memories).toEqual([]);
+  } finally {
+    await app.close();
+  }
+  expect(models.generate).toHaveBeenCalledTimes(1);
+  expect(models.embedding).not.toHaveBeenCalled();
+  expect(await t.sql`select * from observations where project_id=${f.p}`).toHaveLength(0);
+  expect(
+    await t.sql`select * from model_usage where project_id=${f.p} and purpose='chat'`,
+  ).toHaveLength(1);
+  expect(
+    await t.sql`select * from model_usage where project_id=${f.p} and purpose='extraction'`,
+  ).toHaveLength(0);
+});
