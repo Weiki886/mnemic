@@ -48,3 +48,11 @@ describe("problem+json 统一错误模型", () => {
     }
   });
 });
+
+it("provides a stable rate-limit error and standard title", () => {
+  expect(problem({ status: 429, code: ErrorCode.RATE_LIMITED })).toMatchObject({
+    status: 429,
+    code: "RATE_LIMITED",
+    title: "Too Many Requests",
+  });
+});

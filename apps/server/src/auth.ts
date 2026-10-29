@@ -1,24 +1,28 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { ErrorCode, problem } from "@mnemic/shared";
 import { resolveAuthToken } from "./config.js";
+
+/** Public transport only; shared with rate admission so exemptions cannot drift. */
+export function isPublicTransportRequest(request: FastifyRequest, corsOrigin?: string): boolean {
+  const path = request.raw.url?.split("?")[0];
+  if ((request.method === "GET" || request.method === "HEAD") && path === "/health") return true;
+  // A trusted preflight negotiates headers only; actual business requests still need auth.
+  return Boolean(
+    corsOrigin &&
+    request.method === "OPTIONS" &&
+    request.headers.origin === corsOrigin &&
+    /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/.test(
+      request.headers["access-control-request-method"] ?? "",
+    ),
+  );
+}
 
 /** 全局 onRequest：先鉴权再解析请求体/访问数据库或调用模型。 */
 export function registerBearerAuth(app: FastifyInstance, token: string, corsOrigin?: string): void {
   const expected = createHash("sha256").update(resolveAuthToken(token)).digest();
   app.addHook("onRequest", async (request, reply) => {
-    const path = request.raw.url?.split("?")[0];
-    if ((request.method === "GET" || request.method === "HEAD") && path === "/health") return;
-    // 浏览器预检不携带 Token；仅协商传输头，CORS 插件返回 204，不执行业务处理器。
-    if (
-      corsOrigin &&
-      request.method === "OPTIONS" &&
-      request.headers.origin === corsOrigin &&
-      /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/.test(
-        request.headers["access-control-request-method"] ?? "",
-      )
-    )
-      return;
+    if (isPublicTransportRequest(request, corsOrigin)) return;
     const header = request.headers.authorization;
     const match = typeof header === "string" && /^Bearer ([A-Za-z0-9._~+/-]+=*)$/i.exec(header);
     if (match && timingSafeEqual(expected, createHash("sha256").update(match[1]!).digest())) return;
