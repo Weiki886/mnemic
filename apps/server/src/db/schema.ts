@@ -459,3 +459,41 @@ export const memoryTasks = pgTable(
     ),
   ],
 );
+
+/** #22 owner: flags. One server-wide configuration, never arbitrary metadata/credentials. */
+export const featureFlags = pgTable(
+  "feature_flags",
+  {
+    id: id(),
+    scope: text("scope").notNull().default("server"),
+    schemaVersion: smallint("schema_version").notNull().default(1),
+    revision: bigint("revision", { mode: "number" }).notNull().default(0),
+    flags: jsonb("flags").notNull(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("feature_flags_scope_key").on(t.scope),
+    check("feature_flags_scope_check", sql`${t.scope} = 'server'`),
+    check("feature_flags_version_check", sql`${t.schemaVersion} = 1`),
+    check(
+      "feature_flags_revision_check",
+      sql`${t.revision} >= 0 and ${t.revision} <= 9007199254740991`,
+    ),
+    check(
+      "feature_flags_values_check",
+      sql`jsonb_typeof(${t.flags}) = 'object'
+    and ${t.flags} ?& array['retrieval_vector','retrieval_keyword','retrieval_entity','retrieval_time','memory_gate','decay','reranker','authority_resolution','read_time_resolution','read_time_reinforcement']
+    and (${t.flags} - array['retrieval_vector','retrieval_keyword','retrieval_entity','retrieval_time','memory_gate','decay','reranker','authority_resolution','read_time_resolution','read_time_reinforcement']) = '{}'::jsonb
+    and jsonb_typeof(${t.flags}->'retrieval_vector') = 'boolean'
+    and jsonb_typeof(${t.flags}->'retrieval_keyword') = 'boolean'
+    and jsonb_typeof(${t.flags}->'retrieval_entity') = 'boolean'
+    and jsonb_typeof(${t.flags}->'retrieval_time') = 'boolean'
+    and jsonb_typeof(${t.flags}->'memory_gate') = 'boolean'
+    and jsonb_typeof(${t.flags}->'decay') = 'boolean'
+    and jsonb_typeof(${t.flags}->'reranker') = 'boolean'
+    and jsonb_typeof(${t.flags}->'authority_resolution') = 'boolean'
+    and jsonb_typeof(${t.flags}->'read_time_resolution') = 'boolean'
+    and jsonb_typeof(${t.flags}->'read_time_reinforcement') = 'boolean'`,
+    ),
+  ],
+);

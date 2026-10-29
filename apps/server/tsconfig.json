@@ -5,6 +5,7 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
+      "@mnemic/shared/flags": ["../../packages/shared/src/flags.ts"],
       "@mnemic/shared/debug": ["../../packages/shared/src/debug.ts"],
       "@mnemic/shared/usage": ["../../packages/shared/src/usage.ts"],
       "@mnemic/shared/file-context": ["../../packages/shared/src/file-context.ts"],
