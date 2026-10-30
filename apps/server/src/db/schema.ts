@@ -253,15 +253,19 @@ export const memoryEmbeddings = pgTable("memory_embeddings", {
 });
 
 /** 平台审计表（#3 迁移；#15 脱敏 / #34 审批 / #23/#25/#26 复用；meta 按写入方定 schema） */
-export const auditLog = pgTable("audit_log", {
-  id: id(),
-  ts: ts("ts").notNull().defaultNow(),
-  actor: text("actor").notNull(),
-  action: text("action").notNull(),
-  target: text("target"),
-  decision: text("decision"),
-  meta: jsonb("meta"),
-});
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: id(),
+    ts: ts("ts").notNull().defaultNow(),
+    actor: text("actor").notNull(),
+    action: text("action").notNull(),
+    target: text("target"),
+    decision: text("decision"),
+    meta: jsonb("meta"),
+  },
+  (t) => [index("audit_log_time_id_idx").on(t.ts, t.id)],
+);
 
 /**
  * 消解决策轨迹（#18 自带迁移；决策 11：更新链路与检索链路对等可观测）。

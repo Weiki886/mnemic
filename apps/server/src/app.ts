@@ -1,3 +1,4 @@
+import { registerAuditRoutes } from "./audit/routes.js";
 import { RetryError } from "ai";
 import { createModelQuota, DailyCallLimit, ModelQuotaError } from "./quota/repository.js";
 import { createRequestRateLimits, type RequestRateLimitOptions } from "./rate-limit.js";
@@ -232,6 +233,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     );
   }
   if (options.db) {
+    registerAuditRoutes(app, options.db);
     registerFeatureFlagRoutes(app, options.db);
     registerUsageRoutes(app, options.db, options.usagePricing);
     registerApprovalAuditRoutes(app, options.db);

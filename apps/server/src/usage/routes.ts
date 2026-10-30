@@ -1,3 +1,4 @@
+import { writePlatformAudit } from "../audit/events.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
@@ -61,20 +62,43 @@ export function registerUsageRoutes(
             UsageQuerySchema.parse({ ...parsed.data, ...window }),
             pricing,
           );
-        const page = await readUsageExport(
-          db,
-          params.data.projectId,
-          UsageExportQuerySchema.parse({ ...parsed.data, ...window }),
-          pricing,
-        );
+        const format = "format" in parsed.data && parsed.data.format === "csv" ? "csv" : "json";
+        const prepared = await db.transaction(async (tx) => {
+          const page = await readUsageExport(
+            tx,
+            params.data.projectId,
+            UsageExportQuerySchema.parse({ ...parsed.data, ...window }),
+            pricing,
+          );
+          // Prepare the complete bounded page before committing a truthful 'prepared' receipt.
+          const payload = format === "csv" ? usageCsv(page) : JSON.stringify(page);
+          await writePlatformAudit(tx, {
+            actor: "server",
+            action: "usage.export",
+            target: params.data.projectId,
+            decision: "prepared",
+            meta: {
+              version: 1,
+              project_id: params.data.projectId,
+              conversation_id: page.conversation_id,
+              format,
+              rows: page.records.length,
+              from: page.from,
+              to: page.to,
+              after: "after" in parsed.data ? (parsed.data.after ?? null) : null,
+              next_after: page.next_after,
+            },
+          });
+          return { page, payload };
+        });
+        const { page, payload } = prepared;
         if (page.next_after) reply.header("x-next-after", page.next_after);
         reply.header("x-usage-from", page.from).header("x-usage-to", page.to);
-        if ("format" in parsed.data && parsed.data.format === "csv")
-          return reply
-            .type("text/csv; charset=utf-8")
-            .header("content-disposition", 'attachment; filename="usage.csv"')
-            .send(usageCsv(page));
-        return page;
+        if (format === "csv")
+          reply.header("content-disposition", 'attachment; filename="usage.csv"');
+        return reply
+          .type(format === "csv" ? "text/csv; charset=utf-8" : "application/json")
+          .send(payload);
       } catch (error) {
         if (error instanceof UsageScopeError) return fail(reply, request.id, 404);
         throw error;

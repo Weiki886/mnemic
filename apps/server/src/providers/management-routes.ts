@@ -1,3 +1,4 @@
+import { writePlatformAudit } from "../audit/events.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -197,6 +198,15 @@ export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
             (p.protocol !== undefined && p.protocol !== old.protocol))
         )
           return { kind: "embedding" } as const;
+        const changedFields: string[] = [];
+        if (p.name !== undefined && p.name !== old.name) changedFields.push("name");
+        if (p.protocol !== undefined && p.protocol !== old.protocol) changedFields.push("protocol");
+        if (p.base_url !== undefined && p.base_url !== old.baseUrl) changedFields.push("base_url");
+        for (const slot of ["chat", "extraction"] as const)
+          if (p.models?.[slot] !== undefined && p.models[slot] !== (old.models as ModelSlots)[slot])
+            changedFields.push(`models.${slot}`);
+        if (!changedFields.length)
+          return { kind: "ok", value: ProviderConfigSchema.parse(publicRow(old)) } as const;
         const [updated] = await tx
           .update(providerConfigs)
           .set({
@@ -209,7 +219,20 @@ export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
           })
           .where(eq(providerConfigs.id, params.data.id))
           .returning();
-        return { kind: "ok", value: ProviderConfigSchema.parse(publicRow(updated!)) } as const;
+        const value = ProviderConfigSchema.parse(publicRow(updated!));
+        await writePlatformAudit(tx, {
+          actor: "server",
+          action: "provider.update",
+          target: updated!.id,
+          decision: "updated",
+          meta: {
+            version: 1,
+            changed_fields: changedFields,
+            before_protocol: old.protocol,
+            after_protocol: updated!.protocol,
+          },
+        });
+        return { kind: "ok", value } as const;
       });
       if (result.kind === "missing")
         return fail(reply, request.id, 404, ErrorCode.NOT_FOUND, "Provider 不存在");
