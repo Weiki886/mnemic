@@ -1,3 +1,4 @@
+import type { ModelAdmission } from "../quota/repository.js";
 import { wrapLanguageModel, type LanguageModel, type EmbeddingModel } from "ai";
 import pino from "pino";
 import type { ModelCapture, ModelDebugFactory } from "../debug/model-content.js";
@@ -86,11 +87,14 @@ export function observeLanguage(
   sink: Sink,
   logger: UsageLogger = defaultLogger,
   debug?: ModelDebugFactory,
+  admit?: ModelAdmission,
 ): Language {
   return wrapLanguageModel({
     model,
     middleware: {
       wrapGenerate: async ({ doGenerate, params }) => {
+        params.abortSignal?.throwIfAborted();
+        await admit?.(params.abortSignal);
         const a = attempt(base, sink, params.abortSignal, logger);
         const observer = capture(debug, () => params.prompt);
         try {
@@ -111,6 +115,8 @@ export function observeLanguage(
         }
       },
       wrapStream: async ({ doStream, params }) => {
+        params.abortSignal?.throwIfAborted();
+        await admit?.(params.abortSignal);
         const signal = params.abortSignal,
           a = attempt(base, sink, signal, logger);
         const observer = capture(debug, () => params.prompt);
@@ -182,6 +188,7 @@ export function observeEmbedding(
   base: Base,
   sink: Sink,
   logger: UsageLogger = defaultLogger,
+  admit?: ModelAdmission,
 ): Embedding {
   return {
     specificationVersion: model.specificationVersion,
@@ -194,6 +201,8 @@ export function observeEmbedding(
       return model.supportsParallelCalls;
     },
     async doEmbed(params) {
+      params.abortSignal?.throwIfAborted();
+      await admit?.(params.abortSignal);
       const a = attempt(base, sink, params.abortSignal, logger);
       try {
         const result = await model.doEmbed(params);

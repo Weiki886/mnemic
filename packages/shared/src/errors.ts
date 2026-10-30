@@ -16,6 +16,8 @@ export const ErrorCode = {
   NOT_FOUND: "NOT_FOUND",
   CONFLICT: "CONFLICT",
   RATE_LIMITED: "RATE_LIMITED",
+  MODEL_QUOTA_EXCEEDED: "MODEL_QUOTA_EXCEEDED",
+  MODEL_QUOTA_UNAVAILABLE: "MODEL_QUOTA_UNAVAILABLE",
   INTERNAL_ERROR: "INTERNAL_ERROR",
 } as const;
 
@@ -51,6 +53,7 @@ const STATUS_TITLES: Record<number, string> = {
   415: "Unsupported Media Type",
   429: "Too Many Requests",
   500: "Internal Server Error",
+  503: "Service Unavailable",
 };
 
 export function problem(input: {

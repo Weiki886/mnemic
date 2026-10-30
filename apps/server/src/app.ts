@@ -1,3 +1,5 @@
+import { RetryError } from "ai";
+import { createModelQuota, DailyCallLimit, ModelQuotaError } from "./quota/repository.js";
 import { createRequestRateLimits, type RequestRateLimitOptions } from "./rate-limit.js";
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
@@ -39,6 +41,8 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 };
 
 export interface BuildAppOptions {
+  /** Library opt-in; official entry always supplies a validated daily limit. */
+  modelDailyCallLimit?: number;
   /** Per-instance token buckets. Official entry uses defaults; no HTTP/env disable switch. */
   rateLimit?: RequestRateLimitOptions | undefined;
   /** Operator-only; forces debug-level output. LOG_LEVEL alone never enables memory traces. */
@@ -82,6 +86,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (!Number.isInteger(drainMs) || drainMs < 0 || drainMs > 60000)
   )
     throw new Error("managed worker shutdownDrainMs must be an integer from 0 to 60000");
+  const dailyLimit =
+    options.modelDailyCallLimit === undefined
+      ? undefined
+      : DailyCallLimit.parse(options.modelDailyCallLimit);
+  if (dailyLimit !== undefined && !options.db) throw Error("model daily quota requires database");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const rateLimits = createRequestRateLimits(options.rateLimit, options.corsOrigin);
   const app = Fastify({
@@ -120,6 +129,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
   });
 
+  const admitModelCall =
+    dailyLimit === undefined ? undefined : createModelQuota(options.db!, dailyLimit, app.log);
+  const quotaOptions = admitModelCall ? { admitModelCall } : {};
   const debugTrace = createDebugTrace(options.debugMode ? app.log : undefined);
   const modelDebug = options.debugContent
     ? createModelDebug(app.log, [
@@ -142,6 +154,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           debugTrace,
           ...(modelDebug ? { modelDebug } : {}),
           usageLogger: app.log,
+          ...quotaOptions,
           ...(options.providerFactory ? { factory: options.providerFactory } : {}),
         },
         { warn: (msg) => app.log.warn(msg) },
@@ -200,6 +213,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/health", async () => ({ status: "ok" }));
   registerDoctorRoutes(app, {
+    ...quotaOptions,
     authenticated: authToken !== undefined,
     db: options.db,
     masterKey: options.masterKey,
@@ -208,7 +222,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   if (options.db && options.masterKey) {
     registerProviderRoutes(app, options.db, options.masterKey);
-    registerRecallRoutes(app, options.db, options.masterKey, options.providerFactory, debugTrace);
+    registerRecallRoutes(
+      app,
+      options.db,
+      options.masterKey,
+      options.providerFactory,
+      debugTrace,
+      admitModelCall,
+    );
   }
   if (options.db) {
     registerFeatureFlagRoutes(app, options.db);
@@ -222,6 +243,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
+      ...quotaOptions,
       ...(options.extractionQueue ? { durableExtraction: true } : {}),
       debugTrace,
       ...(modelDebug ? { modelDebug } : {}),
@@ -248,16 +270,32 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
-    const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
+    // SDK retries wrap the final local denial; only unwrap this known SDK error shape.
+    const quotaError =
+      error instanceof ModelQuotaError
+        ? error
+        : RetryError.isInstance(error) && error.lastError instanceof ModelQuotaError
+          ? error.lastError
+          : undefined;
+    const status =
+      quotaError?.statusCode ??
+      (error.statusCode && error.statusCode >= 400 ? error.statusCode : 500);
     if (status >= 500) {
       request.log.error({ statusCode: status }, "unhandled error");
     }
-    const code =
-      ERROR_CODE_BY_STATUS[status] ??
-      (status >= 500
-        ? ErrorCode.INTERNAL_ERROR
-        : // 其余 4xx（413/415/405 等）均为客户端错误类，绝不能标成 INTERNAL_ERROR
-          ErrorCode.VALIDATION_FAILED);
+    if (quotaError)
+      reply
+        .header("cache-control", "no-store")
+        .header("retry-after", String(quotaError.retryAfterSeconds));
+    const code = quotaError
+      ? quotaError.reason === "exhausted"
+        ? ErrorCode.MODEL_QUOTA_EXCEEDED
+        : ErrorCode.MODEL_QUOTA_UNAVAILABLE
+      : (ERROR_CODE_BY_STATUS[status] ??
+        (status >= 500
+          ? ErrorCode.INTERNAL_ERROR
+          : // 其余 4xx（413/415/405 等）均为客户端错误类，绝不能标成 INTERNAL_ERROR
+            ErrorCode.VALIDATION_FAILED));
     reply
       .code(status)
       .header("content-type", "application/problem+json")
@@ -266,7 +304,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           status,
           code,
           // 5xx 不回传内部细节，避免泄露实现
-          detail: status >= 500 ? "服务器内部错误" : error.message,
+          detail: quotaError
+            ? quotaError.message
+            : status >= 500
+              ? "服务器内部错误"
+              : error.message,
           requestId: request.id,
         }),
       );

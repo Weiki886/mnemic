@@ -20,6 +20,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -499,4 +500,14 @@ export const featureFlags = pgTable(
     and jsonb_typeof(${t.flags}->'read_time_reinforcement') = 'boolean'`,
     ),
   ],
+);
+
+/** #23 owner: quota. Global UTC-day reservation counter, independent of optional usage telemetry. */
+export const modelDailyQuota = pgTable(
+  "model_daily_quota",
+  {
+    day: date("day", { mode: "string" }).primaryKey(),
+    calls: bigint("calls", { mode: "number" }).notNull(),
+  },
+  (t) => [check("model_daily_quota_calls_check", sql`${t.calls} between 1 and 9007199254740991`)],
 );

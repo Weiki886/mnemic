@@ -1,3 +1,4 @@
+import type { ModelAdmission } from "../quota/repository.js";
 import type { FastifyInstance } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
@@ -21,6 +22,7 @@ import type { DebugTrace } from "../debug/trace.js";
 /** 对话闭环 API（#7）：会话创建/提交/消息应答 */
 
 export interface ChatRouteDeps {
+  admitModelCall?: ModelAdmission;
   durableExtraction?: boolean;
   debugTrace?: DebugTrace;
   modelDebug?: ModelDebug;
@@ -51,6 +53,7 @@ export function registerChatRoutes(
   deps: ChatRouteDeps = {},
 ): void {
   const modelOpts = {
+    ...(deps.admitModelCall ? { admitModelCall: deps.admitModelCall } : {}),
     ...(deps.durableExtraction ? { durableExtraction: true } : {}),
     ...(deps.factory ? { factory: deps.factory } : {}),
     usageLogger: app.log,
