@@ -35,7 +35,7 @@
     "@redocly/cli": "1.34.15",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/node": "^22.0.0",
-    "ajv": "8.17.1",
+    "ajv": "8.20.0",
     "drizzle-kit": "^0.28.0",
     "testcontainers": "^12.1.0",
     "tsx": "^4.19.0",
