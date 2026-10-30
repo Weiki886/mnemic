@@ -62,3 +62,9 @@ it("unknown CLI arguments fail before modifying the checked artifact", async () 
   );
   expect(await readFile(file, "utf8")).toBe(before);
 });
+it("published contract declares the repository's actual Apache license", () => {
+  expect(createOpenApiDocument().info.license).toEqual({
+    name: "Apache License 2.0",
+    url: "https://www.apache.org/licenses/LICENSE-2.0.html",
+  });
+});

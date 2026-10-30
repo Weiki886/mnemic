@@ -145,6 +145,10 @@ export function createOpenApiDocument(): OpenApiDocument {
     info: {
       title: "Mnemic API — contract foundation",
       version: "0.1.0",
+      license: {
+        name: "Apache License 2.0",
+        url: "https://www.apache.org/licenses/LICENSE-2.0.html",
+      },
       description:
         "Partial contract for health and feature flag management only (Issue #24 split 1/3). Other implemented APIs and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
