@@ -157,7 +157,23 @@ it("parallel deliveries with different identities serialize the Evidence commit,
   const first = await claim(f),
     second = await claim(f),
     h = handlers();
-  await Promise.all([h.EXTRACT(first, context()), h.EXTRACT(second, context())]);
+  const normal = models.generate.getMockImplementation()!;
+  let entered = 0,
+    release!: () => void;
+  const bothEntered = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // Keep both initial Evidence reads before either commit; otherwise a valid dedup can skip call #2.
+  await models.generate.withImplementation(
+    async () => {
+      if (++entered === 2) release();
+      await bothEntered;
+      return normal();
+    },
+    async () => {
+      await Promise.all([h.EXTRACT(first, context()), h.EXTRACT(second, context())]);
+    },
+  );
   expect(models.generate).toHaveBeenCalledTimes(2);
   expect(await t.sql`select * from observations where evidence_id=${f.id}`).toHaveLength(1);
   expect(await t.sql`select * from pending_candidates where evidence_id=${f.id}`).toHaveLength(1);
