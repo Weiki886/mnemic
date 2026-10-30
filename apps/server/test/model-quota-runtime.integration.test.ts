@@ -1,3 +1,4 @@
+import { APICallError } from "ai";
 import { afterAll, beforeAll, beforeEach, afterEach, expect, it, vi } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { buildApp } from "../src/app.js";
@@ -249,3 +250,35 @@ it("quota storage failure returns safe 503 without invoking a provider", async (
     await t.sql`alter table model_daily_quota drop constraint quota_test_failure`;
   }
 });
+
+it.each([1, 2])(
+  "SDK retries reserve separately; limit %s never allows a second unpaid admission",
+  async (limit) => {
+    const a = build({ modelDailyCallLimit: limit }),
+      id = await conversation();
+    m.generate.mockRejectedValueOnce(
+      new APICallError({
+        message: "private-provider-payload",
+        url: "https://example.invalid",
+        requestBodyValues: {},
+        statusCode: 503,
+        isRetryable: true,
+      }),
+    );
+    const r = await a.inject({
+      method: "POST",
+      url: `/projects/${projectId}/conversations/${id}/messages`,
+      headers,
+      payload: { text: "x" },
+    });
+    expect(r.statusCode).toBe(limit === 1 ? 429 : 200);
+    await waitForChatJobs();
+    expect(m.generate).toHaveBeenCalledTimes(limit);
+    expect(await used()).toEqual([{ calls: limit }]);
+    const rows =
+      await t.sql`select status from model_usage where project_id=${projectId} order by started_at`;
+    expect(rows.map((r) => r.status)).toEqual(limit === 1 ? ["error"] : ["error", "success"]);
+    expect(r.body).not.toContain("private-provider-payload");
+    expect(logs).not.toContain("private-provider-payload");
+  },
+);

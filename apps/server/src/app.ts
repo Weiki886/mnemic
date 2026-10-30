@@ -1,3 +1,4 @@
+import { RetryError } from "ai";
 import { createModelQuota, DailyCallLimit, ModelQuotaError } from "./quota/repository.js";
 import { createRequestRateLimits, type RequestRateLimitOptions } from "./rate-limit.js";
 import { randomUUID } from "node:crypto";
@@ -269,7 +270,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
-    const quotaError = error instanceof ModelQuotaError ? error : undefined;
+    // SDK retries wrap the final local denial; only unwrap this known SDK error shape.
+    const quotaError =
+      error instanceof ModelQuotaError
+        ? error
+        : RetryError.isInstance(error) && error.lastError instanceof ModelQuotaError
+          ? error.lastError
+          : undefined;
     const status =
       quotaError?.statusCode ??
       (error.statusCode && error.statusCode >= 400 ? error.statusCode : 500);
