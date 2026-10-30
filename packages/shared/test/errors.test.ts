@@ -11,7 +11,7 @@ describe("problem+json 统一错误模型", () => {
       requestId: "req-1",
     });
 
-    expect(body.type).toBe("about:blank");
+    expect(body.type).toBe("https://mnemic.dev/errors/not-found");
     expect(body.title).toBe("Not Found");
     expect(body.status).toBe(404);
     expect(body.detail).toBe("belief 不存在");
