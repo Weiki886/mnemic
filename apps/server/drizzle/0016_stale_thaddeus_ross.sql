@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "audit_log_time_id_idx" ON "audit_log" USING btree ("ts","id");
