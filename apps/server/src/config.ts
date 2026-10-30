@@ -53,3 +53,11 @@ export function resolveDebugContent(raw: string | undefined, debugMode: boolean)
   if (raw === "1" && !debugMode) throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
   return raw === "1";
 }
+
+/** Startup-only cap; never echo a possibly secret invalid value. No zero/unlimited mode. */
+export function resolveModelDailyCallLimit(raw: string | undefined): number {
+  if (raw === undefined) return 1000;
+  if (!/^[1-9]\d{0,6}$/.test(raw) || Number(raw) > 1_000_000)
+    throw new Error("MNEMIC_MODEL_DAILY_CALL_LIMIT must be an integer from 1 to 1000000");
+  return Number(raw);
+}

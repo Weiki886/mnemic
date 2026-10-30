@@ -106,6 +106,13 @@
       "when": 1793244315945,
       "tag": "0014_trace_flag_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793325756604,
+      "tag": "0015_faithful_wiccan",
+      "breakpoints": true
     }
   ]
 }

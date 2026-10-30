@@ -1,3 +1,4 @@
+import type { ModelAdmission } from "../quota/repository.js";
 import { asc, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { EmbeddingModel, LanguageModel } from "ai";
@@ -16,6 +17,8 @@ import type { DebugTrace } from "../debug/trace.js";
 export type Slot = keyof Required<ModelSlots>;
 
 export interface ResolveOptions extends FeatureFlagOptions {
+  /** Trusted server admission shared by every actual SDK invocation. */
+  admitModelCall?: ModelAdmission;
   debugTrace?: DebugTrace;
   modelDebug?: ModelDebug;
   /** Server-resolved physical Evidence; never taken from HTTP model options. */
@@ -121,6 +124,7 @@ export async function resolveModel(
           base,
           sink,
           options.usageLogger,
+          options.admitModelCall,
         )
       : observeLanguage(
           rawModel as Exclude<LanguageModel, string>,
@@ -128,6 +132,7 @@ export async function resolveModel(
           sink,
           options.usageLogger,
           debug,
+          options.admitModelCall,
         );
   return { model, modelId, providerName: row.name, slot };
 }

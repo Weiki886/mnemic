@@ -10,6 +10,7 @@ import {
   resolvePort,
   resolveDebugMode,
   resolveDebugContent,
+  resolveModelDailyCallLimit,
 } from "./config.js";
 import { parseUsagePricing } from "./usage/pricing.js";
 
@@ -17,6 +18,7 @@ import { parseUsagePricing } from "./usage/pricing.js";
 const authToken = resolveAuthToken(process.env.MNEMIC_AUTH_TOKEN);
 const debugMode = resolveDebugMode(process.env.MNEMIC_DEBUG);
 const debugContent = resolveDebugContent(process.env.MNEMIC_DEBUG_CONTENT, debugMode);
+const modelDailyCallLimit = resolveModelDailyCallLimit(process.env.MNEMIC_MODEL_DAILY_CALL_LIMIT);
 const port = resolvePort(process.env.PORT);
 const host = resolveHost(process.env.HOST);
 const corsOrigin = resolveCorsOrigin(process.env.CORS_ORIGIN);
@@ -40,6 +42,7 @@ const app = buildApp({
   corsOrigin,
   authToken,
   usagePricing,
+  ...(db ? { modelDailyCallLimit } : {}),
   debugMode,
   debugContent,
   ...(db && masterKey ? { extractionQueue: {} } : {}),

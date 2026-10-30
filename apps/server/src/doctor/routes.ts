@@ -1,3 +1,4 @@
+import type { ModelAdmission } from "../quota/repository.js";
 import type { FastifyInstance } from "fastify";
 import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -9,6 +10,7 @@ import type { ProviderFactory } from "../providers/factory.js";
 import { assertDimensionMatch, embeddingDimensionsFromEnv } from "../providers/dimension-guard.js";
 
 interface DoctorOptions {
+  admitModelCall?: ModelAdmission;
   usageLogger?: { warn(message: string): void };
   authenticated?: boolean | undefined;
   db?: PostgresJsDatabase | undefined;
@@ -107,6 +109,7 @@ async function diagnose(options: DoctorOptions, probe: boolean): Promise<DoctorR
     return finish();
   }
   const modelOptions = {
+    ...(options.admitModelCall ? { admitModelCall: options.admitModelCall } : {}),
     ...(options.usageLogger ? { usageLogger: options.usageLogger } : {}),
     ...(options.factory ? { factory: options.factory } : {}),
     usageContext: { projectId: null, conversationId: null, purpose: "probe" as const },

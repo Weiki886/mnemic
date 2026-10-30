@@ -1,3 +1,4 @@
+import type { ModelAdmission } from "../quota/repository.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { and, eq } from "drizzle-orm";
@@ -31,6 +32,7 @@ export function registerRecallRoutes(
   masterKey: Buffer,
   factory?: ProviderFactory,
   debugTrace?: DebugTrace,
+  admitModelCall?: ModelAdmission,
 ): void {
   app.post(
     "/projects/:projectId/recall",
@@ -87,6 +89,7 @@ export function registerRecallRoutes(
         const result = await retrieve(db, masterKey, projectId, body.data.query, {
           ...(debugTrace ? { debugTrace } : {}),
           usageLogger: app.log,
+          ...(admitModelCall ? { admitModelCall } : {}),
           ...(factory ? { factory } : {}),
           topK: 5,
           reinforce: false,
