@@ -1,3 +1,4 @@
+import { writePlatformAudit } from "../audit/events.js";
 import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
@@ -176,13 +177,24 @@ export function registerBeliefReadRoutes(
     }
     const { projectId, id } = params.data;
     // 原子条件更新：状态检查与写同一条 SQL，消除 TOCTOU（并发删除恰好一个成功）
-    const updated = await db
-      .update(beliefs)
-      .set({ status: "deleted" })
-      .where(
-        and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "active")),
-      )
-      .returning({ id: beliefs.id });
+    const updated = await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(beliefs)
+        .set({ status: "deleted" })
+        .where(
+          and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "active")),
+        )
+        .returning({ id: beliefs.id });
+      if (changed.length)
+        await writePlatformAudit(tx, {
+          actor: "server",
+          action: "belief.delete",
+          target: id,
+          decision: "updated",
+          meta: { version: 1, project_id: projectId, before: "active", after: "deleted" },
+        });
+      return changed;
+    });
     if (updated.length > 0) {
       emitDebugTrace(debugTrace, {
         event: "memory.belief.status_changed",
@@ -207,13 +219,24 @@ export function registerBeliefReadRoutes(
       return badRequest(reply, request.id, "路径参数非法：必须为 UUID", params.error);
     }
     const { projectId, id } = params.data;
-    const updated = await db
-      .update(beliefs)
-      .set({ status: "active" })
-      .where(
-        and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "deleted")),
-      )
-      .returning({ id: beliefs.id });
+    const updated = await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(beliefs)
+        .set({ status: "active" })
+        .where(
+          and(eq(beliefs.id, id), eq(beliefs.projectId, projectId), eq(beliefs.status, "deleted")),
+        )
+        .returning({ id: beliefs.id });
+      if (changed.length)
+        await writePlatformAudit(tx, {
+          actor: "server",
+          action: "belief.restore",
+          target: id,
+          decision: "updated",
+          meta: { version: 1, project_id: projectId, before: "deleted", after: "active" },
+        });
+      return changed;
+    });
     if (updated.length > 0) {
       emitDebugTrace(debugTrace, {
         event: "memory.belief.status_changed",

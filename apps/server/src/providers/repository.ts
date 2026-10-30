@@ -1,3 +1,4 @@
+import { writePlatformAudit } from "../audit/events.js";
 import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
@@ -54,18 +55,36 @@ export async function createProvider(
   masterKey: Buffer,
   input: CreateProviderInput,
 ): Promise<ProviderView> {
-  const rows = await db
-    .insert(providerConfigs)
-    .values({
-      id: uuidv7(),
-      name: input.name,
-      protocol: input.protocol,
-      baseUrl: input.baseUrl,
-      apiKeyEncrypted: encrypt(input.apiKey, masterKey),
-      models: input.models,
-    })
-    .returning();
-  return toView(rows[0]!, masterKey);
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .insert(providerConfigs)
+      .values({
+        id: uuidv7(),
+        name: input.name,
+        protocol: input.protocol,
+        baseUrl: input.baseUrl,
+        apiKeyEncrypted: encrypt(input.apiKey, masterKey),
+        models: input.models,
+      })
+      .returning();
+    const row = rows[0]!;
+    await writePlatformAudit(tx, {
+      actor: "server",
+      action: "provider.create",
+      target: row.id,
+      decision: "created",
+      meta: {
+        version: 1,
+        protocol: row.protocol,
+        slots: (["chat", "extraction", "embedding"] as const).filter(
+          (slot) =>
+            typeof (row.models as ModelSlots)[slot] === "string" &&
+            (row.models as ModelSlots)[slot]!.length > 0,
+        ),
+      },
+    });
+    return toView(row, masterKey);
+  });
 }
 
 export async function listProviders(db: Db, masterKey: Buffer): Promise<ProviderView[]> {
