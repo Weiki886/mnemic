@@ -1,3 +1,4 @@
+import { createRequestRateLimits, type RequestRateLimitOptions } from "./rate-limit.js";
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
@@ -34,9 +35,12 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
   403: ErrorCode.FORBIDDEN,
   404: ErrorCode.NOT_FOUND,
   409: ErrorCode.CONFLICT,
+  429: ErrorCode.RATE_LIMITED,
 };
 
 export interface BuildAppOptions {
+  /** Per-instance token buckets. Official entry uses defaults; no HTTP/env disable switch. */
+  rateLimit?: RequestRateLimitOptions | undefined;
   /** Operator-only; forces debug-level output. LOG_LEVEL alone never enables memory traces. */
   debugMode?: boolean;
   debugContent?: boolean;
@@ -79,6 +83,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   )
     throw new Error("managed worker shutdownDrainMs must be an integer from 0 to 60000");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
+  const rateLimits = createRequestRateLimits(options.rateLimit, options.corsOrigin);
   const app = Fastify({
     logger: {
       level: options.debugMode ? "debug" : (process.env.LOG_LEVEL ?? "info"),
@@ -142,7 +147,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         { warn: (msg) => app.log.warn(msg) },
       )
     : options.taskWorker;
-  if (authToken !== undefined) registerBearerAuth(app, authToken, options.corsOrigin);
+  app.addHook("onRequest", rateLimits.ip);
+  if (authToken !== undefined) {
+    registerBearerAuth(app, authToken, options.corsOrigin);
+    app.addHook("onRequest", rateLimits.token);
+  }
   if (options.corsOrigin) {
     app.register(cors, {
       origin: options.corsOrigin,

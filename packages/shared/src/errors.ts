@@ -15,6 +15,7 @@ export const ErrorCode = {
   FORBIDDEN: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
   CONFLICT: "CONFLICT",
+  RATE_LIMITED: "RATE_LIMITED",
   INTERNAL_ERROR: "INTERNAL_ERROR",
 } as const;
 
@@ -48,6 +49,7 @@ const STATUS_TITLES: Record<number, string> = {
   409: "Conflict",
   413: "Payload Too Large",
   415: "Unsupported Media Type",
+  429: "Too Many Requests",
   500: "Internal Server Error",
 };
 
