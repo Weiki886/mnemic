@@ -4,6 +4,7 @@ import { Ajv } from "ajv";
 import { uuidv7 } from "uuidv7";
 import { buildApp } from "../src/app.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
+import type { BeliefDetail, BeliefListItem, ResolutionTrace, ProblemDetails } from "@mnemic/shared";
 import { TEST_MASTER_KEY } from "./test-keys.js";
 import { readFeatureFlags } from "../src/flags/repository.js";
 import { DEFAULT_FEATURE_FLAGS } from "@mnemic/shared/flags";
@@ -51,7 +52,7 @@ function validate(shape: unknown, value: unknown) {
   const validator = ajv.compile(rewritten);
   expect(validator(value), JSON.stringify(validator.errors)).toBe(true);
 }
-async function request(
+async function request<T = unknown>(
   path: string,
   method: "get" | "post",
   status: number,
@@ -90,7 +91,7 @@ async function request(
     status === 200 ? "application/json" : "application/problem+json",
   );
   validate(schema(path, method, status), body);
-  return body;
+  return body as T;
 }
 beforeAll(async () => {
   t = await setupTestDb();
@@ -118,10 +119,12 @@ afterAll(async () => {
   expect(models).not.toHaveBeenCalled();
 });
 it("artifact correction example runs through all six operations over TCP with numeric scores and provenance", async () => {
-  const list = await request(basePath, "get", 200, { query: "?limit=1&offset=0&unknown=ignored" });
+  const list = await request<BeliefListItem[]>(basePath, "get", 200, {
+    query: "?limit=1&offset=0&unknown=ignored",
+  });
   expect(list).toHaveLength(1);
   expect(list[0]).toMatchObject({ id: beliefId, confidence: 0.9, type: null });
-  const before = await request(detailPath, "get", 200);
+  const before = await request<BeliefDetail>(detailPath, "get", 200);
   expect(before.versions[0]).toMatchObject({ source: null, confidence: null });
   expect(before.current_value).toEqual({ engine: "PostgreSQL", nested: [null, 1] });
   const op = doc.paths[detailPath + "/correct"]!.post!;
@@ -131,14 +134,14 @@ it("artifact correction example runs through all six operations over TCP with nu
   expect(
     await request(detailPath + "/correct", "post", 200, { body: example.example }),
   ).toMatchObject({ beliefId, route: "conflict", relation: "supersede" });
-  const after = await request(detailPath, "get", 200);
+  const after = await request<BeliefDetail>(detailPath, "get", 200);
   expect(after.current_value).toBe("SQLite");
   expect(after.versions).toHaveLength(2);
-  expect(after.versions[1].source).toMatchObject({
+  expect(after.versions[1]!.source).toMatchObject({
     message_id: expect.any(String),
     conversation_id: expect.any(String),
   });
-  const history = await request(detailPath + "/resolutions", "get", 200);
+  const history = await request<ResolutionTrace[]>(detailPath + "/resolutions", "get", 200);
   expect(history).toHaveLength(1);
   expect(history[0]).toMatchObject({
     beliefId,
@@ -162,6 +165,20 @@ it("artifact correction example runs through all six operations over TCP with nu
     await t.sql`select action from audit_log where target=${beliefId} and action in ('belief.delete','belief.restore') order by ts`;
   expect(audits.map((r) => r.action)).toEqual(["belief.delete", "belief.restore"]);
 });
+it("historical decision nulls validate without synthesizing model or feature snapshots", async () => {
+  const traceId = uuidv7();
+  await t.sql`insert into resolution_traces (id,project_id,belief_id,observation_id,relation,policies,resolver_version)
+    select ${traceId},project_id,belief_id,observation_id,null,'{"intent":{"action":"ignore"}}'::jsonb,'0.1.0'
+    from resolution_traces where belief_id=${beliefId} limit 1`;
+  const history = await request<ResolutionTrace[]>(detailPath + "/resolutions", "get", 200);
+  expect(history.find((row) => row.id === traceId)).toMatchObject({
+    relation: null,
+    confidenceBefore: null,
+    confidenceAfter: null,
+    modelSnapshot: null,
+    flagsSnapshot: null,
+  });
+});
 it.each([
   ["", "get"],
   ["/correct", "post"],
@@ -182,8 +199,8 @@ it.each([
   [basePath, "get", { query: "?status=expired" }],
   [detailPath + "/correct", "post", { body: { value: "" } }],
 ] as const)("invalid input %s %s yields structured 400", async (path, method, options) => {
-  const r = await request(path, method, 400, options);
-  expect(r.errors.length).toBeGreaterThan(0);
+  const r = await request<ProblemDetails>(path, method, 400, options);
+  expect(r.errors?.length).toBeGreaterThan(0);
 });
 it("authentication rejects malformed correction before parsing JSON", async () => {
   await request(detailPath + "/correct", "post", 401, { raw: "{broken", auth: false });
@@ -192,15 +209,15 @@ it("empty unknown project list is 200; literal wildcard does not match every bel
   expect(await request(basePath, "get", 200, { project: uuidv7() })).toEqual([]);
   expect(await request(basePath, "get", 200, { query: "?q=%25" })).toEqual([]);
 });
-it.each([null, true, 42, ["value", null]])(
+it.each([null, true, 42, ["value", null]].map((value) => ({ value })))(
   "JSONB value %j remains an explicit field rather than an omitted one",
-  async (value) => {
+  async ({ value }) => {
     const id = uuidv7(),
       vid = uuidv7();
     await t.sql`insert into beliefs (id,project_id,subject,attribute) values (${id},${projectId},${"json-" + id},'value')`;
     await t.sql`insert into belief_versions (id,belief_id,value,valid_from,recorded_from) values (${vid},${id},${JSON.stringify(value)},now(),now())`;
     await t.sql`update beliefs set current_version_id=${vid} where id=${id}`;
-    const body = await request(detailPath, "get", 200, { id });
+    const body = await request<BeliefDetail>(detailPath, "get", 200, { id });
     expect(body).toHaveProperty("current_value", value);
     expect(body.versions[0]).toHaveProperty("value", value);
   },
