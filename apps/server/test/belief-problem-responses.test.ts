@@ -43,7 +43,7 @@ describe("beliefs 路由共用的 problem+json 响应", () => {
         expect(response.statusCode).toBe(expected.status);
         expect(response.headers["content-type"]).toContain("application/problem+json");
         expect(response.json()).toEqual({
-          type: "about:blank",
+          type: `https://mnemic.dev/errors/${expected.code.toLowerCase().replaceAll("_", "-")}`,
           ...expected,
           requestId: "belief-errors-test",
           ...(kind === "badRequest"

@@ -1,3 +1,4 @@
+import { HealthResponseSchema } from "./contracts/health.js";
 import { registerAuditRoutes } from "./audit/routes.js";
 import { RetryError } from "ai";
 import { createModelQuota, DailyCallLimit, ModelQuotaError } from "./quota/repository.js";
@@ -212,7 +213,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
-  app.get("/health", async () => ({ status: "ok" }));
+  app.get("/health", async () => HealthResponseSchema.parse({ status: "ok" }));
   registerDoctorRoutes(app, {
     ...quotaOptions,
     authenticated: authToken !== undefined,

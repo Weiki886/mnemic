@@ -48,3 +48,17 @@ export function createFeatureFlagSnapshot(value: unknown): FeatureFlagSnapshot {
   Object.freeze(parsed.flags);
   return Object.freeze(parsed);
 }
+
+export const FeatureFlagUpdateResultSchema = z
+  .object({
+    kind: z.enum(["updated", "unchanged", "conflict"]),
+    snapshot: FeatureFlagSnapshotSchema,
+  })
+  .strict();
+export type FeatureFlagUpdateResult = Omit<
+  z.infer<typeof FeatureFlagUpdateResultSchema>,
+  "snapshot"
+> & { snapshot: FeatureFlagSnapshot };
+export const FeatureFlagHttpUpdateResultSchema = FeatureFlagUpdateResultSchema.extend({
+  kind: z.enum(["updated", "unchanged"]),
+});

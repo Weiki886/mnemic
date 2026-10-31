@@ -1,0 +1,733 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Mnemic API — contract foundation",
+    "version": "0.1.0",
+    "license": {
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+    },
+    "description": "Partial contract for health and feature flag management only (Issue #24 split 1/3). Other implemented APIs and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3000",
+      "description": "Local development example; configure host/port separately."
+    }
+  ],
+  "tags": [
+    { "name": "System", "description": "Process liveness." },
+    { "name": "Configuration", "description": "Global operator feature flag configuration." }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer" } },
+    "schemas": {
+      "ProblemDetails": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/validation-failed"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["VALIDATION_FAILED"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/unauthorized"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["UNAUTHORIZED"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/forbidden"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["FORBIDDEN"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/not-found"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["NOT_FOUND"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/conflict"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["CONFLICT"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/rate-limited"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["RATE_LIMITED"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/model-quota-exceeded"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["MODEL_QUOTA_EXCEEDED"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  {
+                    "type": "string",
+                    "enum": ["https://mnemic.dev/errors/model-quota-unavailable"]
+                  }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["MODEL_QUOTA_UNAVAILABLE"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "anyOf": [
+                  { "type": "string", "enum": ["about:blank"] },
+                  { "type": "string", "enum": ["https://mnemic.dev/errors/internal-error"] }
+                ]
+              },
+              "title": { "type": "string" },
+              "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+              "detail": { "type": "string" },
+              "code": { "type": "string", "enum": ["INTERNAL_ERROR"] },
+              "requestId": { "type": "string" },
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "path": { "type": "string" }, "message": { "type": "string" } },
+                  "required": ["path", "message"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["type", "title", "status", "code"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": { "status": { "type": "string", "enum": ["ok"] } },
+        "required": ["status"],
+        "additionalProperties": false
+      },
+      "FeatureFlagSnapshot": {
+        "type": "object",
+        "properties": {
+          "schema_version": { "type": "number", "enum": [1] },
+          "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "flags": {
+            "type": "object",
+            "properties": {
+              "retrieval_vector": { "type": "boolean" },
+              "retrieval_keyword": { "type": "boolean" },
+              "retrieval_entity": { "type": "boolean" },
+              "retrieval_time": { "type": "boolean" },
+              "memory_gate": { "type": "boolean" },
+              "decay": { "type": "boolean" },
+              "reranker": { "type": "boolean" },
+              "authority_resolution": { "type": "boolean" },
+              "read_time_resolution": { "type": "boolean" },
+              "read_time_reinforcement": { "type": "boolean" }
+            },
+            "required": [
+              "retrieval_vector",
+              "retrieval_keyword",
+              "retrieval_entity",
+              "retrieval_time",
+              "memory_gate",
+              "decay",
+              "reranker",
+              "authority_resolution",
+              "read_time_resolution",
+              "read_time_reinforcement"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": ["schema_version", "revision", "flags"],
+        "additionalProperties": false
+      },
+      "FeatureFlagUpdate": {
+        "type": "object",
+        "properties": {
+          "expected_revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "flags": {
+            "type": "object",
+            "properties": {
+              "retrieval_vector": { "type": "boolean" },
+              "retrieval_keyword": { "type": "boolean" },
+              "retrieval_entity": { "type": "boolean" },
+              "retrieval_time": { "type": "boolean" },
+              "memory_gate": { "type": "boolean" },
+              "decay": { "type": "boolean" },
+              "reranker": { "type": "boolean" },
+              "authority_resolution": { "type": "boolean" },
+              "read_time_resolution": { "type": "boolean" },
+              "read_time_reinforcement": { "type": "boolean" }
+            },
+            "required": [
+              "retrieval_vector",
+              "retrieval_keyword",
+              "retrieval_entity",
+              "retrieval_time",
+              "memory_gate",
+              "decay",
+              "reranker",
+              "authority_resolution",
+              "read_time_resolution",
+              "read_time_reinforcement"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": ["expected_revision", "flags"],
+        "additionalProperties": false
+      },
+      "FeatureFlagUpdateResult": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["updated", "unchanged"] },
+          "snapshot": {
+            "type": "object",
+            "properties": {
+              "schema_version": { "type": "number", "enum": [1] },
+              "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "flags": {
+                "type": "object",
+                "properties": {
+                  "retrieval_vector": { "type": "boolean" },
+                  "retrieval_keyword": { "type": "boolean" },
+                  "retrieval_entity": { "type": "boolean" },
+                  "retrieval_time": { "type": "boolean" },
+                  "memory_gate": { "type": "boolean" },
+                  "decay": { "type": "boolean" },
+                  "reranker": { "type": "boolean" },
+                  "authority_resolution": { "type": "boolean" },
+                  "read_time_resolution": { "type": "boolean" },
+                  "read_time_reinforcement": { "type": "boolean" }
+                },
+                "required": [
+                  "retrieval_vector",
+                  "retrieval_keyword",
+                  "retrieval_entity",
+                  "retrieval_time",
+                  "memory_gate",
+                  "decay",
+                  "reranker",
+                  "authority_resolution",
+                  "read_time_resolution",
+                  "read_time_reinforcement"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": ["schema_version", "revision", "flags"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["kind", "snapshot"],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "tags": ["System"],
+        "summary": "Check HTTP service liveness",
+        "description": "Public liveness only; this does not prove database, model or deployment readiness. Query parameters are ignored.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "HTTP process is responding.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" },
+                "example": { "status": "ok" }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headHealth",
+        "tags": ["System"],
+        "summary": "Check liveness without a response body",
+        "description": "Same public liveness check as GET; the response body is empty.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "HTTP process is responding; no response body.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/config/flags": {
+      "get": {
+        "operationId": "getFeatureFlags",
+        "tags": ["Configuration"],
+        "summary": "Read persisted feature flag configuration",
+        "description": "Global operator scope. No query parameters accepted. Returns persisted flags rather than effective per-operation overrides; no model invocation. Cache-Control: no-store.",
+        "responses": {
+          "200": {
+            "description": "Strict persisted snapshot; historical or unsupported true values may be read for operator repair.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FeatureFlagSnapshot" },
+                "example": {
+                  "schema_version": 1,
+                  "revision": 0,
+                  "flags": {
+                    "retrieval_vector": true,
+                    "retrieval_keyword": true,
+                    "retrieval_entity": false,
+                    "retrieval_time": false,
+                    "memory_gate": true,
+                    "decay": false,
+                    "reranker": false,
+                    "authority_resolution": true,
+                    "read_time_resolution": false,
+                    "read_time_reinforcement": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or query parameters.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer authentication is required before parsing JSON or accessing data.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted. No automatic retry.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[1-9]\\d*$",
+                  "description": "Minimum suggested wait in seconds; competing traffic can consume replenished capacity."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database or server failure. Internal payloads are not returned.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "replaceFeatureFlags",
+        "tags": ["Configuration"],
+        "summary": "Replace all feature flags with revision checking",
+        "description": "JSON-only full replacement, no query parameters. Audit and update are atomic; unchanged flags do not increase revision or write an audit. Unsupported true flags (retrieval_entity, retrieval_time, decay, reranker, read_time_resolution) return 400 before database access even though their syntactic type is boolean. Cache-Control: no-store.",
+        "requestBody": {
+          "required": true,
+          "description": "Use the current revision from GET. This offline example assumes a fresh revision=0 snapshot; otherwise refresh and deliberately choose a new full replacement.",
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FeatureFlagUpdate" },
+              "example": {
+                "expected_revision": 0,
+                "flags": {
+                  "retrieval_vector": true,
+                  "retrieval_keyword": true,
+                  "retrieval_entity": false,
+                  "retrieval_time": false,
+                  "memory_gate": false,
+                  "decay": false,
+                  "reranker": false,
+                  "authority_resolution": true,
+                  "read_time_resolution": false,
+                  "read_time_reinforcement": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated or unchanged snapshot; no model invocation.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FeatureFlagUpdateResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or query parameters.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer authentication is required before parsing JSON or accessing data.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision mismatch or exhausted revision. Read current configuration before a deliberate retry.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json, optionally with charset.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted. No automatic retry.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[1-9]\\d*$",
+                  "description": "Minimum suggested wait in seconds; competing traffic can consume replenished capacity."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database or server failure. Internal payloads are not returned.",
+            "headers": {
+              "x-request-id": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server request identifier, also present in problem bodies."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

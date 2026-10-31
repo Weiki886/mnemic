@@ -9,7 +9,7 @@ describe("统一错误模型（problem+json）", () => {
     expect(res.headers["content-type"]).toContain("application/problem+json");
     const body = res.json();
     expect(body).toMatchObject({
-      type: "about:blank",
+      type: "https://mnemic.dev/errors/not-found",
       title: "Not Found",
       status: 404,
       code: "NOT_FOUND",

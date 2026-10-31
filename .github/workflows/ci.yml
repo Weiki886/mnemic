@@ -33,6 +33,9 @@ jobs:
       - name: Typecheck
         run: pnpm -r run typecheck
 
+      - name: OpenAPI contract
+        run: pnpm --filter @mnemic/server run openapi:check
+
       - name: Test
         run: pnpm -r run test && node --test scripts/*.test.mjs
 

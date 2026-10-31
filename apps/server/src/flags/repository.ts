@@ -4,6 +4,7 @@ import {
   FeatureFlagUpdateSchema,
   createFeatureFlagSnapshot,
   type FeatureFlagSnapshot,
+  type FeatureFlagUpdateResult,
 } from "@mnemic/shared/flags";
 import { featureFlags } from "../db/schema.js";
 import { writeAuditLog } from "../gate/audit.js";
@@ -35,10 +36,8 @@ export class FeatureFlagRevisionExhaustedError extends Error {
     super("feature flag revision exhausted");
   }
 }
-export type FeatureFlagUpdateResult = {
-  kind: "updated" | "unchanged" | "conflict";
-  snapshot: FeatureFlagSnapshot;
-};
+export type { FeatureFlagUpdateResult } from "@mnemic/shared/flags";
+
 /** Full replacement plus expected revision; lock, change and audit are one DB transaction. */
 export async function updateFeatureFlags(
   db: PostgresJsDatabase,
