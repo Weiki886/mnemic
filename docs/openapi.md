@@ -1,6 +1,6 @@
-# OpenAPI 契约基座（#24 拆分 1/3）
+# OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`，以及统一 problem+json 错误结构。其他已实现 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -39,4 +39,29 @@ pnpm --filter @mnemic/server run openapi:check
 
 保留已有决定：使用 requestId 标识请求，不另外生成 instance；校验详情通过结构化 errors 提供，根级错误 path 可以为空字符串。错误契约不放宽异常脱敏，真实上游/SQL/密钥和堆栈不会因文档化而进入 5xx 响应。
 
-回滚本 PR 会停止契约生成门禁并恢复旧 type 输出；无迁移、业务数据修改、鉴权豁免扩张或真实服务部署。其余接口、在线页和完整三槽位接入文档仍需后续完成后才能关闭 #24。
+回滚 #109 基座会停止契约生成门禁并恢复旧 type 输出；仅回滚本轮记忆契约扩展则保留 #109 的门禁、健康/flags 契约和错误 URI，只移除记忆登记、相关测试及输入 schema 抽取。两次交付均无迁移、业务数据修改、鉴权豁免扩张或真实服务部署。其余接口、在线页和完整三槽位接入文档仍需后续完成后才能关闭 #24。
+
+## 记忆中心契约扩展（#24 后续拆分）
+
+产物现在另覆盖以下六个现有操作，均继承全局 Bearer 鉴权，项目 ID 是数据查询作用域，**不代表按用户划分的所有权鉴权**：
+
+| 操作 | 路径                                             |
+| ---- | ------------------------------------------------ |
+| GET  | `/projects/{projectId}/beliefs`                  |
+| GET  | `/projects/{projectId}/beliefs/{id}`             |
+| GET  | `/projects/{projectId}/beliefs/{id}/resolutions` |
+| POST | `/projects/{projectId}/beliefs/{id}/correct`     |
+| POST | `/projects/{projectId}/beliefs/{id}/delete`      |
+| POST | `/projects/{projectId}/beliefs/{id}/restore`     |
+
+路径参数必须是 UUID，详情或修改跨项目访问与不存在均为 404。列表缺失项目返回空数组。列表默认 status=active、limit=200、offset=0，上限 1000；共享 CLI 默认 20 不变。q 只按字面量查 subject/attribute，不查 value，百分号/下划线不扩张匹配。列表按 subject/attribute 排序，offset 分页不是并发变化期间的稳定快照。详情版本和消解历史仍为全量返回，无新增分页。
+
+输入校验来自生产路由实际使用的 `apps/server/src/contracts/memory.ts`（复用 shared 的列表规则），输出 Zod 描述也在此文件（列表直接复用 shared）。输出 schema 不作为 Fastify response serializer，避免为了文档而删除、强转业务响应；真实 TCP + 独立 Ajv 测试对提交产物验证所有六个操作。原有兼容语义不变：未知查询/修正 body 字段被忽略，修正 value 要求非空字符串但不 trim；详情和状态操作忽略查询。删除/恢复无必填 body，仅对应 active→deleted、deleted→active，重复操作为 409，同事务审计后返回。
+
+修正示例 body 为 `{ "value": "SQLite" }`。测试创建独立项目、信念及版本，以实际 ID 替换模板，执行产物中的 body 后检查新值、版本链、provenance、消解记录、删除/恢复审计；不是向读者现有项目写示例数据。手工使用时必须先明确选中自己的项目和记忆，不能将模板占位符原样发送。已删除的记忆修正返回 409，必须先显式恢复；retracted 记忆允许修正复活。修正走同步 ingest/Resolver，无提取或 embedding 模型调用；本接口不新增秘密检测，不应向修正值提交凭据。
+
+JSONB 值允许 object/array/string/number/boolean/null，字段必须存在。分数保持 number|null，消解历史保留既有 camelCase。relation 只含四态或 null，ignore/retract 位于 policies；历史 flagsSnapshot 为 null，不补造当前配置。policies/modelSnapshot 是既有 JSON 数据，契约不发明内部固定结构。
+
+转换器 v7 对 unconstrained JSON 输出无 type 的 nullable，对 nullable enum 也不补 null 枚举项。构建工具按 [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object) 归一化：无约束 JSON 为 `{}`（原本就允许 null），有 type 的 nullable enum 显式包含 null，required 不变；只遍历 schema 位置，不解释 example。枚举采用新数组，避免生成过程改变共享 Zod 的原始枚举。测试覆盖任意 JSON/显式 null/缺失值，以及生成后查询仍拒绝 type=null。Redocly 继续为 0 errors / 2 个健康检查提示。
+
+目前仍是部分契约。聊天（含流式/附件/续聊）、Provider、召回、PENDING、用量/审计/审批、项目/配置等其余接口，以及 `/docs` 在线页和完整接入指南均未因本轮自动覆盖。原先 3 次交付的规划在接口盘点后继续按可审查大小拆分；#24 保持打开，不能仅凭本轮契约通过关闭。
