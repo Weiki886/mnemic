@@ -2,7 +2,10 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { uuidv7 } from "uuidv7";
-import { z } from "zod";
+import {
+  CorrectBodySchema as CorrectBody,
+  BeliefParamsSchema as BeliefParams,
+} from "../contracts/memory.js";
 import { beliefs, conversations, messages, resolutionTraces } from "../db/schema.js";
 import { AUTHORITY_TABLE } from "../extraction/authority.js";
 import { ingestCandidate } from "../ingest/ingest.js";
@@ -12,9 +15,6 @@ import { emitDebugTrace, type DebugTrace } from "../debug/trace.js";
 import { toApiNumber } from "./serialization.js";
 
 /** 人工修正入口（#17）：产生 USER_CORRECTION(70) 权威版本，provenance 锚到项目专用修正会话 */
-
-const CorrectBody = z.object({ value: z.string().min(1) });
-const BeliefParams = z.object({ projectId: z.string().uuid(), id: z.string().uuid() });
 
 export function registerBeliefRoutes(
   app: FastifyInstance,
