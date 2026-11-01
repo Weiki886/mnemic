@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { z } from "zod";
 import { uuidv7 } from "uuidv7";
+import { ConversationIdParamsSchema } from "../contracts/conversation.js";
 
 export interface Generation {
   id: string;
@@ -75,12 +76,9 @@ export class ChatGenerations {
     currentId?: string,
   ) {
     return async (request: FastifyRequest, reply: FastifyReply) => {
-      const parsed = z
-        .object({
-          id: z.string().uuid().toLowerCase(),
-          current_conversation_id: z.string().uuid().toLowerCase().optional(),
-        })
-        .safeParse({ ...(request.params as object), current_conversation_id: currentId });
+      const parsed = ConversationIdParamsSchema.extend({
+        current_conversation_id: z.string().uuid().toLowerCase().optional(),
+      }).safeParse({ ...(request.params as object), current_conversation_id: currentId });
       if (!parsed.success)
         return reply
           .code(400)
