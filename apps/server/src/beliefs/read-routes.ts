@@ -2,8 +2,11 @@ import { writePlatformAudit } from "../audit/events.js";
 import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { MemoryListQuerySchema } from "@mnemic/shared/memory";
+import {
+  BeliefListQuerySchema as ListQuery,
+  ProjectParamsSchema as ProjectParams,
+  BeliefParamsSchema as BeliefParams,
+} from "../contracts/memory.js";
 import { beliefs, beliefVersions, messages, observations } from "../db/schema.js";
 import { badRequest, notFound, conflict } from "./problem-responses.js";
 import { emitDebugTrace, type DebugTrace } from "../debug/trace.js";
@@ -11,14 +14,6 @@ import { toApiNumber } from "./serialization.js";
 
 /** 记忆中心只读 API + 基础软删除（#8）：列表/详情/版本时间线/删除/恢复。
  *  硬删除与删除传播归 #11；软删除 = status 'deleted'，检索侧已过滤非 active（#6）。 */
-
-const ListQuery = MemoryListQuerySchema.extend({
-  // 保留 Web/API 既有默认页大小；CLI 显式发送自己的 limit。
-  limit: z.coerce.number().int().min(1).max(1000).default(200),
-});
-
-const ProjectParams = z.object({ projectId: z.string().uuid() });
-const BeliefParams = ProjectParams.extend({ id: z.string().uuid() });
 
 export function registerBeliefReadRoutes(
   app: FastifyInstance,

@@ -17,6 +17,8 @@ import {
 } from "@mnemic/shared/flags";
 import { HealthResponseSchema } from "../src/contracts/health.js";
 import { UNSUPPORTED_FEATURE_FLAGS } from "../src/flags/runtime.js";
+import { normalizeNullability } from "./openapi-nullability.js";
+import { registerMemoryPaths } from "./openapi-memory.js";
 extendZodWithOpenApi(z);
 const artifact = new URL("../../../docs/openapi.json", import.meta.url);
 export type OpenApiDocument = ReturnType<OpenApiGeneratorV3["generateDocument"]>;
@@ -140,7 +142,8 @@ export function createOpenApiDocument(): OpenApiDocument {
       415: error("Content-Type must be application/json, optionally with charset."),
     },
   });
-  return new OpenApiGeneratorV3(registry.definitions).generateDocument({
+  registerMemoryPaths(registry);
+  const document = new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {
       title: "Mnemic API — contract foundation",
@@ -150,7 +153,7 @@ export function createOpenApiDocument(): OpenApiDocument {
         url: "https://www.apache.org/licenses/LICENSE-2.0.html",
       },
       description:
-        "Partial contract for health and feature flag management only (Issue #24 split 1/3). Other implemented APIs and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
+        "Partial contract for health, feature flag management and project-scoped belief APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
     servers: [
       {
@@ -159,11 +162,15 @@ export function createOpenApiDocument(): OpenApiDocument {
       },
     ],
     tags: [
+      { name: "Memory", description: "Project-scoped belief read, correction and soft deletion." },
       { name: "System", description: "Process liveness." },
       { name: "Configuration", description: "Global operator feature flag configuration." },
     ],
     security: [{ bearerAuth: [] }],
   });
+  for (const schema of Object.values(document.components?.schemas ?? {}))
+    normalizeNullability(schema);
+  return document;
 }
 export async function serializeOpenApi(doc: OpenApiDocument = createOpenApiDocument()) {
   // Existing repository formatter is a root dev dependency; generation is a workspace-only build tool.
