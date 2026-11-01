@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management and project-scoped belief APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs and conversation lifecycle/read APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Conversations",
+      "description": "Conversation creation, read, commit and resume; message send/stream not yet included."
+    },
     {
       "name": "Memory",
       "description": "Project-scoped belief read, correction and soft deletion."
@@ -622,6 +626,134 @@
           "status": { "type": "string", "enum": ["active"] }
         },
         "required": ["id", "status"]
+      },
+      "Conversation": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string", "nullable": true },
+          "started_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": "string", "nullable": true, "format": "date-time" }
+        },
+        "required": ["id", "project_id", "title", "started_at", "ended_at"]
+      },
+      "ConversationList": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "title": { "type": "string", "nullable": true },
+            "started_at": { "type": "string", "format": "date-time" },
+            "ended_at": { "type": "string", "nullable": true, "format": "date-time" },
+            "message_count": { "type": "integer", "nullable": true, "minimum": 0 },
+            "history_error": { "type": "string", "enum": ["unavailable"] }
+          },
+          "required": ["id", "title", "started_at", "ended_at", "message_count"]
+        },
+        "maxItems": 1000
+      },
+      "ConversationMessage": {
+        "type": "object",
+        "properties": {
+          "attachment": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["file", "directory"] },
+              "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+              "truncated": { "type": "boolean" },
+              "version": { "type": "number", "enum": [1] },
+              "parent_message_id": { "type": "string", "format": "uuid" },
+              "source_type": { "type": "string", "enum": ["PROJECT_FILE"] }
+            },
+            "required": [
+              "kind",
+              "path",
+              "truncated",
+              "version",
+              "parent_message_id",
+              "source_type"
+            ],
+            "additionalProperties": false
+          },
+          "generation_status": {
+            "type": "string",
+            "nullable": true,
+            "enum": ["complete", "interrupted", "failed", null]
+          },
+          "id": { "type": "string", "format": "uuid" },
+          "speaker": { "type": "string", "enum": ["user", "assistant", "tool"] },
+          "raw_text": { "type": "string" },
+          "msg_time": { "type": "string", "format": "date-time" },
+          "memories": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "object",
+              "properties": {
+                "belief_id": { "type": "string", "format": "uuid" },
+                "belief_version_id": { "type": "string", "format": "uuid" },
+                "subject": { "type": "string" },
+                "attribute": { "type": "string" },
+                "value": {}
+              },
+              "required": ["belief_id", "belief_version_id", "subject", "attribute", "value"]
+            }
+          }
+        },
+        "required": ["id", "speaker", "raw_text", "msg_time", "memories"]
+      },
+      "ConversationDetail": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string", "nullable": true },
+          "started_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": "string", "nullable": true, "format": "date-time" },
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ConversationMessage" }
+          }
+        },
+        "required": ["id", "project_id", "title", "started_at", "ended_at", "messages"]
+      },
+      "ConversationCommit": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string", "nullable": true },
+          "started_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": "string", "nullable": true, "format": "date-time" },
+          "extraction_triggered": { "type": "boolean" }
+        },
+        "required": ["id", "project_id", "title", "started_at", "ended_at", "extraction_triggered"]
+      },
+      "ConversationResume": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string", "nullable": true },
+          "started_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": "string", "nullable": true, "format": "date-time" },
+          "resumed_from": { "type": "string", "format": "uuid" },
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ConversationMessage" }
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "title",
+          "started_at",
+          "ended_at",
+          "resumed_from",
+          "messages"
+        ]
       }
     },
     "parameters": {}
@@ -1562,6 +1694,513 @@
           },
           "500": {
             "description": "Server/database failure. No internal exception details returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/conversations": {
+      "get": {
+        "operationId": "listConversations",
+        "tags": ["Conversations"],
+        "summary": "List project conversations with message counts",
+        "description": "Global operator scope, not user-level ownership. Default limit 200 (max 1000), offset 0. Unknown query keys ignored. Missing project yields []. Stable order started_at then id, but offset pages are not a snapshot under concurrent writes. Counts include verified inherited messages. Broken/missing/foreign inherited references preserve the row with message_count=null and history_error=unavailable; otherwise count is an integer and history_error absent. This coupling is a runtime refinement. No model calls.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "integer", "nullable": true, "minimum": 0, "default": 0 },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page, including empty/resumed and unavailable-history rows.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ConversationList" } }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID, query or request body; field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing or data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server/database failure. Internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/conversations/{id}": {
+      "get": {
+        "operationId": "getConversation",
+        "tags": ["Conversations"],
+        "summary": "Read complete message timeline and resolved memory citations",
+        "description": "Includes inherited message references, without copying them. Full unpaginated history ordered by msg_time then id. Citations resolve against the same project, including historical/deleted beliefs; foreign or missing citation IDs are omitted. memories=null differs from a present empty array. Optional file metadata does not copy attachment content; raw_text is the stored message. Attachment parent/path constraints are validated at runtime; corrupt history or file parents return409. Query ignored. No model calls.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation and messages, with optional tool/file/generation metadata.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConversationDetail" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID, query or request body; field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing or data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation missing or outside the URL project; same response.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation history or file references unavailable.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server/database failure. Internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations": {
+      "post": {
+        "operationId": "createConversation",
+        "tags": ["Conversations"],
+        "summary": "Create an empty conversation in an existing project",
+        "description": "Returns200 (not201). Unknown body keys are stripped, query ignored. title is optional and not trimmed, but if present must be nonempty and at most200 characters. Exact reserved title manual-corrections is rejected by runtime refinement, not a generated schema enum. Same-title ordinary conversations are allowed. No model calls.",
+        "requestBody": {
+          "required": true,
+          "description": "Replace project_id with an existing project UUID. Example contains no deployment credential.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project_id": { "type": "string", "format": "uuid" },
+                  "title": { "type": "string", "minLength": 1, "maxLength": 200 }
+                },
+                "required": ["project_id"]
+              },
+              "example": {
+                "project_id": "01900000-0000-7000-8000-000000000024",
+                "title": "API contract example"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New empty conversation with ended_at=null.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Conversation" } }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID, query or request body; field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing or data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Project does not exist.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds the server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request content type.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server/database failure. Internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/conversations/{id}/commit": {
+      "post": {
+        "operationId": "commitConversation",
+        "tags": ["Conversations"],
+        "summary": "Archive a conversation and register pending Evidence extraction",
+        "description": "Legacy global-ID route: project ownership is inferred from the conversation, no project parameter. Same global Bearer operator authorization applies. UUID is validated by the shared generation guard before database access. No required body; query ignored. Repeated commits, busy generation or invalid context return409. extraction_triggered means work registered, never extraction/indexing completed. With pending physical user/file Evidence, formal entry durably enqueues it in the archive transaction; library builds without a queue retain asynchronous in-process jobs. These jobs may invoke models and consume quota; this endpoint is not a paid probe.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Archived conversation with extraction registration indicator.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConversationCommit" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID, query or request body; field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing or data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation does not exist.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Already archived, generation busy/server closing, or context unavailable.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds the server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request content type.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server/database failure. Internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/conversations/{id}/resume": {
+      "post": {
+        "operationId": "resumeConversation",
+        "tags": ["Conversations"],
+        "summary": "Create a new conversation referencing verified source history",
+        "description": "Always creates a new fork, returns201, and archives open source/current conversations; never reopens or copies messages. Source and optional current_conversation_id must both belong to the URL project. An explicit JSON object (including {}) is required; unknown body keys rejected, query ignored. Reserved manual-corrections conversations and corrupt history return409. File paths/parents are validated at runtime. Any pending physical Evidence may be queued/extracted as for commit; inherited history is not extracted again. No automatic retry after an uncertain response.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "current_conversation_id": { "type": "string", "format": "uuid" } },
+                "additionalProperties": false
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New fork with resumed_from and complete verified message views.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConversationResume" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID, query or request body; field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing or data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation missing or outside the URL project; same response.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Reserved conversation, unavailable context, generation busy or service closing.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds the server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request content type.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server/database failure. Internal exception details are not returned.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {

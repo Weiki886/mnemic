@@ -20,7 +20,12 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/projects/{projectId}/beliefs/{id}/delete",
     "/projects/{projectId}/beliefs/{id}/resolutions",
     "/projects/{projectId}/beliefs/{id}/restore",
+    "/projects/{projectId}/conversations",
+    "/projects/{projectId}/conversations/{id}",
+    "/projects/{projectId}/conversations/{id}/resume",
     "/v1/config/flags",
+    "/v1/conversations",
+    "/v1/conversations/{id}/commit",
   ]);
   expect(Object.keys(a.paths["/health"]!).sort()).toEqual(["get", "head"]);
   expect(Object.keys(a.paths["/v1/config/flags"]!).sort()).toEqual(["get", "put"]);
@@ -152,4 +157,33 @@ it("normalizing response nullability never mutates shared query enums or runtime
       schema: expect.objectContaining({ enum: ["fact", "preference", "decision", "progress"] }),
     }),
   );
+});
+
+it("conversation operation statuses and input contracts match the existing lifecycle", () => {
+  const doc = createOpenApiDocument();
+  const create = doc.paths["/v1/conversations"]!.post!;
+  expect(create.responses).toHaveProperty("200");
+  expect(create.responses).not.toHaveProperty("201");
+  const resume = doc.paths["/projects/{projectId}/conversations/{id}/resume"]!.post!;
+  expect(resume.responses).toHaveProperty("201");
+  expect(resume.parameters).toContainEqual(
+    expect.objectContaining({ name: "projectId", in: "path", required: true }),
+  );
+  const commit = doc.paths["/v1/conversations/{id}/commit"]!.post!;
+  expect(commit.requestBody).toBeUndefined();
+  expect(commit.parameters).toContainEqual(
+    expect.objectContaining({ name: "id", schema: expect.objectContaining({ format: "uuid" }) }),
+  );
+  expect(doc.paths["/projects/{projectId}/conversations"]!.get!.parameters).toContainEqual(
+    expect.objectContaining({
+      name: "limit",
+      schema: expect.objectContaining({ default: 200, maximum: 1000 }),
+    }),
+  );
+  const schemas = doc.components!.schemas! as Record<
+    string,
+    { required?: string[]; properties?: Record<string, unknown> }
+  >;
+  expect(schemas.ConversationDetail!.required).toContain("messages");
+  expect(schemas.ConversationMessage!.required).toContain("memories");
 });
