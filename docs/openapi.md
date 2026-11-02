@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -147,3 +147,19 @@ probe 必须显式 POST JSON 空对象 `{}`，body 不能省略，未知字段�
 仅回滚本扩展会移除这三个登记和输入定义抽取，保留 #109–#112 的契约和门禁。消息发送/SSE/取消、PENDING、用量/审计/审批、其余项目接口和 `/docs`/完整指南仍待后续；#24 保持打开。
 
 413 的契约测试另有传输边界：Node fetch 在上传超大 body 时，可能因服务端提前关闭上传而先得到 EPIPE，无法读取已发送的拒绝响应。四组 OpenAPI HTTP 测试共用仅发送 Expect/超限 Content-Length 头部的 TCP 夹具，等待最终 413 后关闭请求，不上传、重试或重放 body；真实响应仍交给同一产物/Ajv 校验。另有完整超大 JSON 的 app.inject 测试验证相同默认 body limit，保留实际大请求体覆盖。这个改动只稳定测试，不承诺任意正在上传的客户端都必然收到完整 problem+json。
+
+## PENDING 候选契约扩展
+
+追加 `GET /pending` 和 `POST /pending/{id}/confirm|reject`。输入复用 `apps/server/src/contracts/pending.ts` 的既有列表规则，输出按存储行定义 Zod；生产响应不增加 serializer。三个操作都要求全局 Bearer 操作者 Token 和数据库，不要求主密钥，不构造或调用模型；无 DB 时路由不存在、返回 404。它们没有用户/项目成员级鉴权。
+
+列表必填 `project_id`（UUID），仅用于 SQL 过滤；不存在的项目返回空数组。status 可取 pending/confirmed/expired/rejected/promoted，省略时处理器默认 pending；未知查询字段被忽略，包括 limit/offset。当前无分页，按 createdAt 升序，同时间的行不保证稳定顺序。TTL 过期不会自动从列表隐藏或触发过期操作。返回 camelCase 完整候选行，candidate/gateScores 是必填的原样 JSONB，历史 null、标量和数组均合法，不承诺匹配当前提取 schema。响应可能含记忆正文，不适合公开缓存；本路由尚未添加 no-store，客户端应主动避免持久缓存。
+
+操作 URL 的 id 当前仅为字符串，没有路由 UUID 校验；非法格式会到数据库，再由旧处理器捕获为 404，不能把它写成字段级 400。POST 不要求 body；提供的合法 JSON 会被忽略，原有 text/plain parser 也接受文本，但仍执行 Fastify 的解析、媒体和大小限制（坏 JSON 为 400，未支持媒体为 415，超限为 413）。查询字段同样忽略，不能通过 query/body 的 project_id 控制项目作用域。沿用普通 CORS，不像 probe/recall 拒绝所有 Origin。
+
+confirm/reject 按全局候选 ID 无条件更新，既不检查原状态，也不拒绝过期 TTL；重复操作会重新设置 decidedAt，确认后仍可拒绝，反之亦然，没有 CAS/409 前置条件。返回行的 status 分别限定 confirmed/rejected。**确认不代表写入正式记忆**：它不创建 Observation/Belief、不重过 Gate/Resolver、不入队提取、不调用模型，因此不保证候选会成为可检索记忆。只在 debug 开启时输出元数据事件，不新增持久决定审计。
+
+旧处理器把仓储失败也转成 404，不能据此区分“不存在”和“写入失败”，更不能在回执不明时自动重试或声称一定没有提交。列表未捕获的 DB 错误仍为固定 500。鉴权在 JSON/数据库之前执行；HTTP 请求预算的 429 带 Retry-After。这些既有作用域、全量列表、原样 JSONB 与宽 catch 边界在本次契约化中如实记录，不静默修改业务。
+
+产物中的 UUID 参数示例是离线占位值。自动化使用独立测试 PG 预置对应资源后替换 UUID，真实 TCP 执行 GET/confirm/reject；独立 Ajv 验证提交产物、任意 JSONB、五态列表、时间、缺项目空表、状态覆盖/重复操作、无正式记忆副作用及 400/401/404/413/415/429/500。异常路径使用抛错 Proxy 验证固定错误、认证顺序及无原始异常泄露；没有读取用户 Provider 或调用付费服务。
+
+仅回滚本扩展会移除三个登记和列表 schema 抽取，保留 #109–#113 的契约/门禁。消息发送/SSE/取消、用量/审计/审批、其余项目接口和在线 `/docs`/完整接入指南仍未覆盖，#24 保持打开。

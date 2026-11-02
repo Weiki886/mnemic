@@ -14,6 +14,9 @@ it("generation is deterministic, scoped and never includes environment-specific 
   expect(a.openapi).toBe("3.0.3");
   expect(Object.keys(a.paths).sort()).toEqual([
     "/health",
+    "/pending",
+    "/pending/{id}/confirm",
+    "/pending/{id}/reject",
     "/projects/{projectId}/beliefs",
     "/projects/{projectId}/beliefs/{id}",
     "/projects/{projectId}/beliefs/{id}/correct",
@@ -237,4 +240,35 @@ it("diagnostic and recall contracts distinguish read-only reports from explicit 
   >;
   expect(schemas.ReadDoctorReport!.properties!.probe!.enum).toEqual([false]);
   expect(schemas.ProbeDoctorReport!.properties!.probe!.enum).toEqual([true]);
+});
+
+it("pending contracts preserve global ID decisions and actual action-specific outputs", () => {
+  const doc = createOpenApiDocument();
+  const list = doc.paths["/pending"]!.get!;
+  expect(list.parameters).toContainEqual(
+    expect.objectContaining({ name: "project_id", in: "query", required: true }),
+  );
+  for (const action of ["confirm", "reject"] as const) {
+    const op = doc.paths[`/pending/{id}/${action}`]!.post!;
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters).toContainEqual(
+      expect.objectContaining({
+        name: "id",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+      }),
+    );
+    expect(op.responses).toHaveProperty("404");
+    expect(op.responses).not.toHaveProperty("409");
+  }
+  const schemas = doc.components!.schemas! as Record<
+    string,
+    { required?: string[]; properties?: Record<string, { enum?: string[] }> }
+  >;
+  expect(schemas.PendingRow!.required).toEqual(
+    expect.arrayContaining(["candidate", "gateScores", "decidedAt"]),
+  );
+  expect(schemas.ConfirmPendingResult!.properties!.status!.enum).toEqual(["confirmed"]);
+  expect(schemas.RejectPendingResult!.properties!.status!.enum).toEqual(["rejected"]);
 });
