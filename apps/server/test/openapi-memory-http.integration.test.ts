@@ -1,3 +1,4 @@
+import { requestOversizeHeaders } from "./fixtures/oversize-request.js";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { Ajv } from "ajv";
@@ -64,17 +65,26 @@ async function request<T = unknown>(
     raw?: string;
     auth?: boolean;
     media?: string;
+    declaredBodyBytes?: number;
   } = {},
 ) {
   const url =
     path
       .replace("{projectId}", options.project ?? projectId)
       .replace("{id}", options.id ?? beliefId) + (options.query ?? "");
-  const r = await fetch(base + url, {
+  const declaredBytes = options.declaredBodyBytes;
+  const transport =
+    declaredBytes === undefined
+      ? fetch
+      : (url: string, init: RequestInit) =>
+          requestOversizeHeaders(url, init.headers ?? {}, declaredBytes, init.method ?? "POST");
+  const r = await transport(base + url, {
     method: method.toUpperCase(),
     headers: {
       ...(options.auth === false ? {} : headers),
-      ...(options.body !== undefined || options.raw !== undefined
+      ...(options.body !== undefined ||
+      options.raw !== undefined ||
+      options.declaredBodyBytes !== undefined
         ? { "content-type": options.media ?? "application/json" }
         : {}),
     },
@@ -224,10 +234,13 @@ it.each([null, true, 42, ["value", null]].map((value) => ({ value })))(
 );
 it.each([
   [415, "text/xml", "<value/>"],
-  [413, "application/json", JSON.stringify({ value: "a".repeat(1048576) })],
+  [413, "application/json", undefined],
 ] as const)(
   "parser %s response obeys the documented problem contract",
   async (status, media, raw) => {
-    await request(detailPath + "/correct", "post", status, { media, raw });
+    await request(detailPath + "/correct", "post", status, {
+      media,
+      ...(raw === undefined ? { declaredBodyBytes: 1048577 } : { raw }),
+    });
   },
 );

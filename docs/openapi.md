@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -64,7 +64,7 @@ JSONB 值允许 object/array/string/number/boolean/null，字段必须存在。�
 
 转换器 v7 对 unconstrained JSON 输出无 type 的 nullable，对 nullable enum 也不补 null 枚举项。构建工具按 [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object) 归一化：无约束 JSON 为 `{}`（原本就允许 null），有 type 的 nullable enum 显式包含 null，required 不变；只遍历 schema 位置，不解释 example。枚举采用新数组，避免生成过程改变共享 Zod 的原始枚举。测试覆盖任意 JSON/显式 null/缺失值，以及生成后查询仍拒绝 type=null。Redocly 继续为 0 errors / 2 个健康检查提示。
 
-目前仍是部分契约。消息发送（含流式/取消/附件准入）、召回、PENDING、用量/审计/审批、其余项目/诊断等接口，以及 `/docs` 在线页和完整接入指南均未因本轮自动覆盖。原先 3 次交付的规划在接口盘点后继续按可审查大小拆分；#24 保持打开，不能仅凭本轮契约通过关闭。
+目前仍是部分契约。消息发送（含流式/取消/附件准入）、PENDING、用量/审计/审批、其余项目等接口，以及 `/docs` 在线页和完整接入指南均未因本轮自动覆盖。原先 3 次交付的规划在接口盘点后继续按可审查大小拆分；#24 保持打开，不能仅凭本轮契约通过关闭。
 
 ## 会话生命周期与只读契约扩展
 
@@ -90,7 +90,7 @@ JSONB 值允许 object/array/string/number/boolean/null，字段必须存在。�
 
 真实 TCP 契约测试直接读取提交 JSON，用独立 Ajv 验证这些操作的响应。测试为开启持久提取的真实路由接上全局鉴权，但故意不启动 worker，直接断言任务为 queued、extracted_at 仍 null 且无 Observation；既有已提取历史证明不重复投递。它还验证新会话物理消息数为零、历史 ID 不变、文件/工具/打断元数据、项目隔离、坏历史、分页、400/401/404/409/413/415。测试用抛错工厂保证无模型调用；不冒充 worker 完整恢复或付费模型验收。
 
-仅回滚本次会话扩展会移除上述五个登记和输入定义抽取，保留 #109/#110 的错误 URI、健康/flags/记忆契约及生成门禁。消息发送、SSE、取消、召回等未覆盖 API 和在线 `/docs`/完整指南仍待后续，#24 保持打开。
+仅回滚本次会话扩展会移除上述五个登记和输入定义抽取，保留 #109/#110 的错误 URI、健康/flags/记忆契约及生成门禁。消息发送、SSE、取消等未覆盖 API 和在线 `/docs`/完整指南仍待后续，#24 保持打开。
 
 ## Provider、配置快照与项目状态契约扩展
 
@@ -118,4 +118,32 @@ PATCH 继续严格拒绝未知字段、`api_key`、embedding 修改和空更新�
 
 真实 TCP + PG 契约测试发送产物中的创建与 PATCH 示例，检查加密落库、掩码与安全视图差异、最早槽位选择、无变化不记审计、审计失败回滚、embedding 保护、字段级 400、401 先于 JSON 解析、404/409/413/415/固定500。损坏密文时 safe config/status 仍可读、旧掩码列表返回 500，证明了不解密边界。测试全用假密钥，SDK 工厂直接抛错以保证零调用；仅操作独立测试库，并保存/恢复原测试 Provider 行（由 PG 编码完整时间精度），不读取用户 `.env` 或真实 Provider 配置。
 
-回滚本次扩展会移除这五个登记及对应输入定义抽取，保留 #109–#111 的契约、错误 URI 和 CI 门禁。消息发送/SSE/取消、召回、PENDING、用量/审计/审批、其余项目与诊断接口、在线 `/docs` 和完整接入指南仍未覆盖，#24 保持打开。
+回滚本次扩展会移除这五个登记及对应输入定义抽取，保留 #109–#111 的契约、错误 URI 和 CI 门禁。消息发送/SSE/取消、PENDING、用量/审计/审批、其余项目接口、在线 `/docs` 和完整接入指南仍未覆盖，#24 保持打开。
+
+## 手动召回与诊断契约扩展
+
+本轮追加三个操作。它们仍使用全局 Bearer 操作者授权，不是用户/项目成员鉴权；GET 诊断、显式探测和手动召回有不同的调用副作用，不能混为一谈。
+
+| 操作 | 路径                           | 调用边界                                               |
+| ---- | ------------------------------ | ------------------------------------------------------ |
+| GET  | `/v1/doctor`                   | 读取数据库/配置，解密和构造 SDK 解析槽位，但不调用模型 |
+| POST | `/v1/doctor/probe`             | 显式调用三槽位，可能计费                               |
+| POST | `/projects/{projectId}/recall` | 可能调用查询 embedding，写检索轨迹                     |
+
+输入复用 `apps/server/src/contracts/diagnostics.ts` 的现有 UUID/严格空对象规则，召回请求/结果和诊断报告来自 shared Zod。诊断输出分别约束 probe=false/true；没有为契约新增生产 response serializer。生成结果只表达结构和字段上限，不完整表达召回 selected/reason/count/abstained/flags 等运行时联动校验。
+
+GET 诊断始终注册，任何查询参数（包括 probe=true）均为 400。它会读数据库、检查向量列/部署维度、解密配置并构造 SDK 解析三个槽位，所以不能声称“不解密/不构造 SDK”；但不会发起模型调用或新增用量。模型项标 skipped，不冒充已探测可用。缺失 DB/主密钥、连接/配置/维度错误仍返回 HTTP200，报告 ok=false；HTTP200 或 ok=true 都不是模型连通性和生产 readiness 的保证。
+
+probe 必须显式 POST JSON 空对象 `{}`，body 不能省略，未知字段拒绝，URL 查询字段忽略。与召回一样，任何 Origin（包括配置为可信的 Web 源和字面量 null）均在 JSON 解析前被拒绝；这不是只靠 CORS 隐藏结果。JSON charset 可接受，其他媒体类型为 415。健康配置下两个文本槽位和 embedding 并行调用，每次 SDK 调用 maxRetries=0，携带 15 秒 abort signal，并校验向量维度/有限值；这些不是覆盖全部数据库等待的端到端硬超时，也不证明停止计费。
+
+探测失败、模型日配额拒绝等被转为逐项 HTTP200/ok=false 报告，不承诺上游错误或配额耗尽一定体现为 HTTP429；HTTP429 描述的是外层请求令牌桶。响应不返回生成文本、密钥字段或原始异常。probe 不创建 Evidence/Belief/检索轨迹，但实际 SDK 调用会尝试写用量记录，并可能占用正式入口的日调用预算和产生供应商费用。回执不明时不要自动重发。
+
+手动召回只提供 POST，且要求 DB+主密钥；缺少依赖时路由未注册。body 只接受 trim 后 1–1000 字符的 query，不开放 topK、阈值、reinforce 或 flags；URL 查询字段忽略，也不能借此控制强化。向量路开启时 query 可能被发送给 embedding Provider 并计费；embedding 失败（含本地日配额拒绝）降级为关键词路，不保证直接返回 HTTP429。只选本项目 active 的当前版本，最多五个选中结果，并持久化 query_text 和只含 ID/分数的检索轨迹；不要将凭据放进查询中。结果包含选中记忆的正文值，trace 最多公开 200 个候选，candidate_count/truncated 描述完整候选数。
+
+手动路径显式 reinforce=false 优先于持久或环境配置，有效快照会记入轨迹；读取不提升 salience，也不改 confidence/evidence_count/provenance。30 秒 signal 只约束相关 embedding 工作，不覆盖所有 SQL。其他错误使用固定 500 文案，轨迹可能已经写入，不能自动重试。成功响应 no-store；认证和传输错误遵守各自既有规则。
+
+真实 TCP + PG 契约测试读取提交的 JSON，用独立 Ajv 校验示例及错误响应。SQL 预置确定性的向量，模型调用只经过 Mock V2 离线替身：检查 GET 零调用、probe 两次文本一次 embedding、用量 purpose=probe、无记忆/检索轨迹副作用、召回项目过滤/前五项/轨迹反查/关闭强化、无答案拒答、embedding 失败降级和未支持开关提前失败。全程无真实 Provider 请求或付费调用。测试会保存并恢复测试库 Provider 和 flags，全量执行显式置空模型 key；这不是供应商账单或模型质量评测。
+
+仅回滚本扩展会移除这三个登记和输入定义抽取，保留 #109–#112 的契约和门禁。消息发送/SSE/取消、PENDING、用量/审计/审批、其余项目接口和 `/docs`/完整指南仍待后续；#24 保持打开。
+
+413 的契约测试另有传输边界：Node fetch 在上传超大 body 时，可能因服务端提前关闭上传而先得到 EPIPE，无法读取已发送的拒绝响应。四组 OpenAPI HTTP 测试共用仅发送 Expect/超限 Content-Length 头部的 TCP 夹具，等待最终 413 后关闭请求，不上传、重试或重放 body；真实响应仍交给同一产物/Ajv 校验。另有完整超大 JSON 的 app.inject 测试验证相同默认 body limit，保留实际大请求体覆盖。这个改动只稳定测试，不承诺任意正在上传的客户端都必然收到完整 problem+json。

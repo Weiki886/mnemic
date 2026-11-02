@@ -1,3 +1,4 @@
+import { requestOversizeHeaders } from "./fixtures/oversize-request.js";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { Ajv } from "ajv";
@@ -55,10 +56,17 @@ async function request<T = unknown>(
     body?: unknown;
     raw?: string;
     media?: string;
+    declaredBodyBytes?: number;
     auth?: boolean;
   } = {},
 ) {
-  const r = await fetch(
+  const declaredBytes = opts.declaredBodyBytes;
+  const transport =
+    declaredBytes === undefined
+      ? fetch
+      : (url: string, init: RequestInit) =>
+          requestOversizeHeaders(url, init.headers ?? {}, declaredBytes, init.method ?? "POST");
+  const r = await transport(
     base +
       path.replace("{id}", opts.id ?? primary).replace("{projectId}", opts.project ?? project) +
       (opts.query ?? ""),
@@ -66,7 +74,9 @@ async function request<T = unknown>(
       method: method.toUpperCase(),
       headers: {
         ...(opts.auth === false ? {} : { authorization: `Bearer ${token}` }),
-        ...(opts.body !== undefined || opts.raw !== undefined
+        ...(opts.body !== undefined ||
+        opts.raw !== undefined ||
+        opts.declaredBodyBytes !== undefined
           ? { "content-type": opts.media ?? "application/json" }
           : {}),
       },
@@ -342,11 +352,14 @@ it("authentication precedes malformed provider JSON and invalid patch IDs", asyn
 });
 it.each([
   [415, "text/xml", "<provider/>"],
-  [413, "application/json", JSON.stringify({ name: "x".repeat(1048576) })],
+  [413, "application/json", undefined],
 ] as const)(
   "parser rejection %s uses the generated problem response",
   async (status, media, raw) => {
-    await request("/providers", "post", status, { media, raw });
+    await request("/providers", "post", status, {
+      media,
+      ...(raw === undefined ? { declaredBodyBytes: 1048577 } : { raw }),
+    });
   },
 );
 
