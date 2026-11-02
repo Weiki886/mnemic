@@ -145,3 +145,5 @@ probe 必须显式 POST JSON 空对象 `{}`，body 不能省略，未知字段�
 真实 TCP + PG 契约测试读取提交的 JSON，用独立 Ajv 校验示例及错误响应。SQL 预置确定性的向量，模型调用只经过 Mock V2 离线替身：检查 GET 零调用、probe 两次文本一次 embedding、用量 purpose=probe、无记忆/检索轨迹副作用、召回项目过滤/前五项/轨迹反查/关闭强化、无答案拒答、embedding 失败降级和未支持开关提前失败。全程无真实 Provider 请求或付费调用。测试会保存并恢复测试库 Provider 和 flags，全量执行显式置空模型 key；这不是供应商账单或模型质量评测。
 
 仅回滚本扩展会移除这三个登记和输入定义抽取，保留 #109–#112 的契约和门禁。消息发送/SSE/取消、PENDING、用量/审计/审批、其余项目接口和 `/docs`/完整指南仍待后续；#24 保持打开。
+
+413 的契约测试另有传输边界：Node fetch 在上传超大 body 时，可能因服务端提前关闭上传而先得到 EPIPE，无法读取已发送的拒绝响应。四组 OpenAPI HTTP 测试共用仅发送 Expect/超限 Content-Length 头部的 TCP 夹具，等待最终 413 后关闭请求，不上传、重试或重放 body；真实响应仍交给同一产物/Ajv 校验。另有完整超大 JSON 的 app.inject 测试验证相同默认 body limit，保留实际大请求体覆盖。这个改动只稳定测试，不承诺任意正在上传的客户端都必然收到完整 problem+json。

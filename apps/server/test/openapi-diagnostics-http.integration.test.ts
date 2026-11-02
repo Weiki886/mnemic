@@ -1,3 +1,4 @@
+import { requestOversizeHeaders } from "./fixtures/oversize-request.js";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { Ajv } from "ajv";
@@ -78,18 +79,27 @@ async function request<T = unknown>(
     body?: unknown;
     raw?: string;
     media?: string;
+    declaredBodyBytes?: number;
     auth?: boolean;
     origin?: string;
   } = {},
 ) {
-  const r = await fetch(
+  const declaredBytes = opts.declaredBodyBytes;
+  const transport =
+    declaredBytes === undefined
+      ? fetch
+      : (url: string, init: RequestInit) =>
+          requestOversizeHeaders(url, init.headers ?? {}, declaredBytes, init.method ?? "POST");
+  const r = await transport(
     base + path.replace("{projectId}", opts.project ?? project) + (opts.query ?? ""),
     {
       method: method.toUpperCase(),
       headers: {
         ...(opts.auth === false ? {} : { authorization: `Bearer ${token}` }),
         ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
-        ...(opts.body !== undefined || opts.raw !== undefined
+        ...(opts.body !== undefined ||
+        opts.raw !== undefined ||
+        opts.declaredBodyBytes !== undefined
           ? { "content-type": opts.media ?? "application/json" }
           : {}),
       },
@@ -395,7 +405,7 @@ it.each([recallPath, probePath])(
 it.each([recallPath, probePath])(
   "body limit413 on %s uses the documented problem schema",
   async (path) => {
-    await request(path, "post", 413, { body: { query: "a".repeat(1048576) } });
+    await request(path, "post", 413, { declaredBodyBytes: 1048577 });
     expect(generate).not.toHaveBeenCalled();
     expect(embed).not.toHaveBeenCalled();
   },
