@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { embed, generateText } from "ai";
-import { z } from "zod";
+import { DoctorInputSchema } from "../contracts/diagnostics.js";
 import { ErrorCode, problem, zodIssues, type DoctorCheck, type DoctorReport } from "@mnemic/shared";
 import { resolveModel, type Slot } from "../providers/slots.js";
 import type { ProviderFactory } from "../providers/factory.js";
@@ -18,8 +18,6 @@ interface DoctorOptions {
   factory?: ProviderFactory | undefined;
 }
 
-const Query = z.object({}).strict();
-const ProbeBody = z.object({}).strict();
 const SLOTS = ["chat", "extraction", "embedding"] as const;
 
 /** 诊断仅读取配置/数据库；显式 probe 才调用外部模型，不落 Evidence/Trace。 */
@@ -185,7 +183,7 @@ async function diagnose(options: DoctorOptions, probe: boolean): Promise<DoctorR
 
 export function registerDoctorRoutes(app: FastifyInstance, options: DoctorOptions): void {
   app.get("/v1/doctor", async (request, reply) => {
-    const parsed = Query.safeParse(request.query);
+    const parsed = DoctorInputSchema.safeParse(request.query);
     if (!parsed.success)
       return reply
         .code(400)
@@ -238,7 +236,7 @@ export function registerDoctorRoutes(app: FastifyInstance, options: DoctorOption
       },
     },
     async (request, reply) => {
-      const parsed = ProbeBody.safeParse(request.body);
+      const parsed = DoctorInputSchema.safeParse(request.body);
       if (!parsed.success)
         return reply
           .code(400)

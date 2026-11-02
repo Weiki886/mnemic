@@ -2,7 +2,7 @@ import type { ModelAdmission } from "../quota/repository.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import { RecallParamsSchema as Params } from "../contracts/diagnostics.js";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { RecallRequestSchema, RecallResultSchema } from "@mnemic/shared/memory";
 import { projects, retrievalTraces } from "../db/schema.js";
@@ -10,7 +10,6 @@ import type { ProviderFactory } from "../providers/factory.js";
 import { retrieve } from "./search.js";
 import type { DebugTrace } from "../debug/trace.js";
 
-const Params = z.object({ projectId: z.string().uuid() });
 function fail(
   reply: FastifyReply,
   requestId: string,
