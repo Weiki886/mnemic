@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -64,4 +64,30 @@ JSONB 值允许 object/array/string/number/boolean/null，字段必须存在。�
 
 转换器 v7 对 unconstrained JSON 输出无 type 的 nullable，对 nullable enum 也不补 null 枚举项。构建工具按 [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object) 归一化：无约束 JSON 为 `{}`（原本就允许 null），有 type 的 nullable enum 显式包含 null，required 不变；只遍历 schema 位置，不解释 example。枚举采用新数组，避免生成过程改变共享 Zod 的原始枚举。测试覆盖任意 JSON/显式 null/缺失值，以及生成后查询仍拒绝 type=null。Redocly 继续为 0 errors / 2 个健康检查提示。
 
-目前仍是部分契约。聊天（含流式/附件/续聊）、Provider、召回、PENDING、用量/审计/审批、项目/配置等其余接口，以及 `/docs` 在线页和完整接入指南均未因本轮自动覆盖。原先 3 次交付的规划在接口盘点后继续按可审查大小拆分；#24 保持打开，不能仅凭本轮契约通过关闭。
+目前仍是部分契约。消息发送（含流式/取消/附件准入）、Provider、召回、PENDING、用量/审计/审批、项目/配置等其余接口，以及 `/docs` 在线页和完整接入指南均未因本轮自动覆盖。原先 3 次交付的规划在接口盘点后继续按可审查大小拆分；#24 保持打开，不能仅凭本轮契约通过关闭。
+
+## 会话生命周期与只读契约扩展
+
+本轮追加五个现有操作，创建沿用 `200`，续聊为 `201`，不统一篡改既有状态码：
+
+| 操作 | 路径                                              |
+| ---- | ------------------------------------------------- |
+| GET  | `/projects/{projectId}/conversations`             |
+| GET  | `/projects/{projectId}/conversations/{id}`        |
+| POST | `/v1/conversations`                               |
+| POST | `/v1/conversations/{id}/commit`                   |
+| POST | `/projects/{projectId}/conversations/{id}/resume` |
+
+字段复用 shared 的会话/列表/提交/消息/续聊 Zod schema；输入定义集中在 `apps/server/src/contracts/conversation.ts`，由路由、生成守卫和生成器共同消费。输出中的引用值保留任意 JSON（含 null）并要求字段存在，详情和续聊都包含完整消息视图；输出契约不参与生产响应改写。`speaker=tool`、文件 Evidence 元数据和 interrupted/failed 生成状态保持原有含义，文件元数据并非正文副本。
+
+列表默认 limit=200（1–1000）、offset=0（非负整数），按 started_at/id 升序；未知查询字段忽略，缺失项目返回空数组，offset 不是并发写入期间的一致快照。计数包括已验证的继承历史；坏历史保留列表行，返回 `message_count=null` 和 `history_error="unavailable"`，不伪造零消息。二者的联动是 shared Zod 的运行时 refinement，生成结构本身不完整表达它。详情与续聊重新验证消息/文件父引用；损坏引用为 409，不归档源/当前会话、不复制部分可用历史。详情是全量消息，无新增分页；历史引用记忆包括同项目的历史/删除状态内容，跨项目或失效引用 ID 不解析，不能将详情当成仅检索 active 记忆的结果。
+
+创建 body 的 `project_id` 必须替换为已有项目 UUID，title 可省略；存在时长度 1–200，不 trim。未知 body 字段忽略，精确保留标题 `manual-corrections` 由运行时 refinement 拒绝（OpenAPI 中的字符串长度不代表任何标题都能创建）。普通同名会话仍允许。产物内示例使用占位 UUID，自动化测试替换为新建隔离项目，再真正发送示例 body。
+
+提交接口是既有全局 ID 路由：从会话推导项目，无 projectId 参数，依赖同一全局 Bearer 操作者授权，不宣称按用户/项目成员身份鉴权。UUID 已由生成守卫校验。无必填 body，忽略查询；重复提交、生成繁忙、停机中或坏历史为 409。`extraction_triggered` 只表示登记了工作，不代表提取/索引已完成；正式入口在归档事务中写持久 outbox，未配置队列的库调用保留旧异步路径。存在未提取物理 Evidence 时，这些后续任务可能调用付费模型并占用配额，不能因为本轮契约测试零调用就推断生产提交永不调用模型。
+
+续聊必须发送 JSON 对象（示例 `{}`，不能省略 body）；未知字段严格拒绝，可选 `current_conversation_id` 也须在 URL 项目内。源和当前会话在任何归档前校验，均不得为专用修正会话。每次成功创建新会话，归档仍开放的源/当前会话，并引用已验证历史；旧消息不复制，继承 Evidence 不重新提取。`201` 回执丢失后不可盲目自动重试，否则可能创建另一个续聊会话。文件路径/父消息引用约束也有运行时校验，不能仅靠生成的字段类型推断其安全性。
+
+真实 TCP 契约测试直接读取提交 JSON，用独立 Ajv 验证这些操作的响应。测试为开启持久提取的真实路由接上全局鉴权，但故意不启动 worker，直接断言任务为 queued、extracted_at 仍 null 且无 Observation；既有已提取历史证明不重复投递。它还验证新会话物理消息数为零、历史 ID 不变、文件/工具/打断元数据、项目隔离、坏历史、分页、400/401/404/409/413/415。测试用抛错工厂保证无模型调用；不冒充 worker 完整恢复或付费模型验收。
+
+仅回滚本次会话扩展会移除上述五个登记和输入定义抽取，保留 #109/#110 的错误 URI、健康/flags/记忆契约及生成门禁。消息发送、SSE、取消、Provider、召回等未覆盖 API 和在线 `/docs`/完整指南仍待后续，#24 保持打开。

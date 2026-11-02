@@ -2,6 +2,11 @@ import { and, asc, eq, inArray, or } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
+import {
+  ConversationListQuerySchema as ListQuery,
+  ConversationProjectParamsSchema as ProjectParams,
+  ConversationParamsSchema as ConvParams,
+} from "../contracts/conversation.js";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import { conversations, messages } from "../db/schema.js";
 import {
@@ -13,14 +18,6 @@ import {
 
 /** 对话只读视图 API（#8）：交互式对话不做，仅会话列表 + 消息时间线 + 引用记忆现查解析。
  *  messages.memories 只存 belief_version_id（决策 8），读出时 join 现查内容。 */
-
-const ListQuery = z.object({
-  limit: z.coerce.number().int().min(1).max(1000).default(200),
-  offset: z.coerce.number().int().min(0).default(0),
-});
-
-const ProjectParams = z.object({ projectId: z.string().uuid() });
-const ConvParams = ProjectParams.extend({ id: z.string().uuid() });
 
 function unavailable(reply: FastifyReply, requestId: string) {
   return reply

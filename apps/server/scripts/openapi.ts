@@ -18,6 +18,7 @@ import {
 import { HealthResponseSchema } from "../src/contracts/health.js";
 import { UNSUPPORTED_FEATURE_FLAGS } from "../src/flags/runtime.js";
 import { normalizeNullability } from "./openapi-nullability.js";
+import { registerConversationPaths } from "./openapi-conversations.js";
 import { registerMemoryPaths } from "./openapi-memory.js";
 extendZodWithOpenApi(z);
 const artifact = new URL("../../../docs/openapi.json", import.meta.url);
@@ -143,6 +144,7 @@ export function createOpenApiDocument(): OpenApiDocument {
     },
   });
   registerMemoryPaths(registry);
+  registerConversationPaths(registry);
   const document = new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {
@@ -153,7 +155,7 @@ export function createOpenApiDocument(): OpenApiDocument {
         url: "https://www.apache.org/licenses/LICENSE-2.0.html",
       },
       description:
-        "Partial contract for health, feature flag management and project-scoped belief APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
+        "Partial contract for health, feature flag management, project-scoped belief APIs and conversation lifecycle/read APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
     servers: [
       {
@@ -162,6 +164,11 @@ export function createOpenApiDocument(): OpenApiDocument {
       },
     ],
     tags: [
+      {
+        name: "Conversations",
+        description:
+          "Conversation creation, read, commit and resume; message send/stream not yet included.",
+      },
       { name: "Memory", description: "Project-scoped belief read, correction and soft deletion." },
       { name: "System", description: "Process liveness." },
       { name: "Configuration", description: "Global operator feature flag configuration." },

@@ -8,7 +8,11 @@ import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import type { ProviderFactory } from "../providers/factory.js";
 import type { retrieve } from "../retrieval/search.js";
 import { trackJob } from "./jobs.js";
-import { CORRECTIONS_CONVERSATION_TITLE } from "./conversation-titles.js";
+import {
+  CreateConversationSchema as CreateConversation,
+  ConversationParamsSchema,
+  ResumeBodySchema,
+} from "../contracts/conversation.js";
 import { respondToMessage } from "./respond.js";
 import { commitConversation, createConversation } from "./service.js";
 import { resumeConversation } from "./resume.js";
@@ -33,16 +37,6 @@ export interface ChatRouteDeps {
   /** Total generation deadline; production default 300s. Shorter only for isolated tests. */
   streamTimeoutMs?: number;
 }
-
-const CreateConversation = z.object({
-  project_id: z.string().uuid(),
-  title: z
-    .string()
-    .min(1)
-    .max(200)
-    .refine((title) => title !== CORRECTIONS_CONVERSATION_TITLE, "该标题为专用修正会话保留")
-    .optional(),
-});
 
 const PostMessage = ChatMessageInputSchema;
 
@@ -76,13 +70,8 @@ export function registerChatRoutes(
   );
 
   app.post("/projects/:projectId/conversations/:id/resume", async (request, reply) => {
-    const params = z
-      .object({ projectId: z.string().uuid(), id: z.string().uuid() })
-      .safeParse(request.params);
-    const body = z
-      .object({ current_conversation_id: z.string().uuid().optional() })
-      .strict()
-      .safeParse(request.body);
+    const params = ConversationParamsSchema.safeParse(request.params);
+    const body = ResumeBodySchema.safeParse(request.body);
     const invalid = (error: z.ZodError) =>
       reply
         .code(400)
