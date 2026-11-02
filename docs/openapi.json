@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read and Provider/configuration APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall and diagnostic APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Diagnostics",
+      "description": "Read-only diagnostics and explicit potentially billable model probes."
+    },
     {
       "name": "Providers",
       "description": "Operator Provider creation, masked reads and safe metadata changes."
@@ -1043,6 +1047,192 @@
           }
         },
         "required": ["project", "conversation", "counts", "slots"],
+        "additionalProperties": false
+      },
+      "ReadDoctorReport": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "probe": { "type": "boolean", "enum": [false] },
+          "configSource": { "type": "string", "enum": ["server"] },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "database",
+                    "configuration",
+                    "authentication",
+                    "embedding_dimensions",
+                    "chat",
+                    "extraction",
+                    "embedding"
+                  ]
+                },
+                "status": { "type": "string", "enum": ["ok", "error", "skipped"] },
+                "detail": { "type": "string" },
+                "provider": { "type": "string" },
+                "model": { "type": "string" }
+              },
+              "required": ["name", "status", "detail"]
+            }
+          }
+        },
+        "required": ["ok", "probe", "configSource", "checks"]
+      },
+      "ProbeDoctorReport": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "probe": { "type": "boolean", "enum": [true] },
+          "configSource": { "type": "string", "enum": ["server"] },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "database",
+                    "configuration",
+                    "authentication",
+                    "embedding_dimensions",
+                    "chat",
+                    "extraction",
+                    "embedding"
+                  ]
+                },
+                "status": { "type": "string", "enum": ["ok", "error", "skipped"] },
+                "detail": { "type": "string" },
+                "provider": { "type": "string" },
+                "model": { "type": "string" }
+              },
+              "required": ["name", "status", "detail"]
+            }
+          }
+        },
+        "required": ["ok", "probe", "configSource", "checks"]
+      },
+      "RecallResult": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "format": "uuid" },
+          "query": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "abstained": { "type": "boolean" },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "beliefVersionId": { "type": "string", "format": "uuid" },
+                "vectorScore": { "type": "number", "nullable": true },
+                "keywordScore": { "type": "number", "nullable": true },
+                "fusedScore": { "type": "number" },
+                "selected": { "type": "boolean" },
+                "reason": { "type": "string", "enum": ["top_k", "below_topk", "below_threshold"] },
+                "beliefId": { "type": "string", "format": "uuid" },
+                "subject": { "type": "string" },
+                "attribute": { "type": "string" },
+                "value": {}
+              },
+              "required": [
+                "beliefVersionId",
+                "vectorScore",
+                "keywordScore",
+                "fusedScore",
+                "selected",
+                "reason",
+                "beliefId",
+                "subject",
+                "attribute",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 5
+          },
+          "trace": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "reinforce_enabled": { "type": "boolean", "enum": [false] },
+              "flags_snapshot": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "schema_version": { "type": "number", "enum": [1] },
+                  "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                  "flags": {
+                    "type": "object",
+                    "properties": {
+                      "retrieval_vector": { "type": "boolean" },
+                      "retrieval_keyword": { "type": "boolean" },
+                      "retrieval_entity": { "type": "boolean" },
+                      "retrieval_time": { "type": "boolean" },
+                      "memory_gate": { "type": "boolean" },
+                      "decay": { "type": "boolean" },
+                      "reranker": { "type": "boolean" },
+                      "authority_resolution": { "type": "boolean" },
+                      "read_time_resolution": { "type": "boolean" },
+                      "read_time_reinforcement": { "type": "boolean" }
+                    },
+                    "required": [
+                      "retrieval_vector",
+                      "retrieval_keyword",
+                      "retrieval_entity",
+                      "retrieval_time",
+                      "memory_gate",
+                      "decay",
+                      "reranker",
+                      "authority_resolution",
+                      "read_time_resolution",
+                      "read_time_reinforcement"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["schema_version", "revision", "flags"],
+                "additionalProperties": false
+              },
+              "candidate_count": { "type": "integer", "minimum": 0 },
+              "truncated": { "type": "boolean" },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "beliefVersionId": { "type": "string", "format": "uuid" },
+                    "vectorScore": { "type": "number", "nullable": true },
+                    "keywordScore": { "type": "number", "nullable": true },
+                    "fusedScore": { "type": "number" },
+                    "selected": { "type": "boolean" },
+                    "reason": {
+                      "type": "string",
+                      "enum": ["top_k", "below_topk", "below_threshold"]
+                    }
+                  },
+                  "required": [
+                    "beliefVersionId",
+                    "vectorScore",
+                    "keywordScore",
+                    "fusedScore",
+                    "selected",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 200
+              }
+            },
+            "required": ["id", "reinforce_enabled", "candidate_count", "truncated", "candidates"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["project_id", "query", "abstained", "candidates", "trace"],
         "additionalProperties": false
       }
     },
@@ -2968,6 +3158,277 @@
           },
           "500": {
             "description": "Database, decryption or server failure; internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/doctor": {
+      "get": {
+        "operationId": "readDoctorReport",
+        "tags": ["Diagnostics"],
+        "summary": "Read server diagnostics without invoking models",
+        "description": "Always registered. Rejects all query fields; GET cannot enable a probe. Reads database/schema and encrypted Provider config, decrypts keys and constructs SDK adapters to resolve three slots, but never invokes them. Configured model checks are skipped, not successful probes. HTTP200 report.ok=false represents database/configuration errors, including absent DB/master key; HTTP200/ok=true does not prove model availability. Successful handler responses no-store. Not a startup/readiness guarantee.",
+        "responses": {
+          "200": {
+            "description": "Read-only diagnostic report, probe=false; checks may be error or skipped.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ReadDoctorReport" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request fields or query; structured field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; raw upstream/database errors are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/doctor/probe": {
+      "post": {
+        "operationId": "probeModels",
+        "tags": ["Diagnostics"],
+        "summary": "Explicitly probe three model slots; may incur provider charges",
+        "description": "CLI-only explicit action. Rejects every Origin before parsing JSON. Requires JSON empty object; unknown body keys rejected, query keys ignored. With healthy database/dimensions/config, invokes two text slots and one embedding slot concurrently, each maxRetries=0 and 15-second abort signal. Embedding length/finiteness validated. Missing config, upstream failures or model quota denial are caught into HTTP200 probe=true/ok=false reports, not guaranteed HTTP429. Report does not include generated text, keys or raw exceptions. No Evidence/Belief/retrieval trace; invocations may create usage records and consume daily quota. No automatic resend after uncertain response; abort does not prove billing stopped. The abort budget is not an end-to-end database deadline.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": {}, "additionalProperties": false },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Probe report, including per-slot errors rather than propagating provider exceptions.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ProbeDoctorReport" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request fields or query; structured field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Any Origin header is rejected, including a configured trusted Web origin.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json, optionally with charset.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; raw upstream/database errors are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/recall": {
+      "post": {
+        "operationId": "recallMemories",
+        "tags": ["Memory"],
+        "summary": "Explicitly recall project memory with a persisted retrieval trace; may invoke embedding",
+        "description": "Requires DB/master key; otherwise route absent. Global operator authorization, not per-user project membership. CLI-only: all Origin headers rejected before JSON parsing. Strict body accepts only query, trimmed to1..1000 characters; URL query keys ignored. May send query to embedding Provider and incur charges when vector retrieval enabled. Embedding failure (including quota denial) degrades to keyword route; this is not necessarily HTTP429. Selects active current versions only in this project, topK5. Explicit reinforce=false overrides persistent/env reinforcement, so strength/provenance are unchanged. Persists query text and score-only trace (avoid credentials in queries), returns selected values and up to200 trace candidates plus full candidate_count/truncated. Cross-field selected/reason/count/abstention/flags consistency is a runtime refinement. A30-second signal bounds embedding work, not all SQL. Other failures return fixed500; trace may already exist. No automatic retry.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "query": { "type": "string", "minLength": 1, "maxLength": 1000 } },
+                "required": ["query"],
+                "additionalProperties": false
+              },
+              "example": { "query": "PostgreSQL" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RecallResult" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request fields or query; structured field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Any Origin header is rejected, including a configured trusted Web origin.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Project does not exist, or route unavailable without DB/master key.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type must be application/json, optionally with charset.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; raw upstream/database errors are not returned.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {

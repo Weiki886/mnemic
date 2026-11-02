@@ -23,6 +23,7 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/projects/{projectId}/conversations",
     "/projects/{projectId}/conversations/{id}",
     "/projects/{projectId}/conversations/{id}/resume",
+    "/projects/{projectId}/recall",
     "/projects/{projectId}/status",
     "/providers",
     "/providers/{id}",
@@ -30,6 +31,8 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/v1/config/flags",
     "/v1/conversations",
     "/v1/conversations/{id}/commit",
+    "/v1/doctor",
+    "/v1/doctor/probe",
   ]);
   expect(Object.keys(a.paths["/health"]!).sort()).toEqual(["get", "head"]);
   expect(Object.keys(a.paths["/v1/config/flags"]!).sort()).toEqual(["get", "put"]);
@@ -218,4 +221,20 @@ it("provider input credentials are write-only while public snapshots omit creden
   } finally {
     vi.unstubAllEnvs();
   }
+});
+
+it("diagnostic and recall contracts distinguish read-only reports from explicit invocations", () => {
+  const doc = createOpenApiDocument();
+  expect(doc.paths["/v1/doctor"]!.get!.responses).toHaveProperty("200");
+  expect(doc.paths["/v1/doctor/probe"]!.post!.responses).toHaveProperty("403");
+  expect(doc.paths["/projects/{projectId}/recall"]!.get).toBeUndefined();
+  expect(doc.paths["/projects/{projectId}/recall"]!.post!.parameters).toContainEqual(
+    expect.objectContaining({ name: "projectId", in: "path", required: true }),
+  );
+  const schemas = doc.components!.schemas! as Record<
+    string,
+    { properties?: Record<string, { enum?: unknown[] }> }
+  >;
+  expect(schemas.ReadDoctorReport!.properties!.probe!.enum).toEqual([false]);
+  expect(schemas.ProbeDoctorReport!.properties!.probe!.enum).toEqual([true]);
 });
