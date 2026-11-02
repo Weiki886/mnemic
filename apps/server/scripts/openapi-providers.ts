@@ -161,7 +161,7 @@ export function registerProviderPaths(registry: OpenAPIRegistry) {
     tags: ["Configuration"],
     summary: "Read current project/conversation counts and global model slots",
     description:
-      "DB required. conversation_id is required, UUID validated, query extras rejected. Conversation must belong to URL project or404, before reading global config. Counts are project-local; slots remain the global snapshot, not per-project providers. Counts total equals all six statuses (runtime refinement). No decryption, SDK construction or model calls. Handler responses no-store.",
+      "DB required. conversation_id is required, UUID validated, query extras rejected. Conversation must belong to URL project or404, before reading global config. Counts are project-local; slots remain the global snapshot, not per-project providers. Counts total equals all five statuses (runtime refinement). No decryption, SDK construction or model calls. Handler responses no-store.",
     request: { params: ProviderProjectParamsSchema, query: StatusQuerySchema },
     responses: {
       ...common,

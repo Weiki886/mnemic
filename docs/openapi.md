@@ -114,7 +114,7 @@ PATCH 继续严格拒绝未知字段、`api_key`、embedding 修改和空更新�
 
 配置快照不解密任何密钥，不构造 SDK。按 created_at/id 选择最早配置了槽位的 Provider，非法元数据行从 providers 排除并报告 ID；若最早候选非法，槽位显示 `model=null, invalid=true`，不会默默改选后面的行。没配置的槽位为 null。最多读取 1000 个 Provider，超限为 500，不冒充完整结果。base_url=null 或结构合法都不代表端点可连接，这不是 readiness/probe。该 GET 拒绝任何查询字段。
 
-项目状态要求 `conversation_id` 查询参数，严格拒绝未知字段；URL 项目与会话不匹配时先返回 404。counts 只统计本项目六种状态，total 必须等于分项和（运行时 refinement），slots 则仍是全局快照。配置/状态处理器和 PATCH 成功响应设置 no-store；不额外承诺所有在处理器之前产生的传输错误都有相同缓存头。
+项目状态要求 `conversation_id` 查询参数，严格拒绝未知字段；URL 项目与会话不匹配时先返回 404。counts 只统计本项目五种状态，total 必须等于分项和（运行时 refinement），slots 则仍是全局快照。配置/状态处理器和 PATCH 成功响应设置 no-store；不额外承诺所有在处理器之前产生的传输错误都有相同缓存头。
 
 真实 TCP + PG 契约测试发送产物中的创建与 PATCH 示例，检查加密落库、掩码与安全视图差异、最早槽位选择、无变化不记审计、审计失败回滚、embedding 保护、字段级 400、401 先于 JSON 解析、404/409/413/415/固定500。损坏密文时 safe config/status 仍可读、旧掩码列表返回 500，证明了不解密边界。测试全用假密钥，SDK 工厂直接抛错以保证零调用；仅操作独立测试库，并保存/恢复原测试 Provider 行（由 PG 编码完整时间精度），不读取用户 `.env` 或真实 Provider 配置。
 
