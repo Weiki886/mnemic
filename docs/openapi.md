@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -64,7 +64,7 @@ JSONB 值允许 object/array/string/number/boolean/null，字段必须存在。�
 
 转换器 v7 对 unconstrained JSON 输出无 type 的 nullable，对 nullable enum 也不补 null 枚举项。构建工具按 [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object) 归一化：无约束 JSON 为 `{}`（原本就允许 null），有 type 的 nullable enum 显式包含 null，required 不变；只遍历 schema 位置，不解释 example。枚举采用新数组，避免生成过程改变共享 Zod 的原始枚举。测试覆盖任意 JSON/显式 null/缺失值，以及生成后查询仍拒绝 type=null。Redocly 继续为 0 errors / 2 个健康检查提示。
 
-目前仍是部分契约。消息发送（含流式/取消/附件准入）、Provider、召回、PENDING、用量/审计/审批、项目/配置等其余接口，以及 `/docs` 在线页和完整接入指南均未因本轮自动覆盖。原先 3 次交付的规划在接口盘点后继续按可审查大小拆分；#24 保持打开，不能仅凭本轮契约通过关闭。
+目前仍是部分契约。消息发送（含流式/取消/附件准入）、召回、PENDING、用量/审计/审批、其余项目/诊断等接口，以及 `/docs` 在线页和完整接入指南均未因本轮自动覆盖。原先 3 次交付的规划在接口盘点后继续按可审查大小拆分；#24 保持打开，不能仅凭本轮契约通过关闭。
 
 ## 会话生命周期与只读契约扩展
 
@@ -90,4 +90,32 @@ JSONB 值允许 object/array/string/number/boolean/null，字段必须存在。�
 
 真实 TCP 契约测试直接读取提交 JSON，用独立 Ajv 验证这些操作的响应。测试为开启持久提取的真实路由接上全局鉴权，但故意不启动 worker，直接断言任务为 queued、extracted_at 仍 null 且无 Observation；既有已提取历史证明不重复投递。它还验证新会话物理消息数为零、历史 ID 不变、文件/工具/打断元数据、项目隔离、坏历史、分页、400/401/404/409/413/415。测试用抛错工厂保证无模型调用；不冒充 worker 完整恢复或付费模型验收。
 
-仅回滚本次会话扩展会移除上述五个登记和输入定义抽取，保留 #109/#110 的错误 URI、健康/flags/记忆契约及生成门禁。消息发送、SSE、取消、Provider、召回等未覆盖 API 和在线 `/docs`/完整指南仍待后续，#24 保持打开。
+仅回滚本次会话扩展会移除上述五个登记和输入定义抽取，保留 #109/#110 的错误 URI、健康/flags/记忆契约及生成门禁。消息发送、SSE、取消、召回等未覆盖 API 和在线 `/docs`/完整指南仍待后续，#24 保持打开。
+
+## Provider、配置快照与项目状态契约扩展
+
+本轮追加五个操作，字段和输入规则分别复用既有共享 management schema 与抽取后的 `apps/server/src/contracts/providers.ts`：
+
+| 操作  | 路径                           | 成功响应                   |
+| ----- | ------------------------------ | -------------------------- |
+| GET   | `/providers`                   | 200，旧 camelCase 掩码列表 |
+| POST  | `/providers`                   | 201，旧 camelCase 掩码行   |
+| PATCH | `/providers/{id}`              | 200，snake_case 安全配置行 |
+| GET   | `/v1/config`                   | 200，安全全局配置/槽位快照 |
+| GET   | `/projects/{projectId}/status` | 200，项目计数和全局槽位    |
+
+这五个操作都要求全局 Bearer，不能据此推断项目成员身份鉴权。旧 GET/POST `/providers` 还要求 DB 与主密钥，否则路由未注册、返回 404；PATCH/config/status 只要求 DB。所有操作都不构造 SDK、不探测端点、不调用模型，创建成功也不等于密钥或 embedding 维度已验证。JSON 输入中的 `api_key` 在产物标记为 writeOnly，示例只有明显的离线假值和 `example.invalid` 域名。不要向离线示例填真实密钥；实际配置应由操作者经受保护的连接提交，不能将凭据放进 URL。
+
+旧 POST 保留原有宽松对象、非 trim 字符串和通用 URL 校验；models 的未知字段会被剥离，至少一个 chat/extraction/embedding 槽位必须非空（运行时 refinement）。创建配置、密钥加密和只含协议/槽位标识的审计同事务。GET 解密只为构造掩码；响应的 `apiKeyMasked` 不是可重用凭据，永不返回 API key 原文或密文列。列表仍无分页，按 created_at 排序并忽略查询字段。
+
+**旧接口的 `baseUrl` 与 `models` 是原样存储元数据**：URL 不做安全清理，models 在损坏历史数据下也可能不是槽位对象，因此读取契约将 models 如实表示为必填任意 JSON；不能声称旧接口已经过滤全部 URL 凭据或验证全部配置。新 `/v1/config` 与 PATCH 的 `base_url` 安全视图则去掉用户名/密码/查询/片段，非 HTTP(S) 或无法解析的 URL 为 null；不带 key，连掩码也不带。模型名和 Provider 名属于操作者配置元数据，并非面向匿名/按项目成员的公开目录。
+
+PATCH 继续严格拒绝未知字段、`api_key`、embedding 修改和空更新；只允许元数据及 chat/extraction 槽位。输入字符串 trim；HTTP(S) URL 不允许凭据、query、fragment，末尾斜杠归一化。至少修改一个字段/槽位、安全 URL 等 refinement 与转换仍由运行时执行，OpenAPI 的结构性字段不完整表达这些限制。承载 embedding 的 Provider 改变端点或协议为 409，不能通过该接口绕过 REEMBED。无变化不写审计；实际修改与不含名称/端点/模型/凭据正文的审计同事务。冲突为 409，其他写入异常返回固定 500，不自动重试；不能只凭响应丢失就认定没有提交。
+
+配置快照不解密任何密钥，不构造 SDK。按 created_at/id 选择最早配置了槽位的 Provider，非法元数据行从 providers 排除并报告 ID；若最早候选非法，槽位显示 `model=null, invalid=true`，不会默默改选后面的行。没配置的槽位为 null。最多读取 1000 个 Provider，超限为 500，不冒充完整结果。base_url=null 或结构合法都不代表端点可连接，这不是 readiness/probe。该 GET 拒绝任何查询字段。
+
+项目状态要求 `conversation_id` 查询参数，严格拒绝未知字段；URL 项目与会话不匹配时先返回 404。counts 只统计本项目六种状态，total 必须等于分项和（运行时 refinement），slots 则仍是全局快照。配置/状态处理器和 PATCH 成功响应设置 no-store；不额外承诺所有在处理器之前产生的传输错误都有相同缓存头。
+
+真实 TCP + PG 契约测试发送产物中的创建与 PATCH 示例，检查加密落库、掩码与安全视图差异、最早槽位选择、无变化不记审计、审计失败回滚、embedding 保护、字段级 400、401 先于 JSON 解析、404/409/413/415/固定500。损坏密文时 safe config/status 仍可读、旧掩码列表返回 500，证明了不解密边界。测试全用假密钥，SDK 工厂直接抛错以保证零调用；仅操作独立测试库，并保存/恢复原测试 Provider 行（由 PG 编码完整时间精度），不读取用户 `.env` 或真实 Provider 配置。
+
+回滚本次扩展会移除这五个登记及对应输入定义抽取，保留 #109–#111 的契约、错误 URI 和 CI 门禁。消息发送/SSE/取消、召回、PENDING、用量/审计/审批、其余项目与诊断接口、在线 `/docs` 和完整接入指南仍未覆盖，#24 保持打开。

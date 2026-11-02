@@ -18,6 +18,7 @@ import {
 import { HealthResponseSchema } from "../src/contracts/health.js";
 import { UNSUPPORTED_FEATURE_FLAGS } from "../src/flags/runtime.js";
 import { normalizeNullability } from "./openapi-nullability.js";
+import { registerProviderPaths } from "./openapi-providers.js";
 import { registerConversationPaths } from "./openapi-conversations.js";
 import { registerMemoryPaths } from "./openapi-memory.js";
 extendZodWithOpenApi(z);
@@ -145,6 +146,7 @@ export function createOpenApiDocument(): OpenApiDocument {
   });
   registerMemoryPaths(registry);
   registerConversationPaths(registry);
+  registerProviderPaths(registry);
   const document = new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {
@@ -155,7 +157,7 @@ export function createOpenApiDocument(): OpenApiDocument {
         url: "https://www.apache.org/licenses/LICENSE-2.0.html",
       },
       description:
-        "Partial contract for health, feature flag management, project-scoped belief APIs and conversation lifecycle/read APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
+        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read and Provider/configuration APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
     servers: [
       {
@@ -164,6 +166,10 @@ export function createOpenApiDocument(): OpenApiDocument {
       },
     ],
     tags: [
+      {
+        name: "Providers",
+        description: "Operator Provider creation, masked reads and safe metadata changes.",
+      },
       {
         name: "Conversations",
         description:

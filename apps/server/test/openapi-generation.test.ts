@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 import {
   createOpenApiDocument,
@@ -23,6 +23,10 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/projects/{projectId}/conversations",
     "/projects/{projectId}/conversations/{id}",
     "/projects/{projectId}/conversations/{id}/resume",
+    "/projects/{projectId}/status",
+    "/providers",
+    "/providers/{id}",
+    "/v1/config",
     "/v1/config/flags",
     "/v1/conversations",
     "/v1/conversations/{id}/commit",
@@ -32,7 +36,7 @@ it("generation is deterministic, scoped and never includes environment-specific 
   expect(a.security).toEqual([{ bearerAuth: [] }]);
   expect(a.paths["/health"]!.get!.security).toEqual([]);
   expect(a.components?.securitySchemes?.bearerAuth).toEqual({ type: "http", scheme: "bearer" });
-  expect(JSON.stringify(a)).not.toMatch(/sk-|api_key|MASTER_KEY|\.env/);
+  expect(JSON.stringify(a)).not.toMatch(/sk-|MASTER_KEY|\.env/);
   expect(await serializeOpenApi(a)).toBe(await serializeOpenApi(b));
 });
 it("checked artifact matches generation and drift is rejected rather than silently overwritten", async () => {
@@ -186,4 +190,32 @@ it("conversation operation statuses and input contracts match the existing lifec
   >;
   expect(schemas.ConversationDetail!.required).toContain("messages");
   expect(schemas.ConversationMessage!.required).toContain("memories");
+});
+
+it("provider input credentials are write-only while public snapshots omit credential fields", () => {
+  const sentinel = "private-contract-env-sentinel-937446";
+  vi.stubEnv("MNEMIC_AUTH_TOKEN", sentinel);
+  try {
+    const doc = createOpenApiDocument();
+    expect(JSON.stringify(doc)).not.toContain(sentinel);
+    const post = doc.paths["/providers"]!.post!;
+    expect(post.responses).toHaveProperty("201");
+    const body = post.requestBody as {
+      content: Record<string, { schema: { properties: Record<string, { writeOnly?: boolean }> } }>;
+    };
+    expect(body.content["application/json"]!.schema.properties.api_key!.writeOnly).toBe(true);
+    expect(doc.paths["/providers/{id}"]!.patch!.responses).toHaveProperty("409");
+    expect(doc.paths["/projects/{projectId}/status"]!.get!.parameters).toContainEqual(
+      expect.objectContaining({ name: "conversation_id", in: "query", required: true }),
+    );
+    const schemas = doc.components!.schemas! as Record<
+      string,
+      { properties?: Record<string, unknown> }
+    >;
+    expect(schemas.LegacyProvider!.properties).toHaveProperty("apiKeyMasked");
+    expect(schemas.ProviderConfig!.properties).not.toHaveProperty("apiKeyMasked");
+    expect(schemas.ProviderConfig!.properties).not.toHaveProperty("api_key");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

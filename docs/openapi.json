@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs and conversation lifecycle/read APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read and Provider/configuration APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Providers",
+      "description": "Operator Provider creation, masked reads and safe metadata changes."
+    },
     {
       "name": "Conversations",
       "description": "Conversation creation, read, commit and resume; message send/stream not yet included."
@@ -754,6 +758,292 @@
           "resumed_from",
           "messages"
         ]
+      },
+      "LegacyProvider": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "protocol": { "type": "string", "enum": ["openai-compatible", "anthropic"] },
+          "baseUrl": { "type": "string" },
+          "apiKeyMasked": { "type": "string" },
+          "models": {},
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "name", "protocol", "baseUrl", "apiKeyMasked", "models", "createdAt"],
+        "additionalProperties": false
+      },
+      "ProviderConfig": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "protocol": { "type": "string", "enum": ["openai-compatible", "anthropic"] },
+          "base_url": { "type": "string", "nullable": true, "format": "uri" },
+          "models": {
+            "type": "object",
+            "properties": {
+              "chat": { "type": "string" },
+              "extraction": { "type": "string" },
+              "embedding": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "name", "protocol", "base_url", "models", "created_at"],
+        "additionalProperties": false
+      },
+      "ServerConfig": {
+        "type": "object",
+        "properties": {
+          "config_source": { "type": "string", "enum": ["server"] },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "format": "uuid" },
+                "name": { "type": "string" },
+                "protocol": { "type": "string", "enum": ["openai-compatible", "anthropic"] },
+                "base_url": { "type": "string", "nullable": true, "format": "uri" },
+                "models": {
+                  "type": "object",
+                  "properties": {
+                    "chat": { "type": "string" },
+                    "extraction": { "type": "string" },
+                    "embedding": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                },
+                "created_at": { "type": "string", "format": "date-time" }
+              },
+              "required": ["id", "name", "protocol", "base_url", "models", "created_at"],
+              "additionalProperties": false
+            },
+            "maxItems": 1000
+          },
+          "invalid_provider_ids": {
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" },
+            "maxItems": 1000
+          },
+          "slots": {
+            "type": "object",
+            "properties": {
+              "chat": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": { "type": "string" }
+                    },
+                    "required": ["provider_id", "provider_name", "model"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": {},
+                      "invalid": { "type": "boolean", "enum": [true] }
+                    },
+                    "required": ["provider_id", "provider_name", "model", "invalid"],
+                    "additionalProperties": false
+                  },
+                  {}
+                ]
+              },
+              "extraction": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": { "type": "string" }
+                    },
+                    "required": ["provider_id", "provider_name", "model"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": {},
+                      "invalid": { "type": "boolean", "enum": [true] }
+                    },
+                    "required": ["provider_id", "provider_name", "model", "invalid"],
+                    "additionalProperties": false
+                  },
+                  {}
+                ]
+              },
+              "embedding": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": { "type": "string" }
+                    },
+                    "required": ["provider_id", "provider_name", "model"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": {},
+                      "invalid": { "type": "boolean", "enum": [true] }
+                    },
+                    "required": ["provider_id", "provider_name", "model", "invalid"],
+                    "additionalProperties": false
+                  },
+                  {}
+                ]
+              }
+            },
+            "required": ["chat", "extraction", "embedding"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["config_source", "providers", "slots"],
+        "additionalProperties": false
+      },
+      "ProjectStatus": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "name": { "type": "string" }
+            },
+            "required": ["id", "name"],
+            "additionalProperties": false
+          },
+          "conversation": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "ended_at": { "type": "string", "nullable": true, "format": "date-time" }
+            },
+            "required": ["id", "ended_at"],
+            "additionalProperties": false
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "active": { "type": "integer", "minimum": 0 },
+              "deleted": { "type": "integer", "minimum": 0 },
+              "retracted": { "type": "integer", "minimum": 0 },
+              "superseded": { "type": "integer", "minimum": 0 },
+              "expired": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["total", "active", "deleted", "retracted", "superseded", "expired"],
+            "additionalProperties": false
+          },
+          "slots": {
+            "type": "object",
+            "properties": {
+              "chat": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": { "type": "string" }
+                    },
+                    "required": ["provider_id", "provider_name", "model"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": {},
+                      "invalid": { "type": "boolean", "enum": [true] }
+                    },
+                    "required": ["provider_id", "provider_name", "model", "invalid"],
+                    "additionalProperties": false
+                  },
+                  {}
+                ]
+              },
+              "extraction": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": { "type": "string" }
+                    },
+                    "required": ["provider_id", "provider_name", "model"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": {},
+                      "invalid": { "type": "boolean", "enum": [true] }
+                    },
+                    "required": ["provider_id", "provider_name", "model", "invalid"],
+                    "additionalProperties": false
+                  },
+                  {}
+                ]
+              },
+              "embedding": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": { "type": "string" }
+                    },
+                    "required": ["provider_id", "provider_name", "model"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider_id": { "type": "string", "format": "uuid" },
+                      "provider_name": { "type": "string" },
+                      "model": {},
+                      "invalid": { "type": "boolean", "enum": [true] }
+                    },
+                    "required": ["provider_id", "provider_name", "model", "invalid"],
+                    "additionalProperties": false
+                  },
+                  {}
+                ]
+              }
+            },
+            "required": ["chat", "extraction", "embedding"],
+            "additionalProperties": false
+          },
+          "invalid_provider_ids": {
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" },
+            "maxItems": 1000
+          }
+        },
+        "required": ["project", "conversation", "counts", "slots"],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -2201,6 +2491,483 @@
           },
           "500": {
             "description": "Server/database failure. Internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/providers": {
+      "get": {
+        "operationId": "listProviders",
+        "tags": ["Providers"],
+        "summary": "Read legacy masked Provider views",
+        "description": "Global operator scope. Requires DB and master key; otherwise route absent. Decrypts stored keys only to build masks; never returns raw/encrypted api_key. CamelCase baseUrl/apiKeyMasked/createdAt differs from /v1/config. baseUrl and models are raw stored metadata, not sanitized or validated by this legacy read path; do not embed credentials in endpoint URLs. Full unpaginated list ordered by created_at; query keys ignored. Not a connectivity probe, no SDK/model call.",
+        "responses": {
+          "200": {
+            "description": "Legacy rows with masked credential strings and raw URL/models.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/LegacyProvider" }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Route is unavailable when its database/master-key dependencies are not configured.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, decryption or server failure; internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProvider",
+        "tags": ["Providers"],
+        "summary": "Create encrypted Provider configuration with one or more model slots",
+        "description": "Requires DB and master key. Body extras are stripped, including unknown models keys. Strings are not trimmed; old generic URL validator remains (unlike PATCH). At least one nonempty chat/extraction/embedding model is required by runtime refinement. Key encryption, config creation and metadata-only audit share a transaction. Does not contact the endpoint, validate embedding dimensions or invoke any model. Duplicate name409. Do not submit a real credential to the offline example.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+                  "protocol": { "type": "string", "enum": ["openai-compatible", "anthropic"] },
+                  "base_url": { "type": "string", "format": "uri" },
+                  "api_key": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "Credential input only; encrypted at rest, never returned verbatim.",
+                    "writeOnly": true
+                  },
+                  "models": {
+                    "type": "object",
+                    "properties": {
+                      "chat": { "type": "string", "minLength": 1 },
+                      "extraction": { "type": "string", "minLength": 1 },
+                      "embedding": { "type": "string", "minLength": 1 }
+                    }
+                  }
+                },
+                "required": ["name", "protocol", "base_url", "api_key", "models"]
+              },
+              "example": {
+                "name": "openapi-offline-example",
+                "protocol": "openai-compatible",
+                "base_url": "https://example.invalid/v1",
+                "api_key": "offline-example-key-1234",
+                "models": { "chat": "offline-chat", "extraction": "offline-extract" }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New legacy camelCase view, including masked key; configuration only.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/LegacyProvider" } }
+            }
+          },
+          "400": {
+            "description": "Invalid input or unsupported query; structured field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Route is unavailable when its database/master-key dependencies are not configured.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider name already exists.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request content type.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, decryption or server failure; internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/providers/{id}": {
+      "patch": {
+        "operationId": "updateProvider",
+        "tags": ["Providers"],
+        "summary": "Patch existing Provider metadata and chat/extraction models",
+        "description": "Requires DB; never decrypts key or constructs SDK. Strict body and models reject unknown fields, api_key and embedding. At least one field and nonempty models patch required by runtime refinements. Supplied strings are trimmed; URL must be HTTP(S) without credentials/query/fragment and trailing slashes are normalized. A Provider carrying an embedding slot cannot change endpoint/protocol (409); re-embedding is not implemented here. Unchanged patches return current config without audit; actual change and metadata-only audit are atomic. Successful handler responses are no-store. Query ignored.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+                  "protocol": { "type": "string", "enum": ["openai-compatible", "anthropic"] },
+                  "base_url": { "type": "string", "format": "uri" },
+                  "models": {
+                    "type": "object",
+                    "properties": {
+                      "chat": { "type": "string", "minLength": 1, "maxLength": 200 },
+                      "extraction": { "type": "string", "minLength": 1, "maxLength": 200 }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "models": {
+                  "chat": "offline-chat-updated",
+                  "extraction": "offline-extract-updated"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Strict snake_case safe config view, with no key or mask.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ProviderConfig" } }
+            }
+          },
+          "400": {
+            "description": "Invalid input or unsupported query; structured field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider does not exist.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate name or endpoint/protocol change on an embedding Provider.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request content type.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, decryption or server failure; internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/config": {
+      "get": {
+        "operationId": "getServerConfig",
+        "tags": ["Configuration"],
+        "summary": "Read safe Provider and selected model slot snapshot",
+        "description": "DB required, master key not required. No query parameters accepted. No key decryption, SDK construction or model calls; no key/mask in response. Safe HTTP(S) endpoints strip username/password/query/fragment; other URLs become null. Invalid metadata rows are omitted from providers and their IDs reported; an invalid earliest candidate yields model=null/invalid=true, not silent fallback. Selection order created_at then id, as SDK resolution. At most1000 providers; overflow500. This snapshot is not a connectivity/readiness proof. Handler responses no-store.",
+        "responses": {
+          "200": {
+            "description": "Safe global config_source=server snapshot; missing slots are null.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ServerConfig" } }
+            }
+          },
+          "400": {
+            "description": "Invalid input or unsupported query; structured field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Route is unavailable when its database/master-key dependencies are not configured.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, decryption or server failure; internal exception details are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/status": {
+      "get": {
+        "operationId": "getProjectStatus",
+        "tags": ["Configuration"],
+        "summary": "Read current project/conversation counts and global model slots",
+        "description": "DB required. conversation_id is required, UUID validated, query extras rejected. Conversation must belong to URL project or404, before reading global config. Counts are project-local; slots remain the global snapshot, not per-project providers. Counts total equals all six statuses (runtime refinement). No decryption, SDK construction or model calls. Handler responses no-store.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "conversation_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project/conversation references, local counts and global slots.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ProjectStatus" } }
+            }
+          },
+          "400": {
+            "description": "Invalid input or unsupported query; structured field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing and data access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or conversation missing, or cross-project conversation.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, decryption or server failure; internal exception details are not returned.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {
