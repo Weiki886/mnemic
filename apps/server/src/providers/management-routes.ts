@@ -3,6 +3,12 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  ConfigQuerySchema,
+  StatusQuerySchema,
+  ProviderIdParamsSchema,
+  ProviderProjectParamsSchema,
+} from "../contracts/providers.js";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
 import {
   ConfigSchema,
@@ -14,7 +20,7 @@ import { beliefs, conversations, projects, providerConfigs } from "../db/schema.
 import { selectSlotProvider } from "./selection.js";
 import type { ModelSlots } from "./repository.js";
 type Db = PostgresJsDatabase;
-const UUID = z.string().uuid();
+
 function fail(
   reply: FastifyReply,
   requestId: string,
@@ -107,7 +113,7 @@ async function snapshot(db: Db) {
 export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
   app.get("/v1/config", async (request, reply) => {
     reply.header("cache-control", "no-store");
-    const query = z.object({}).strict().safeParse(request.query);
+    const query = ConfigQuerySchema.safeParse(request.query);
     if (!query.success)
       return fail(
         reply,
@@ -121,8 +127,8 @@ export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
   });
   app.get("/projects/:projectId/status", async (request, reply) => {
     reply.header("cache-control", "no-store");
-    const params = z.object({ projectId: UUID }).safeParse(request.params);
-    const query = z.object({ conversation_id: UUID }).strict().safeParse(request.query);
+    const params = ProviderProjectParamsSchema.safeParse(request.params);
+    const query = StatusQuerySchema.safeParse(request.query);
     if (!params.success || !query.success)
       return fail(
         reply,
@@ -172,7 +178,7 @@ export function registerManagementRoutes(app: FastifyInstance, db: Db): void {
   });
   app.patch("/providers/:id", async (request, reply) => {
     reply.header("cache-control", "no-store");
-    const params = z.object({ id: UUID }).safeParse(request.params);
+    const params = ProviderIdParamsSchema.safeParse(request.params);
     const body = ProviderPatchSchema.safeParse(request.body);
     if (!params.success || !body.success)
       return fail(
