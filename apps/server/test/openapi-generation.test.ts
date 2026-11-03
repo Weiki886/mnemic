@@ -17,6 +17,7 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/pending",
     "/pending/{id}/confirm",
     "/pending/{id}/reject",
+    "/projects/{projectId}/approvals",
     "/projects/{projectId}/beliefs",
     "/projects/{projectId}/beliefs/{id}",
     "/projects/{projectId}/beliefs/{id}/correct",
@@ -310,4 +311,27 @@ it("usage contracts preserve exact string counters, strict query defaults and JS
   >;
   expect(schemas.UsageExportPage!.properties).toHaveProperty("next_after");
   expect(JSON.stringify(schemas.UsageReport)).toContain('"reported":{"type":"string"');
+});
+
+it("approval audit documents client-report receipts, idempotent status codes and bounded offset pages", () => {
+  const doc = createOpenApiDocument();
+  const path = doc.paths["/projects/{projectId}/approvals"]!;
+  expect(Object.keys(path).sort()).toEqual(["get", "post"]);
+  expect(path.post!.responses).toHaveProperty("200");
+  expect(path.post!.responses).toHaveProperty("201");
+  expect(path.post!.responses).toHaveProperty("409");
+  expect(path.get!.parameters).toContainEqual(
+    expect.objectContaining({ name: "limit", schema: expect.objectContaining({ default: 50 }) }),
+  );
+  expect(path.get!.parameters).toContainEqual(
+    expect.objectContaining({ name: "offset", schema: expect.objectContaining({ default: 0 }) }),
+  );
+  const components = doc.components!.schemas! as Record<
+    string,
+    { additionalProperties?: boolean; properties?: Record<string, unknown> }
+  >;
+  expect(components.ApprovalAuditEvent!.additionalProperties).toBe(false);
+  expect(components.ApprovalAuditEvent!.properties).not.toHaveProperty("command");
+  expect(components.ApprovalAuditRecord!.properties).toHaveProperty("recorded_at");
+  expect(components.ApprovalAuditPage!.properties).not.toHaveProperty("next_after");
 });

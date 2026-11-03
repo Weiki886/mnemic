@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作、两个审批审计操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -183,3 +183,23 @@ CSV 是 `text/csv; charset=utf-8` 附件，文件名 usage.csv，不能交给 JS
 真实 TCP + 测试 PG 读取提交产物并使用独立 Ajv：执行带资源 UUID 替换的参数示例，覆盖四种分组、截断但完整总量、时区归一化、半开窗口、未知计价、超安全整数、null token、微秒/同时间游标分页、独立手写 CSV 预期、JSON/CSV 格式与头部、每页 prepared 审计及失败回滚。测试不使用生产 CSV formatter 生成预期、不读取真实 Provider；工厂 tripwire 验证零模型调用，测试清理自有用量/审计/作用域资源。
 
 本轮仍 Refs #24。只回滚本扩展会撤销两个登记、参数抽取和相应测试/文档，保留 #109–#114；消息发送/SSE/取消、审计/审批、其余项目接口和在线 `/docs`/完整指南留后续。
+
+## 项目审批审计契约扩展
+
+追加 `POST/GET /projects/{projectId}/approvals`，字段结构复用 shared/approval-audit；项目 Params 仅抽取既有 strict UUID 小写规则，不改变生产校验、权限或审计写入行为。两个接口要求数据库和全局 Bearer 操作者，不要求主密钥；无数据库时路由不存在。URL 项目必须存在，写入时 event.project_id 必须与 URL 项目匹配，否则先返回 404，不插入记录。这不是用户/项目成员鉴权；沿用普通 CORS，不像 probe/recall 拒绝所有 Origin。
+
+这些记录是**客户端报告的审批决定**，不是服务端远程授权、工具执行凭证或操作成功证明。接口不会修改授权、执行工具、解析 Provider 或调用模型。root_hash/target_hash/command_hash 是客户端提交的 SHA256 形状字符串，服务端无法验证本地文件、命令和执行事实。body 中 request_id 是客户端审批请求的关联 UUID，独立于 HTTP x-request-id。
+
+POST 接受严格事件对象，拒绝明文 command/path/target、伪造 client_reported/version 等额外字段；未知 URL 查询字段则被忽略。未知媒体为 415，text/plain 虽可由 Fastify 解析，仍因不是事件对象返回 400；JSON charset 可用，超限为 413。UUID 都转为小写；allow/deny、reason、mode、operation、scope、target_basis 与 command_hash 的组合由运行时 refinement 约束，OpenAPI 枚举不代表任意组合均可接受。例如 shell 必须带 command_hash，其他 operation 不得带；拒绝无效请求可用 operation/target_hash=null；破坏性操作不能报告会话/永久复用。测试包含这些联动失败场景。
+
+首次 event_id 写入返回 201。服务端固定存 actor=cli、meta.version=1/client_reported=true，action 为 approval.<operation或invalid>，target 为 sha256:<target_hash> 或 null，decision 为 allow/deny；不存原始命令/路径正文。相同 ID 的规范化事件再次提交返回 200 和原 recorded_at，不新增行；字段顺序、UUID 大小写变化不影响幂等。相同 ID 的其他内容，或碰撞不兼容/平台/其他项目事件，返回固定 409，不覆盖原内容，也不泄漏已有载荷。
+
+响应丢失可能发生在插入提交之后。若操作者明确重试审计回执，应保留完全相同的 event_id 和 payload，不要重新生成 ID，更不能重做底层工具操作。这不提供跨服务业务副作用 exactly-once。处理器响应 no-store；认证和处理器前传输错误遵守既有规则。
+
+GET 严格拒绝未知查询字段。limit 默认 50、范围 1–200；offset 默认 0、上限 MAX_SAFE_INTEGER；数字字符串只接受十进制数字（可含前导零），空串、小数/指数/负号或不安全整数被拒。生成的 anyOf 表达数字/字符串形状，完整数值 refinement 仍由运行时执行。返回 items/limit/offset，没有 total 或 next_after；按数据库 `(ts,id)` 升序，不是跨页冻结快照。recorded_at 是服务端记录时间，以 JS 毫秒精度序列化，不是客户端决定时间。
+
+读取仅选择 actor=cli、action 匹配 approval.% 且 meta 项目/client_reported/version 匹配的行，排除脱敏和其他平台事件。选中的历史行仍须通过事件 schema 和 actor/action/target/decision/ID 一致性检查；不兼容时整页固定 500，不静默省略，也不回显原始元数据。该接口与平台全局 audit-log 的历史兼容策略不同，不应混用。
+
+真实 TCP + 独立测试 PG 的契约测试读取提交产物，用独立 Ajv 校验。执行事件/参数示例（替换成测试资源 UUID），验证逐字段落库、相同回执/8 路并发重试、碰撞不覆盖、项目隔离、毫秒显示与 `(ts,id)` 分页、无记录空页、严格参数和事件联动、敏感额外字段不落库/日志、401 先于解析/DB、413/415/429 和固定 500。测试只清理自有审计和项目，工厂 tripwire 保证零模型调用，没有读取真实 Provider 或付费服务。
+
+本轮仍 Refs #24。回滚只撤销两个登记、Params 抽取和对应测试/文档，保留 #109–#115；平台审计查询、消息发送/SSE/取消、其余项目接口及在线 `/docs`/完整接入指南留后续。
