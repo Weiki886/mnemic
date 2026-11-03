@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall and diagnostic APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic and PENDING candidate APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Pending",
+      "description": "Operator candidate review; confirmation does not ingest memory."
+    },
     {
       "name": "Diagnostics",
       "description": "Read-only diagnostics and explicit potentially billable model probes."
@@ -1234,6 +1238,84 @@
         },
         "required": ["project_id", "query", "abstained", "candidates", "trace"],
         "additionalProperties": false
+      },
+      "PendingRow": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "candidate": {},
+          "gateScores": {},
+          "status": {
+            "type": "string",
+            "enum": ["pending", "confirmed", "expired", "rejected", "promoted"]
+          },
+          "ttlExpiresAt": { "type": "string", "format": "date-time" },
+          "evidenceId": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "decidedAt": { "type": "string", "nullable": true, "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "candidate",
+          "gateScores",
+          "status",
+          "ttlExpiresAt",
+          "evidenceId",
+          "createdAt",
+          "decidedAt"
+        ]
+      },
+      "ConfirmPendingResult": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "candidate": {},
+          "gateScores": {},
+          "status": { "type": "string", "enum": ["confirmed"] },
+          "ttlExpiresAt": { "type": "string", "format": "date-time" },
+          "evidenceId": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "decidedAt": { "type": "string", "nullable": true, "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "candidate",
+          "gateScores",
+          "status",
+          "ttlExpiresAt",
+          "evidenceId",
+          "createdAt",
+          "decidedAt"
+        ]
+      },
+      "RejectPendingResult": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "projectId": { "type": "string", "format": "uuid" },
+          "candidate": {},
+          "gateScores": {},
+          "status": { "type": "string", "enum": ["rejected"] },
+          "ttlExpiresAt": { "type": "string", "format": "date-time" },
+          "evidenceId": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "decidedAt": { "type": "string", "nullable": true, "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "candidate",
+          "gateScores",
+          "status",
+          "ttlExpiresAt",
+          "evidenceId",
+          "createdAt",
+          "decidedAt"
+        ]
       }
     },
     "parameters": {}
@@ -3429,6 +3511,291 @@
           },
           "500": {
             "description": "Unexpected server failure; raw upstream/database errors are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pending": {
+      "get": {
+        "operationId": "listPendingCandidates",
+        "tags": ["Pending"],
+        "summary": "List stored candidates by project and status",
+        "description": "Requires DB, not master key. Global operator scope, not project membership authorization. Required project_id only filters rows; nonexistent projects return200 empty array. Optional status defaults to pending in handler. Unknown query fields (including limit/offset) are ignored. Unpaginated, createdAt ascending; ties have no guaranteed ordering. Returns camelCase stored rows, including original arbitrary JSONB candidate/gateScores (not guaranteed to match current extraction schema). Contains memory content; no route-level no-store header. TTL is stored metadata, not automatic filtering/expiration. No model invocation, state changes or promotion.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "example": "01900000-0000-7000-8000-000000000001",
+            "name": "project_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "confirmed", "expired", "rejected", "promoted"]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All matching stored candidates; empty array when none match.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/PendingRow" }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or malformed JSON; query validation includes structured field errors.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before parsing or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Route unavailable without database configuration.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token HTTP request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; raw database exceptions are not exposed.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pending/{id}/confirm": {
+      "post": {
+        "operationId": "confirmPendingCandidate",
+        "tags": ["Pending"],
+        "summary": "Confirm a candidate by global ID",
+        "description": "Requires DB and global operator Bearer. Legacy global-ID operation: no project_id guard or per-project authorization; query fields ignored. No request-body schema: absent body and any valid JSON body are ignored, but Fastify still parses supplied bodies and enforces media/body limits. Any Origin follows ordinary configured CORS, unlike CLI-only probe/recall. ID has no route UUID validation: malformed UUID reaches DB and is caught as404, not a structured400. Unconditional update by ID, regardless of current status or expired TTL; repeated calls reset decidedAt, confirm and reject may overwrite one another. No CAS/precondition or409. Returns complete stored camelCase row with the requested status. Does not create Observation/Belief, enqueue extraction, invoke models or run Gate/Resolver; confirmed is not proof of promotion into retrievable memory. Emits metadata debug event only when debug is enabled; no durable decision audit is added by this route. Any repository failure is caught as404, which does not distinguish absence from failure or guarantee no update committed. No automatic retry or route-level no-store guarantee. Candidate/gateScores remain arbitrary stored JSONB.",
+        "parameters": [
+          {
+            "schema": { "type": "string" },
+            "required": true,
+            "example": "01900000-0000-7000-8000-000000000002",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated candidate row; not a completed memory ingestion receipt.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConfirmPendingResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or malformed JSON; query validation includes structured field errors.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before parsing or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "ID absent, malformed, route unavailable without DB, or caught repository failure.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Supplied body exceeds default server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Supplied body media type is not supported by Fastify parsers.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token HTTP request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; raw database exceptions are not exposed.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pending/{id}/reject": {
+      "post": {
+        "operationId": "rejectPendingCandidate",
+        "tags": ["Pending"],
+        "summary": "Reject a candidate by global ID",
+        "description": "Requires DB and global operator Bearer. Legacy global-ID operation: no project_id guard or per-project authorization; query fields ignored. No request-body schema: absent body and any valid JSON body are ignored, but Fastify still parses supplied bodies and enforces media/body limits. Any Origin follows ordinary configured CORS, unlike CLI-only probe/recall. ID has no route UUID validation: malformed UUID reaches DB and is caught as404, not a structured400. Unconditional update by ID, regardless of current status or expired TTL; repeated calls reset decidedAt, confirm and reject may overwrite one another. No CAS/precondition or409. Returns complete stored camelCase row with the requested status. Does not create Observation/Belief, enqueue extraction, invoke models or run Gate/Resolver; confirmed is not proof of promotion into retrievable memory. Emits metadata debug event only when debug is enabled; no durable decision audit is added by this route. Any repository failure is caught as404, which does not distinguish absence from failure or guarantee no update committed. No automatic retry or route-level no-store guarantee. Candidate/gateScores remain arbitrary stored JSONB.",
+        "parameters": [
+          {
+            "schema": { "type": "string" },
+            "required": true,
+            "example": "01900000-0000-7000-8000-000000000002",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated candidate row; not a completed memory ingestion receipt.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RejectPendingResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or malformed JSON; query validation includes structured field errors.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before parsing or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "ID absent, malformed, route unavailable without DB, or caught repository failure.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Supplied body exceeds default server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Supplied body media type is not supported by Fastify parsers.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP or authenticated-token HTTP request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; raw database exceptions are not exposed.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {
