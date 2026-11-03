@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -163,3 +163,23 @@ confirm/reject 按全局候选 ID 无条件更新，既不检查原状态，也�
 产物中的 UUID 参数示例是离线占位值。自动化使用独立测试 PG 预置对应资源后替换 UUID，真实 TCP 执行 GET/confirm/reject；独立 Ajv 验证提交产物、任意 JSONB、五态列表、时间、缺项目空表、状态覆盖/重复操作、无正式记忆副作用及 400/401/404/413/415/429/500。异常路径使用抛错 Proxy 验证固定错误、认证顺序及无原始异常泄露；没有读取用户 Provider 或调用付费服务。
 
 仅回滚本扩展会移除三个登记和列表 schema 抽取，保留 #109–#113 的契约/门禁。消息发送/SSE/取消、用量/审计/审批、其余项目接口和在线 `/docs`/完整接入指南仍未覆盖，#24 保持打开。
+
+## 用量查询与导出契约扩展
+
+新增 `GET /projects/{projectId}/usage` 和 `GET /projects/{projectId}/usage/export`。输入/JSON 输出直接复用 shared/usage 的 Zod，项目参数只抽取原有 strict UUID 小写规则；无生产行为、计价算法或序列化器变更。两个接口只读既有用量，不解析 Provider 配置、不构造 SDK、不调用模型；导出另有持久审计副作用。要求数据库和全局操作者 Token，不要求主密钥；无数据库时路由不存在。项目/会话过滤不等于用户成员授权。
+
+查询严格拒绝未知字段和重复标量参数；projectId、conversation_id、after UUID 归一化为小写。可选 from/to 是带时区的 ISO 时间，过滤精度最多毫秒、换算后 UTC 年份在 0001–9999，窗口须大于零且不超过 366 天；这些 refinement/联动限制不全部体现在 OpenAPI 结构中。默认 to 为服务端当前时间、from 为 to 前 30 天。范围为 `[from,to)`，day 按 UTC 分组。conversation_id 按实际归属会话筛选，不重复计算续聊继承的历史；无项目的 probe 记录不计入项目结果。
+
+汇总默认 group_by=day，还支持 model/purpose/conversation；group_limit 默认 200、最大 1000。groups_truncated 仅表示分组详情截断，totals 在单条 SQL 快照内仍完整。token 和 duration_ms 均为精确十进制字符串，可能超过 JavaScript 安全整数；不要转成 number。未报告 token 是 null/缺失计数，不应估为零；provider 的 total_tokens 独立于输入输出之和。估价按本实例当前价格配置及历史生效时间算出，返回 currency/pricing_revision；known_amount 有 12 位小数，未知价格时为 null，已知小计为零也不代表免费。它不是供应商账单或停止计费证明。单纯查询报告不写导出审计。
+
+导出由 `format=json|csv` 查询字段选择，默认 json，不按 Accept 协商；limit 默认 200、最大 1000。after 是同项目/会话/窗口内已有用量行的 UUID，否则 404。按 `(started_at,id)` 升序分页，游标时间从 PG 回查，保留微秒精度；JSON 行 started_at 可以含六位小数，不能套用过滤输入的毫秒上限。JSON 返回 records 和 next_after，最后一页 next_after=null。
+
+CSV 是 `text/csv; charset=utf-8` 附件，文件名 usage.csv，不能交给 JSON parser。所有字段加双引号、内部引号加倍、记录用 CRLF；可能被表格识别为公式的单元格加前导单引号，null 输出空单元格，不冒充零。provider_name/model_id 是既有记录元数据，不承诺任意秘密检测或脱敏。CSV 无 JSON 包络，列依次为：project_id、currency、pricing_revision、id、conversation_id、provider_name、model_id、slot、purpose、status、started_at、duration_ms、prompt_tokens、completion_tokens、total_tokens、reasoning_tokens、cached_input_tokens、estimated_cost。
+
+两种导出都用 X-Usage-From/To 返回实际窗口，仍有后页时返回 X-Next-After，最后一页省略该头。默认时间范围分页时，后续请求必须复用第一次返回的 from/to，不能每页重新使用 now。每个请求是独立事务，跨页不是冻结的数据快照；并发新增记录的整份一致性不在本接口保证内。浏览器只有在可信 CORS 源下才能利用暴露的分页头。
+
+导出先在同一事务准备完整有界正文并写 `usage.export / prepared` 审计，再提交后发送；空页同样记录。审计只含作用域、格式、行数、窗口和游标，不复制导出内容或 Provider/模型名称。审计失败为固定 500，不发送 CSV/JSON 导出正文，不留下本次 prepared 记录。prepared 仅证明服务端准备完成，不证明客户端已收到或保存；回执不明时不能据此断言没有审计，也不应自动重试。处理器响应 no-store，处理器之前的认证/传输错误遵守原有规则。
+
+真实 TCP + 测试 PG 读取提交产物并使用独立 Ajv：执行带资源 UUID 替换的参数示例，覆盖四种分组、截断但完整总量、时区归一化、半开窗口、未知计价、超安全整数、null token、微秒/同时间游标分页、独立手写 CSV 预期、JSON/CSV 格式与头部、每页 prepared 审计及失败回滚。测试不使用生产 CSV formatter 生成预期、不读取真实 Provider；工厂 tripwire 验证零模型调用，测试清理自有用量/审计/作用域资源。
+
+本轮仍 Refs #24。只回滚本扩展会撤销两个登记、参数抽取和相应测试/文档，保留 #109–#114；消息发送/SSE/取消、审计/审批、其余项目接口和在线 `/docs`/完整指南留后续。
