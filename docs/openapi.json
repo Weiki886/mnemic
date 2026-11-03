@@ -4678,7 +4678,7 @@
             }
           },
           "400": {
-            "description": "Invalid UUID, event, strict query or malformed JSON; schema errors include field details.",
+            "description": "Invalid project UUID, event body or malformed JSON; schema errors include field details.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {
@@ -4805,7 +4805,7 @@
             }
           },
           "400": {
-            "description": "Invalid UUID, event, strict query or malformed JSON; schema errors include field details.",
+            "description": "Invalid project UUID or strict pagination query; schema errors include field details.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {

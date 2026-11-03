@@ -22,9 +22,6 @@ export function registerApprovalPaths(registry: OpenAPIRegistry) {
     content: { "application/problem+json": { schema: problem } },
   });
   const common = {
-    400: error(
-      "Invalid UUID, event, strict query or malformed JSON; schema errors include field details.",
-    ),
     401: error(
       "Global operator Bearer required before body parsing, validation or database access.",
     ),
@@ -77,6 +74,9 @@ export function registerApprovalPaths(registry: OpenAPIRegistry) {
     },
     responses: {
       ...common,
+      400: error(
+        "Invalid project UUID, event body or malformed JSON; schema errors include field details.",
+      ),
       200: {
         description: "Identical event already recorded; original receipt, not a new decision.",
         headers: successHeaders,
@@ -113,6 +113,9 @@ export function registerApprovalPaths(registry: OpenAPIRegistry) {
     },
     responses: {
       ...common,
+      400: error(
+        "Invalid project UUID or strict pagination query; schema errors include field details.",
+      ),
       200: {
         description:
           "Project-local compatible client reports, with normalized pagination; empty items when none.",
