@@ -3,53 +3,9 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { ErrorCode, problem, zodIssues } from "@mnemic/shared";
-import { UsageTimeSchema } from "@mnemic/shared/usage";
 import { usageWindow } from "../usage/pricing.js";
 import { publicAuditRow } from "./events.js";
-const uuid = z.string().uuid().toLowerCase();
-const Query = z
-  .object({
-    from: UsageTimeSchema.optional(),
-    to: UsageTimeSchema.optional(),
-    after: uuid.optional(),
-    limit: z
-      .union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
-      .pipe(z.number().int().min(1).max(200))
-      .default(50),
-    actor: z.enum(["server", "cli", "gate"]).optional(),
-    action: z
-      .enum([
-        "provider.create",
-        "provider.update",
-        "flags.update",
-        "belief.delete",
-        "belief.restore",
-        "usage.export",
-        "redact",
-        "approval.file.read",
-        "approval.file.create",
-        "approval.file.overwrite",
-        "approval.file.delete",
-        "approval.shell",
-        "approval.invalid",
-      ])
-      .optional(),
-    target: z
-      .union([
-        uuid,
-        z.literal("server"),
-        z.string().regex(/^sha256:[a-f0-9]{64}$/),
-        z.enum([
-          "candidate.value",
-          "candidate.subject",
-          "candidate.attribute",
-          "candidate.entities",
-        ]),
-      ])
-      .optional(),
-    project_id: uuid.optional(),
-  })
-  .strict();
+import { AuditQuerySchema } from "../contracts/audit.js";
 /** Global operator-only read API. Root Bearer hook precedes query validation/DB access. */
 export function registerAuditRoutes(app: FastifyInstance, db: PostgresJsDatabase) {
   app.get(
@@ -60,7 +16,7 @@ export function registerAuditRoutes(app: FastifyInstance, db: PostgresJsDatabase
       },
     },
     async (request, reply) => {
-      const parsed = Query.safeParse(request.query);
+      const parsed = AuditQuerySchema.safeParse(request.query);
       const bad = (error: z.ZodError) =>
         reply
           .code(400)

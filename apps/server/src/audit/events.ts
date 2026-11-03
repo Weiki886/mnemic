@@ -138,7 +138,7 @@ export async function writePlatformAudit(db: Pick<PostgresJsDatabase, "insert">,
   const event = PlatformEventSchema.parse(value);
   await writeAuditLog(db, event);
 }
-const Redaction = z
+export const RedactionEventSchema = z
   .object({
     actor: z.literal("gate"),
     action: z.literal("redact"),
@@ -180,7 +180,7 @@ export function publicAuditRow(row: {
   };
   const platform = PlatformEventSchema.safeParse(raw);
   if (platform.success) return { ...envelope, ...platform.data, metadata_omitted: false };
-  const redaction = Redaction.safeParse(raw);
+  const redaction = RedactionEventSchema.safeParse(raw);
   if (redaction.success) return { ...envelope, ...redaction.data, metadata_omitted: false };
   if (row.actor === "cli" && row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)) {
     const { client_reported, version, ...value } = row.meta as Record<string, unknown>;
