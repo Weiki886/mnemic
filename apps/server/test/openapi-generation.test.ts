@@ -28,6 +28,8 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/projects/{projectId}/conversations/{id}/resume",
     "/projects/{projectId}/recall",
     "/projects/{projectId}/status",
+    "/projects/{projectId}/usage",
+    "/projects/{projectId}/usage/export",
     "/providers",
     "/providers/{id}",
     "/v1/config",
@@ -271,4 +273,41 @@ it("pending contracts preserve global ID decisions and actual action-specific ou
   );
   expect(schemas.ConfirmPendingResult!.properties!.status!.enum).toEqual(["confirmed"]);
   expect(schemas.RejectPendingResult!.properties!.status!.enum).toEqual(["rejected"]);
+});
+
+it("usage contracts preserve exact string counters, strict query defaults and JSON versus CSV media", () => {
+  const doc = createOpenApiDocument();
+  const report = doc.paths["/projects/{projectId}/usage"]!.get!;
+  const exporting = doc.paths["/projects/{projectId}/usage/export"]!.get!;
+  expect(report.parameters).toContainEqual(
+    expect.objectContaining({
+      name: "group_limit",
+      schema: expect.objectContaining({ default: 200, maximum: 1000 }),
+    }),
+  );
+  expect(report.parameters).toContainEqual(
+    expect.objectContaining({
+      name: "group_by",
+      schema: expect.objectContaining({ default: "day" }),
+    }),
+  );
+  expect(exporting.parameters).toContainEqual(
+    expect.objectContaining({
+      name: "format",
+      schema: expect.objectContaining({ default: "json", enum: ["json", "csv"] }),
+    }),
+  );
+  const response = exporting.responses["200"] as {
+    content: Record<string, { schema: unknown }>;
+    headers: Record<string, unknown>;
+  };
+  expect(Object.keys(response.content).sort()).toEqual(["application/json", "text/csv"]);
+  expect(response.content["text/csv"]!.schema).toEqual({ type: "string" });
+  expect(response.headers).toHaveProperty("X-Next-After");
+  const schemas = doc.components!.schemas! as Record<
+    string,
+    { properties: Record<string, { type?: string; nullable?: boolean; pattern?: string }> }
+  >;
+  expect(schemas.UsageExportPage!.properties).toHaveProperty("next_after");
+  expect(JSON.stringify(schemas.UsageReport)).toContain('"reported":{"type":"string"');
 });

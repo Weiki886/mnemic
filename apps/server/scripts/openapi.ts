@@ -18,6 +18,7 @@ import {
 import { HealthResponseSchema } from "../src/contracts/health.js";
 import { UNSUPPORTED_FEATURE_FLAGS } from "../src/flags/runtime.js";
 import { normalizeNullability } from "./openapi-nullability.js";
+import { registerUsagePaths } from "./openapi-usage.js";
 import { registerPendingPaths } from "./openapi-pending.js";
 import { registerDiagnosticPaths } from "./openapi-diagnostics.js";
 import { registerProviderPaths } from "./openapi-providers.js";
@@ -151,6 +152,7 @@ export function createOpenApiDocument(): OpenApiDocument {
   registerProviderPaths(registry);
   registerDiagnosticPaths(registry);
   registerPendingPaths(registry);
+  registerUsagePaths(registry);
   const document = new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {
@@ -161,7 +163,7 @@ export function createOpenApiDocument(): OpenApiDocument {
         url: "https://www.apache.org/licenses/LICENSE-2.0.html",
       },
       description:
-        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic and PENDING candidate APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
+        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate and usage read/export APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
     servers: [
       {
@@ -170,6 +172,11 @@ export function createOpenApiDocument(): OpenApiDocument {
       },
     ],
     tags: [
+      {
+        name: "Usage",
+        description:
+          "Recorded usage aggregation and audited JSON/CSV page exports; no model calls.",
+      },
       {
         name: "Pending",
         description: "Operator candidate review; confirmation does not ingest memory.",

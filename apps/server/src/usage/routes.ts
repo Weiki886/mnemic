@@ -7,7 +7,7 @@ import { UsageQuerySchema, UsageExportQuerySchema } from "@mnemic/shared/usage";
 import { assertUsageScope, readUsageReport, readUsageExport, UsageScopeError } from "./read.js";
 import { usageCsv } from "./csv.js";
 import { usageWindow, type UsagePricing } from "./pricing.js";
-const Params = z.object({ projectId: z.string().uuid().toLowerCase() }).strict();
+import { UsageParamsSchema } from "../contracts/usage.js";
 function fail(reply: FastifyReply, requestId: string, status: 400 | 404, error?: z.ZodError) {
   return reply
     .code(status)
@@ -34,7 +34,7 @@ export function registerUsageRoutes(
     app.get(`/projects/:projectId/usage${exporting ? "/export" : ""}`, async (request, reply) => {
       reply.header("cache-control", "no-store");
       reply.header("access-control-expose-headers", "X-Next-After, X-Usage-From, X-Usage-To");
-      const params = Params.safeParse(request.params);
+      const params = UsageParamsSchema.safeParse(request.params);
       if (!params.success) return fail(reply, request.id, 400, params.error);
       const parsed = (exporting ? UsageExportQuerySchema : UsageQuerySchema).safeParse(
         request.query,

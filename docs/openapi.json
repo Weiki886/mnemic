@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic and PENDING candidate APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate and usage read/export APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Usage",
+      "description": "Recorded usage aggregation and audited JSON/CSV page exports; no model calls."
+    },
     {
       "name": "Pending",
       "description": "Operator candidate review; confirmation does not ingest memory."
@@ -1316,6 +1320,321 @@
           "createdAt",
           "decidedAt"
         ]
+      },
+      "UsageReport": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "format": "uuid" },
+          "conversation_id": { "type": "string", "nullable": true, "format": "uuid" },
+          "from": { "type": "string", "format": "date-time" },
+          "to": { "type": "string", "format": "date-time" },
+          "currency": { "type": "string", "nullable": true, "pattern": "^[A-Z]{3}$" },
+          "pricing_revision": { "type": "string", "nullable": true, "pattern": "^[a-f0-9]{64}$" },
+          "group_by": {
+            "type": "string",
+            "enum": ["day", "model", "purpose", "conversation"],
+            "default": "day"
+          },
+          "groups_truncated": { "type": "boolean" },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "success_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "error_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "aborted_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "duration_ms": { "type": "string", "pattern": "^\\d+$" },
+              "prompt_tokens": {
+                "type": "object",
+                "properties": {
+                  "reported": { "type": "string", "pattern": "^\\d+$" },
+                  "missing_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["reported", "missing_calls"],
+                "additionalProperties": false
+              },
+              "completion_tokens": {
+                "type": "object",
+                "properties": {
+                  "reported": { "type": "string", "pattern": "^\\d+$" },
+                  "missing_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["reported", "missing_calls"],
+                "additionalProperties": false
+              },
+              "total_tokens": {
+                "type": "object",
+                "properties": {
+                  "reported": { "type": "string", "pattern": "^\\d+$" },
+                  "missing_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["reported", "missing_calls"],
+                "additionalProperties": false
+              },
+              "reasoning_tokens": {
+                "type": "object",
+                "properties": {
+                  "reported": { "type": "string", "pattern": "^\\d+$" },
+                  "missing_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["reported", "missing_calls"],
+                "additionalProperties": false
+              },
+              "cached_input_tokens": {
+                "type": "object",
+                "properties": {
+                  "reported": { "type": "string", "pattern": "^\\d+$" },
+                  "missing_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["reported", "missing_calls"],
+                "additionalProperties": false
+              },
+              "estimated_cost": {
+                "type": "object",
+                "properties": {
+                  "known_amount": {
+                    "type": "string",
+                    "nullable": true,
+                    "pattern": "^\\d+\\.\\d{12}$"
+                  },
+                  "priced_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                  "unpriced_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["known_amount", "priced_calls", "unpriced_calls"],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "calls",
+              "success_calls",
+              "error_calls",
+              "aborted_calls",
+              "duration_ms",
+              "prompt_tokens",
+              "completion_tokens",
+              "total_tokens",
+              "reasoning_tokens",
+              "cached_input_tokens",
+              "estimated_cost"
+            ],
+            "additionalProperties": false
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string", "nullable": true }
+                },
+                "totals": {
+                  "type": "object",
+                  "properties": {
+                    "calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                    "success_calls": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "error_calls": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                    "aborted_calls": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "duration_ms": { "type": "string", "pattern": "^\\d+$" },
+                    "prompt_tokens": {
+                      "type": "object",
+                      "properties": {
+                        "reported": { "type": "string", "pattern": "^\\d+$" },
+                        "missing_calls": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["reported", "missing_calls"],
+                      "additionalProperties": false
+                    },
+                    "completion_tokens": {
+                      "type": "object",
+                      "properties": {
+                        "reported": { "type": "string", "pattern": "^\\d+$" },
+                        "missing_calls": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["reported", "missing_calls"],
+                      "additionalProperties": false
+                    },
+                    "total_tokens": {
+                      "type": "object",
+                      "properties": {
+                        "reported": { "type": "string", "pattern": "^\\d+$" },
+                        "missing_calls": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["reported", "missing_calls"],
+                      "additionalProperties": false
+                    },
+                    "reasoning_tokens": {
+                      "type": "object",
+                      "properties": {
+                        "reported": { "type": "string", "pattern": "^\\d+$" },
+                        "missing_calls": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["reported", "missing_calls"],
+                      "additionalProperties": false
+                    },
+                    "cached_input_tokens": {
+                      "type": "object",
+                      "properties": {
+                        "reported": { "type": "string", "pattern": "^\\d+$" },
+                        "missing_calls": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["reported", "missing_calls"],
+                      "additionalProperties": false
+                    },
+                    "estimated_cost": {
+                      "type": "object",
+                      "properties": {
+                        "known_amount": {
+                          "type": "string",
+                          "nullable": true,
+                          "pattern": "^\\d+\\.\\d{12}$"
+                        },
+                        "priced_calls": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "unpriced_calls": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["known_amount", "priced_calls", "unpriced_calls"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "calls",
+                    "success_calls",
+                    "error_calls",
+                    "aborted_calls",
+                    "duration_ms",
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "total_tokens",
+                    "reasoning_tokens",
+                    "cached_input_tokens",
+                    "estimated_cost"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["key", "totals"],
+              "additionalProperties": false
+            },
+            "maxItems": 1000
+          }
+        },
+        "required": [
+          "project_id",
+          "conversation_id",
+          "from",
+          "to",
+          "currency",
+          "pricing_revision",
+          "groups_truncated",
+          "totals",
+          "groups"
+        ],
+        "additionalProperties": false
+      },
+      "UsageExportPage": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string", "format": "uuid" },
+          "conversation_id": { "type": "string", "nullable": true, "format": "uuid" },
+          "from": { "type": "string", "format": "date-time" },
+          "to": { "type": "string", "format": "date-time" },
+          "currency": { "type": "string", "nullable": true, "pattern": "^[A-Z]{3}$" },
+          "pricing_revision": { "type": "string", "nullable": true, "pattern": "^[a-f0-9]{64}$" },
+          "records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "format": "uuid" },
+                "conversation_id": { "type": "string", "nullable": true, "format": "uuid" },
+                "provider_name": { "type": "string" },
+                "model_id": { "type": "string" },
+                "slot": { "type": "string", "enum": ["chat", "extraction", "embedding"] },
+                "purpose": { "type": "string" },
+                "status": { "type": "string", "enum": ["success", "error", "aborted"] },
+                "started_at": { "type": "string", "format": "date-time" },
+                "duration_ms": { "type": "string", "pattern": "^\\d+$" },
+                "prompt_tokens": { "type": "string", "nullable": true, "pattern": "^\\d+$" },
+                "completion_tokens": { "type": "string", "nullable": true, "pattern": "^\\d+$" },
+                "total_tokens": { "type": "string", "nullable": true, "pattern": "^\\d+$" },
+                "reasoning_tokens": { "type": "string", "nullable": true, "pattern": "^\\d+$" },
+                "cached_input_tokens": { "type": "string", "nullable": true, "pattern": "^\\d+$" },
+                "estimated_cost": {
+                  "type": "string",
+                  "nullable": true,
+                  "pattern": "^\\d+\\.\\d{12}$"
+                }
+              },
+              "required": [
+                "id",
+                "conversation_id",
+                "provider_name",
+                "model_id",
+                "slot",
+                "purpose",
+                "status",
+                "started_at",
+                "duration_ms",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "reasoning_tokens",
+                "cached_input_tokens",
+                "estimated_cost"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 1000
+          },
+          "next_after": { "type": "string", "nullable": true, "format": "uuid" }
+        },
+        "required": [
+          "project_id",
+          "conversation_id",
+          "from",
+          "to",
+          "currency",
+          "pricing_revision",
+          "records",
+          "next_after"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -3796,6 +4115,275 @@
           },
           "500": {
             "description": "Unexpected server failure; raw database exceptions are not exposed.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/usage": {
+      "get": {
+        "operationId": "readUsageReport",
+        "tags": ["Usage"],
+        "summary": "Aggregate recorded project model usage without invoking models",
+        "description": "Strict query: unknown fields and duplicate scalar fields rejected. Project/conversation UUIDs normalized to lowercase. ISO offset times require UTC years 0001-9999 and at most millisecond filter precision; runtime refinements enforce a positive window of at most 366 days. Defaults: to=server now, from=to minus 30 days. Half-open [from,to), UTC day grouping. Not all date refinements or cross-field limits are expressed by OpenAPI. Requires database, not master key. Global operator authorization, not project membership. Optional conversation_id means physical owning conversation; inherited continuation history is not recounted. Null-project probes excluded. No Provider resolution or model invocation; reads existing usage only. Provider/model labels are stored metadata, not guaranteed secret-redacted. Token totals and duration_ms are exact decimal strings; call and missing-call counts are bounded integers. Missing token coverage is not zero. Configured estimates use current pricing revision and historical effective rates; not provider bills or proof of billing stopped. Handler responses no-store; earlier auth/transport errors follow their own rules. group_by defaults to day (also model, purpose, conversation). group_limit defaults to 200, max 1000; groups_truncated refers only to group details, totals remain complete in one SQL snapshot. Missing prices yield currency/pricing_revision/known_amount=null; a zero known subtotal does not prove free usage. Reading a report does not write an export audit.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "example": "01900000-0000-7000-8000-000000000001",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": false,
+            "name": "conversation_id",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "date-time" },
+            "required": false,
+            "example": "2026-10-01T00:00:00Z",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "date-time" },
+            "required": false,
+            "example": "2026-10-04T00:00:00Z",
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["day", "model", "purpose", "conversation"],
+              "default": "day"
+            },
+            "required": false,
+            "name": "group_by",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 },
+            "required": false,
+            "name": "group_limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact recorded counts, missing coverage and optional estimates, grouped within the requested scope.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/UsageReport" } }
+            }
+          },
+          "400": {
+            "description": "Invalid strict query, project UUID or time window; structured field errors.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before validation or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Project/conversation not in scope; export cursor outside selection; or route absent without DB.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, preparation or export audit failure; raw errors are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/usage/export": {
+      "get": {
+        "operationId": "exportUsage",
+        "tags": ["Usage"],
+        "summary": "Prepare one bounded JSON or CSV usage page and persist its audit receipt",
+        "description": "Strict query: unknown fields and duplicate scalar fields rejected. Project/conversation UUIDs normalized to lowercase. ISO offset times require UTC years 0001-9999 and at most millisecond filter precision; runtime refinements enforce a positive window of at most 366 days. Defaults: to=server now, from=to minus 30 days. Half-open [from,to), UTC day grouping. Not all date refinements or cross-field limits are expressed by OpenAPI. Requires database, not master key. Global operator authorization, not project membership. Optional conversation_id means physical owning conversation; inherited continuation history is not recounted. Null-project probes excluded. No Provider resolution or model invocation; reads existing usage only. Provider/model labels are stored metadata, not guaranteed secret-redacted. Token totals and duration_ms are exact decimal strings; call and missing-call counts are bounded integers. Missing token coverage is not zero. Configured estimates use current pricing revision and historical effective rates; not provider bills or proof of billing stopped. Handler responses no-store; earlier auth/transport errors follow their own rules. format query selects json (default) or csv, not the Accept header. limit defaults to 200, max 1000. after is an existing usage row UUID in the same project/conversation/window, otherwise 404. Keyset order (started_at,id) preserves PostgreSQL microseconds; reuse the returned exact from/to for subsequent pages, including when defaults were used. Each request is a separate DB transaction, not a frozen multi-page export snapshot. JSON returns records and next_after (null at end); CSV quotes all cells, doubles quotes, uses CRLF, prefixes potential spreadsheet formulas with an apostrophe and leaves null cells empty. CSV is an attachment, not JSON; it lacks a JSON envelope. X-Usage-From/To carry resolved bounds, optional X-Next-After is absent on the final page. Prepare the complete page and commit a minimal usage.export/prepared audit before sending; prepared does not mean delivered or saved by client. Audit failure returns fixed 500 with no export payload or committed receipt; lost response does not prove audit absent. Each successful page, including empty pages, writes a receipt; no automatic retry. Estimates have 12 fractional digits and exact token strings may exceed JavaScript safe integer precision.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "example": "01900000-0000-7000-8000-000000000001",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": false,
+            "name": "conversation_id",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "date-time" },
+            "required": false,
+            "example": "2026-10-01T00:00:00Z",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "date-time" },
+            "required": false,
+            "example": "2026-10-04T00:00:00Z",
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "enum": ["json", "csv"], "default": "json" },
+            "required": false,
+            "example": "json",
+            "name": "format",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 },
+            "required": false,
+            "example": 2,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One prepared page; Content-Type follows query format. No delivery guarantee.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "X-Usage-From": {
+                "schema": { "type": "string", "format": "date-time" },
+                "required": true
+              },
+              "X-Usage-To": {
+                "schema": { "type": "string", "format": "date-time" },
+                "required": true
+              },
+              "X-Next-After": {
+                "schema": { "type": "string", "format": "uuid" },
+                "required": false
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string",
+                  "description": "Present for CSV only: attachment; filename=\"usage.csv\"."
+                },
+                "required": false
+              },
+              "Access-Control-Expose-Headers": {
+                "schema": {
+                  "type": "string",
+                  "description": "X-Next-After, X-Usage-From, X-Usage-To; usable by browser only with allowed CORS origin."
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/UsageExportPage" } },
+              "text/csv": { "schema": { "type": "string" } }
+            }
+          },
+          "400": {
+            "description": "Invalid strict query, project UUID or time window; structured field errors.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before validation or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Project/conversation not in scope; export cursor outside selection; or route absent without DB.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, preparation or export audit failure; raw errors are not returned.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {
