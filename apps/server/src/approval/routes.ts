@@ -10,7 +10,7 @@ import {
 } from "@mnemic/shared/approval-audit";
 import { auditLog, projects } from "../db/schema.js";
 
-const Params = z.object({ projectId: z.string().uuid().toLowerCase() }).strict();
+import { ApprovalParamsSchema } from "../contracts/approval.js";
 function fail(
   reply: FastifyReply,
   requestId: string,
@@ -60,7 +60,7 @@ function publicRow(row: Row) {
 export function registerApprovalAuditRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
   app.post("/projects/:projectId/approvals", async (request, reply) => {
     reply.header("cache-control", "no-store");
-    const params = Params.safeParse(request.params),
+    const params = ApprovalParamsSchema.safeParse(request.params),
       body = ApprovalAuditEventSchema.safeParse(request.body);
     if (!params.success) return fail(reply, request.id, 400, "项目参数无效", params.error);
     if (!body.success) return fail(reply, request.id, 400, "审批审计参数无效", body.error);
@@ -103,7 +103,7 @@ export function registerApprovalAuditRoutes(app: FastifyInstance, db: PostgresJs
   });
   app.get("/projects/:projectId/approvals", async (request, reply) => {
     reply.header("cache-control", "no-store");
-    const params = Params.safeParse(request.params),
+    const params = ApprovalParamsSchema.safeParse(request.params),
       query = ApprovalAuditQuerySchema.safeParse(request.query);
     if (!params.success) return fail(reply, request.id, 400, "项目参数无效", params.error);
     if (!query.success) return fail(reply, request.id, 400, "分页参数无效", query.error);

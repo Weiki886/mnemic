@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate and usage read/export APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export and approval audit APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Approvals",
+      "description": "Client-reported approval decision receipts, not tool execution evidence."
+    },
     {
       "name": "Usage",
       "description": "Recorded usage aggregation and audited JSON/CSV page exports; no model calls."
@@ -1634,6 +1638,217 @@
           "records",
           "next_after"
         ],
+        "additionalProperties": false
+      },
+      "ApprovalAuditEvent": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string", "format": "uuid" },
+          "request_id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "session_id": { "type": "string", "format": "uuid" },
+          "mode": { "type": "string", "enum": ["read-only", "confirm", "auto"] },
+          "operation": {
+            "type": "string",
+            "nullable": true,
+            "enum": ["file.read", "file.create", "file.overwrite", "file.delete", "shell", null]
+          },
+          "decision": { "type": "string", "enum": ["allow", "deny"] },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "read_allowed",
+              "auto_create",
+              "session_grant",
+              "permanent_grant",
+              "confirmed",
+              "invalid_request",
+              "invalid_root",
+              "invalid_target",
+              "outside_root",
+              "read_only",
+              "closed",
+              "busy",
+              "cancelled",
+              "denied",
+              "changed",
+              "storage_error"
+            ]
+          },
+          "scope": { "type": "string", "enum": ["once", "session", "permanent"] },
+          "root_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "target_hash": { "type": "string", "nullable": true, "pattern": "^[a-f0-9]{64}$" },
+          "target_basis": { "type": "string", "enum": ["canonical", "requested", "none"] },
+          "command_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": [
+          "event_id",
+          "request_id",
+          "project_id",
+          "session_id",
+          "mode",
+          "operation",
+          "decision",
+          "reason",
+          "root_hash",
+          "target_hash",
+          "target_basis"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalAuditRecord": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "object",
+            "properties": {
+              "event_id": { "type": "string", "format": "uuid" },
+              "request_id": { "type": "string", "format": "uuid" },
+              "project_id": { "type": "string", "format": "uuid" },
+              "session_id": { "type": "string", "format": "uuid" },
+              "mode": { "type": "string", "enum": ["read-only", "confirm", "auto"] },
+              "operation": {
+                "type": "string",
+                "nullable": true,
+                "enum": ["file.read", "file.create", "file.overwrite", "file.delete", "shell", null]
+              },
+              "decision": { "type": "string", "enum": ["allow", "deny"] },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "read_allowed",
+                  "auto_create",
+                  "session_grant",
+                  "permanent_grant",
+                  "confirmed",
+                  "invalid_request",
+                  "invalid_root",
+                  "invalid_target",
+                  "outside_root",
+                  "read_only",
+                  "closed",
+                  "busy",
+                  "cancelled",
+                  "denied",
+                  "changed",
+                  "storage_error"
+                ]
+              },
+              "scope": { "type": "string", "enum": ["once", "session", "permanent"] },
+              "root_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "target_hash": { "type": "string", "nullable": true, "pattern": "^[a-f0-9]{64}$" },
+              "target_basis": { "type": "string", "enum": ["canonical", "requested", "none"] },
+              "command_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            },
+            "required": [
+              "event_id",
+              "request_id",
+              "project_id",
+              "session_id",
+              "mode",
+              "operation",
+              "decision",
+              "reason",
+              "root_hash",
+              "target_hash",
+              "target_basis"
+            ],
+            "additionalProperties": false
+          },
+          "recorded_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["event", "recorded_at"],
+        "additionalProperties": false
+      },
+      "ApprovalAuditPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "event": {
+                  "type": "object",
+                  "properties": {
+                    "event_id": { "type": "string", "format": "uuid" },
+                    "request_id": { "type": "string", "format": "uuid" },
+                    "project_id": { "type": "string", "format": "uuid" },
+                    "session_id": { "type": "string", "format": "uuid" },
+                    "mode": { "type": "string", "enum": ["read-only", "confirm", "auto"] },
+                    "operation": {
+                      "type": "string",
+                      "nullable": true,
+                      "enum": [
+                        "file.read",
+                        "file.create",
+                        "file.overwrite",
+                        "file.delete",
+                        "shell",
+                        null
+                      ]
+                    },
+                    "decision": { "type": "string", "enum": ["allow", "deny"] },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "read_allowed",
+                        "auto_create",
+                        "session_grant",
+                        "permanent_grant",
+                        "confirmed",
+                        "invalid_request",
+                        "invalid_root",
+                        "invalid_target",
+                        "outside_root",
+                        "read_only",
+                        "closed",
+                        "busy",
+                        "cancelled",
+                        "denied",
+                        "changed",
+                        "storage_error"
+                      ]
+                    },
+                    "scope": { "type": "string", "enum": ["once", "session", "permanent"] },
+                    "root_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "target_hash": {
+                      "type": "string",
+                      "nullable": true,
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "target_basis": {
+                      "type": "string",
+                      "enum": ["canonical", "requested", "none"]
+                    },
+                    "command_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+                  },
+                  "required": [
+                    "event_id",
+                    "request_id",
+                    "project_id",
+                    "session_id",
+                    "mode",
+                    "operation",
+                    "decision",
+                    "reason",
+                    "root_hash",
+                    "target_hash",
+                    "target_basis"
+                  ],
+                  "additionalProperties": false
+                },
+                "recorded_at": { "type": "string", "format": "date-time" }
+              },
+              "required": ["event", "recorded_at"],
+              "additionalProperties": false
+            },
+            "maxItems": 200
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
+          "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+        },
+        "required": ["items", "limit", "offset"],
         "additionalProperties": false
       }
     },
@@ -4384,6 +4599,255 @@
           },
           "500": {
             "description": "Database, preparation or export audit failure; raw errors are not returned.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/approvals": {
+      "post": {
+        "operationId": "recordApprovalDecision",
+        "tags": ["Approvals"],
+        "summary": "Persist a client-reported approval decision and return an audit receipt",
+        "description": "Requires database, not master key. Global operator Bearer, not per-user membership authorization. URL project must exist. UUID inputs normalize to lowercase. No Provider resolution, model invocation, permission mutation or tool execution. Client-reported decisions are not server authorization or evidence of execution. Ordinary configured CORS applies; not a CLI-only Origin rejection. Handler responses no-store, earlier auth/transport errors follow their own rules. Strict JSON event body: unknown/plaintext command/path fields rejected. Body project_id must match URL project or 404 before insert. Query fields ignored. event.request_id is a client correlation UUID, independent of the HTTP x-request-id. Root/target/command SHA256 hashes are supplied by client; server cannot verify local filesystem or whether an operation ran. Allow/deny reason, operation, mode, scope, target_basis and command_hash combinations are runtime refinements, not fully encoded in OpenAPI. Null operation is allowed for denied invalid requests; shell requires command_hash and non-shell forbids it. Writes audit_log actor=cli, version=1/client_reported=true, action=approval.<operation or invalid>, target=sha256:<target_hash> or null, decision=allow/deny. First event_id insert returns201. Same normalized event under same ID returns200 with original recorded_at, without new row; different event or incompatible/colliding platform history returns409 without overwriting. Global event-ID collision does not reveal the existing payload. A lost response may follow a committed insert: if deliberately retrying the audit receipt, retain the identical event_id and payload, never regenerate it or repeat the underlying tool operation. No additional execution, rollback or cross-service exactly-once guarantee.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "example": "01900000-0000-7000-8000-000000000001",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ApprovalAuditEvent" },
+              "example": {
+                "event_id": "01900000-0000-7000-8000-000000000002",
+                "request_id": "01900000-0000-7000-8000-000000000003",
+                "project_id": "01900000-0000-7000-8000-000000000001",
+                "session_id": "01900000-0000-7000-8000-000000000004",
+                "mode": "confirm",
+                "operation": "file.create",
+                "decision": "allow",
+                "reason": "confirmed",
+                "scope": "once",
+                "root_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "target_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "target_basis": "canonical"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Identical event already recorded; original receipt, not a new decision.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApprovalAuditRecord" }
+              }
+            }
+          },
+          "201": {
+            "description": "New client-reported audit row persisted; no tool execution implied.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApprovalAuditRecord" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid project UUID, event body or malformed JSON; schema errors include field details.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing, validation or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Project absent, event project differs from URL scope, or route absent without DB.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Event ID is already used for another event or an incompatible row; existing row unchanged.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Supplied body exceeds the server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Supplied media type is unsupported. Supported text/plain parses but fails object validation as400.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database or incompatible stored record; fixed error without raw metadata or exception.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listApprovalDecisions",
+        "tags": ["Approvals"],
+        "summary": "Read client-reported project decision receipts in stable timestamp and ID order",
+        "description": "Requires database, not master key. Global operator Bearer, not per-user membership authorization. URL project must exist. UUID inputs normalize to lowercase. No Provider resolution, model invocation, permission mutation or tool execution. Client-reported decisions are not server authorization or evidence of execution. Ordinary configured CORS applies; not a CLI-only Origin rejection. Handler responses no-store, earlier auth/transport errors follow their own rules. Strict query with limit default50 (1..200), offset default0 (0..MAX_SAFE_INTEGER). Decimal digit strings including leading zeros or direct numbers accepted by runtime schema; blank, fractional, exponential, negative strings and unsafe integers rejected. Runtime numeric refinements are not fully represented by the generated query anyOf. Reads actor=cli/action approval.% plus matching meta.project_id/client_reported=true/version=1; excludes other platform/redaction events. Orders by stored (ts,id) ascending and returns items/limit/offset, no total or next cursor. recorded_at is server persistence time serialized at JS millisecond precision, not client decision time. Each page is a separate query, not a frozen snapshot. If a selected historical row fails event schema or envelope consistency, the entire page returns fixed500; it is not silently omitted. Hashes and IDs remain metadata, not proof of local permissions or execution.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "example": "01900000-0000-7000-8000-000000000001",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "anyOf": [{ "type": "number" }, { "type": "string", "pattern": "^\\d+$" }],
+              "default": 50
+            },
+            "required": false,
+            "example": 2,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [{ "type": "number" }, { "type": "string", "pattern": "^\\d+$" }],
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project-local compatible client reports, with normalized pagination; empty items when none.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalAuditPage" } }
+            }
+          },
+          "400": {
+            "description": "Invalid project UUID or strict pagination query; schema errors include field details.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before body parsing, validation or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Project absent, event project differs from URL scope, or route absent without DB.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database or incompatible stored record; fixed error without raw metadata or exception.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {
