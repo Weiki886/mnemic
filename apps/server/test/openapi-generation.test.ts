@@ -26,7 +26,9 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/projects/{projectId}/beliefs/{id}/restore",
     "/projects/{projectId}/conversations",
     "/projects/{projectId}/conversations/{id}",
+    "/projects/{projectId}/conversations/{id}/generations/{generationId}/cancel",
     "/projects/{projectId}/conversations/{id}/messages",
+    "/projects/{projectId}/conversations/{id}/messages/stream",
     "/projects/{projectId}/conversations/{id}/resume",
     "/projects/{projectId}/recall",
     "/projects/{projectId}/status",
@@ -412,4 +414,40 @@ it("JSON send documents strict attachment input, explicit history and required a
   expect(output({ ...reply, memories: [missing] })).toBe(false);
   const { history_included: _h, ...noHistory } = reply;
   expect(output(noHistory)).toBe(false);
+});
+
+it("SSE is a wire string with an inline typed event extension, not a JSON response array", () => {
+  const doc = createOpenApiDocument();
+  const path = "/projects/{projectId}/conversations/{id}";
+  const stream = doc.paths[path + "/messages/stream"]!.post!;
+  const response = stream.responses["200"] as {
+    content: Record<
+      string,
+      { schema: { type: string; "x-sse-event-schema": Record<string, unknown> }; example: string }
+    >;
+  };
+  const wire = response.content["text/event-stream"]!;
+  expect(wire.schema.type).toBe("string");
+  expect(wire.schema["x-sse-event-schema"]).toHaveProperty("oneOf");
+  expect(wire.example).toContain("event: start\ndata:");
+  const cancel = doc.paths[path + "/generations/{generationId}/cancel"]!.post!;
+  expect((cancel.requestBody as { required?: boolean }).required).toBe(false);
+  expect(cancel.responses).toHaveProperty("500");
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  ajv.addSchema({ components: doc.components }, "stream");
+  const valid = ajv.compile(wire.schema["x-sse-event-schema"]);
+  const id = "01900000-0000-7000-8000-000000000001";
+  expect(valid({ type: "error", generation_id: id, code: "PERSISTENCE_FAILED" })).toBe(true);
+  expect(valid({ type: "error", generation_id: id, code: "raw-provider-error" })).toBe(false);
+  expect(
+    valid({
+      type: "finish",
+      generation_id: id,
+      message_id: id,
+      status: "failed",
+      abstained: true,
+      history_included: false,
+      memories: [],
+    }),
+  ).toBe(false);
 });

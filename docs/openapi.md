@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作、两个审批审计操作、平台审计查询、JSON 消息发送，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作、两个审批审计操作、平台审计查询、JSON/SSE 消息发送与取消，以及统一 problem+json 错误结构。`/docs` 和完整中间件接入指南留后续 PR，最终覆盖仍需按路由盘点核对，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -243,3 +243,25 @@ body 必须是 JSON 对象，`text` 为 1–8000 字符、不 trim；仅允许 `
 自动化用提交 JSON + 独立 Ajv、真实 TCP 和独立 PG 执行文档 body 示例。只配置明显离线的测试 Provider 和 Mock V2；真实路由启用 durableExtraction，但故意不启动 worker，直接查表验证 Evidence、父引用、脱敏摘要、用量和 queued outbox，不能将排队冒充提取完成。另覆盖引用 null/结构值、历史、重复发送、检索降级、严格输入与运行时附件限制、项目隔离、坏历史、归档竞争、失败残留、两类配额、六种不可重试 SDK HTTP 错误、认证/请求预算先于 DB、413/415 和无依赖 404。全量运行显式置空付费评测 key，不接触真实 Provider。
 
 本轮 Refs #24。SSE 发送、取消及在线 `/docs`/完整接入指南仍未交付，不能关闭 Issue。仅回滚本轮会撤销 JSON send 登记、Params 抽取和相关测试/文档，保留 #109–#117 契约及生成门禁；无迁移、依赖或真实部署变化。
+
+## SSE 消息发送与取消契约扩展
+
+新增 `POST /projects/{projectId}/conversations/{id}/messages/stream` 和 `POST /projects/{projectId}/conversations/{id}/generations/{generationId}/cancel`。输入规则只抽取原有 UUID 小写归一、strip 路径对象与 strict 空取消 body；消息 body 继续复用 shared/file-context。取消输出复用 shared 的三态回执，事件沿用 shared 的四个 strict 变体并要求引用 value 显式存在（任意 JSON，含 null）。没有新增生产 serializer、流式算法、预算、鉴权、迁移或依赖。
+
+成功 SSE 的媒体为 `text/event-stream; charset=utf-8`，不是 JSON 数组、JSON 流或 `ChatStreamEvent` 对象响应。OpenAPI 3.0 没有标准的逐帧 SSE data schema 位置，因此文本 schema 上使用本项目扩展 `x-sse-event-schema`：它是从同一 Zod 生成并归一化的**内联事件 schema**，供测试和了解该扩展的客户端校验解析后的 data；不声称第三方 SDK 会自动支持。Redocly 不追踪扩展里的组件引用，最初注册的独立事件组件会被判 unused，因此改为内联，不禁用 lint、不伪造对象响应。
+
+wire 帧为 `event: <type>\ndata: <一行 JSON>\n\n`，事件名必须等于 JSON 的 type。顺序为一次 start、零至多次 delta，最后 finish 或 error（仅在传输仍可写时）。start 中 version=1、conversation_id 等于 URL 会话，generation_id 全程一致；它也是本次助手消息 ID，finish.message_id 与它相同。将 delta.text 按序连接得到可见回答；模型文本中的换行会被 JSON 转义，不能注入 event 行。reasoning 不输出为 delta。没有 SSE id/retry、断点重放或 Last-Event-ID 续传；文档示例 wire 中的 UUID 只是离线示例，不是实际可取消对象。
+
+项目与会话在登记活动生成前匹配，跨项目/不存在都为 404，不能探测 foreign busy 状态。同进程每会话只允许一个 SSE，活动 SSE 最多 32 个，并与旧消息/归档/续聊协调；不是跨实例锁。会话关闭、坏继承历史或坏文件父引用在 Evidence 准入前为 409。成功准入会原子写 user/文件 Evidence 与持久 outbox；文件、截断标志、来源权威和 user text 的边界沿用上一节 JSON send。HTTP200/start 只说明进入流，不证明模型成功或提取/索引完成。
+
+start 在模型准备前发送。因此模型配置、SDK 错误、chat 日配额等准入后的错误，都在 HTTP200 内以 error 事件终止，不再改成 JSON401/429/503。`GENERATION_FAILED` 可以对应已保存、generation_status=failed 的可见前缀；`PERSISTENCE_FAILED` 表示不能确认助手保存成功。finish 的 status 只有 complete/interrupted，且在助手保存成功后发送。complete 表示当前实现接受 SDK 的正常终止，不限定 finishReason=stop，length/tool-calls 也可能正常结束；不要把它当成语义完整性的保证。检索失败仍可能降级为无记忆回答，abstained 描述检索而不是回答文本质量。
+
+显式取消、HTTP 断开、服务停机或生成截止会尝试保存 interrupted 前缀，包括空回答。未收到终止帧的 EOF/本地 abort 是**未确认**，不能推断保存结果或停止计费；需另读会话或取得项目范围内回执。chat stream 使用 maxRetries=0，但 query embedding/后台提取有各自重试策略，仍可能产生费用。默认 300 秒截止从准入完成、创建流时开始，覆盖准备和模型收流，不覆盖前面的 SQL 准入；背压等待 30 秒会取消，另有截止加 30 秒的传输关闭保护，不是所有数据库等待的硬超时。delta 长度最多 16384 个 UTF16 code unit，单事件最多 128 KiB、可见文本及 text+reasoning 预算各 2 MiB，wire 预算 8 MiB 并预留终止事件空间；这些约束不全由 OpenAPI 字段表达。成功 SSE 有 no-store 和 X-Accel-Buffering:no，建立前的错误沿用原规则。
+
+cancel 的 body 可以省略或为 JSON null（都归一化为 {}），提供对象时必须严格为空；查询字段忽略。text/plain 会被解析后拒绝 400，坏 JSON 400、未知媒体 415、超限 413 不变。URL 三个 UUID 都归一化为小写。若本进程有匹配的活动生成，先发取消信号并等待保存决定，再按项目/会话/assistant 消息匹配读取持久状态，不等下游终止帧消费。200 回执可能是 complete/interrupted/failed，generation_id=message_id；它是既有保存决定，不证明这次请求改变了状态，也不含回答或引用正文。完成后重复查询不新增消息、不调用模型。
+
+未知/跨项目/非 assistant/旧的 generation_status=null 消息都是 404。活动生成保存失败时最初 cancel 可为固定 500；活动项释放后，同一 ID 后续可能只查到 404。取消也受全局鉴权和 IP/Token 请求预算约束，429 不会取消上游；回执失败不能当作已取消。当前回执无 no-store 或端到端 SQL 截止保证。多实例请求可能落到没有活动注册表的进程，不承诺分布式取消或进程崩溃后活动恢复。不要因回执不明自动重发原始聊天请求。
+
+真实 TCP + 独立测试 PG 读取提交的 JSON，用独立 Ajv 校验每个事件/回执/错误，并用一个只支持服务器当前两行 LF 帧的测试解析器检查 wire；不使用共享生产 encoder/consumer 生成预期。离线 Mock V2 控制 delta/finish/SDK 失败，测试按事件驱动取消，不靠固定 sleep。覆盖文档 body/wire 示例、保存先于 finish、引用 null、文件脱敏与父引用/outbox、三态重复回执、busy/容量/项目隔离、正常 length/tool-calls 结束、配额与 SDK 错误在 SSE 内终止、失败保存、准备期取消、截止与断流、限流拒绝取消、输入/媒体/大小、认证先于 DB 和缺依赖路由。故意不启动 worker，queued 不冒充已提取；付费 key 显式清空。
+
+本轮仍 Refs #24，在线 `/docs` 和完整三槽位/记忆 API 接入指南及最终覆盖盘点未完成，Issue 保持打开。回滚只移除这两项登记、输入 schema 抽取、对应测试和说明，保留此前全部契约与生成门禁；无真实部署变化。
