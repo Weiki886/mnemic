@@ -20,6 +20,7 @@ import { ConversationContextError } from "./context.js";
 import { ChatGenerations } from "./generations.js";
 import { registerChatStreamRoutes } from "./stream-routes.js";
 import { ChatMessageInputSchema } from "@mnemic/shared/file-context";
+import { ChatMessageParamsSchema } from "../contracts/chat-message.js";
 import type { ModelDebug } from "../debug/model-content.js";
 import type { DebugTrace } from "../debug/trace.js";
 
@@ -238,9 +239,7 @@ export function registerChatRoutes(
   );
 
   app.post("/projects/:projectId/conversations/:id/messages", async (request, reply) => {
-    const params = z
-      .object({ projectId: z.string().uuid().toLowerCase(), id: z.string().uuid().toLowerCase() })
-      .safeParse(request.params);
+    const params = ChatMessageParamsSchema.safeParse(request.params);
     if (!params.success)
       return reply
         .code(400)
