@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit global audit read and JSON message send APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit global audit read JSON message send, SSE and cancellation APIs (Issue #24). The online documentation page and complete integration guide are not included yet; final route coverage still needs verification. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -42,7 +42,7 @@
     },
     {
       "name": "Conversations",
-      "description": "Conversation lifecycle/read and JSON message send; streaming/cancel not yet included."
+      "description": "Conversation lifecycle/read, JSON and SSE messages, and scoped cancellation."
     },
     {
       "name": "Memory",
@@ -2436,6 +2436,16 @@
           }
         },
         "required": ["message_id", "answer", "abstained", "history_included", "memories"]
+      },
+      "ChatStreamCancel": {
+        "type": "object",
+        "properties": {
+          "generation_id": { "type": "string", "format": "uuid" },
+          "message_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["complete", "interrupted", "failed"] }
+        },
+        "required": ["generation_id", "message_id", "status"],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -5748,6 +5758,376 @@
           },
           "default": {
             "description": "Other forwarded upstream HTTP error statuses use the same problem shape. Evidence and model work may already exist. 4xx detail can contain the upstream error message; 5xx detail is fixed. No automatic retry.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/conversations/{id}/messages/stream": {
+      "post": {
+        "operationId": "streamChatMessage",
+        "tags": ["Conversations"],
+        "summary": "Admit user/file Evidence and stream a persisted answer decision",
+        "description": "Same strict message/attachment rules, sanitization limits and global operator scope as JSON send. Both URL UUIDs normalized to lowercase and conversation project checked before revealing busy state; query ignored, ordinary CORS. Requires DB/master key. Before admission, invalid/foreign/archived/broken-history requests use problem+json. Single-instance coordinator permits one active SSE per conversation, excludes competing mutations and caps active SSE generations at32; not a distributed lock. After atomic Evidence/outbox admission, success200 is a text/event-stream byte stream, never a JSON array; a start event is emitted before model preparation. HTTP200/start do not prove generation success. Each frame is event:<type> plus one JSON data line, separated by an empty line; event name must equal data.type. x-sse-event-schema is this contract's extension describing each parsed data object, not an OpenAPI-standard SSE sequencing guarantee. Exactly one start, zero or more nonempty delta frames, then finish or error if transport remains writable. IDs remain constant: start.conversation_id matches URL, generation_id equals persisted assistant message ID, finish.message_id equals generation_id. Delta concatenation is the visible answer; no reasoning or provider-error payload is emitted. finish complete/interrupted is emitted only after assistant persistence; complete reflects accepted SDK termination, not a guarantee finishReason was stop (length/tool-calls can terminate normally). An error GENERATION_FAILED can accompany a saved failed prefix; PERSISTENCE_FAILED means no successful save acknowledgement. EOF/disconnect without a terminal event is unconfirmed, not successful cancellation. No SSE id/retry or Last-Event-ID replay, no automatic retry/resume. Query embedding and chat may bill; chat stream maxRetries=0, other SDK calls/background extraction have their own retry policies. Retrieval errors may degrade to no-memory. Once started, model/config/quota failures become200+error events, not JSON401/429/503. Evidence/queued work can remain after failure. Prefix is saved as interrupted for explicit cancel, disconnect, deadline or shutdown when persistence succeeds; this does not prove provider billing stopped. Default generation deadline300s starts after admission and covers preparation/streaming, not admission DB waits; 30s backpressure abort and deadline+30s transport guard apply, no all-SQL hard timeout. Bounds: delta<=16384 UTF16 units, each encoded event<=128KiB, visible and text+reasoning budgets2MiB, wire8MiB with terminal headroom. Successful SSE headers no-store and X-Accel-Buffering:no. A saved terminal may still be lost in transport; use scoped cancel/status receipt or read history before deciding a new send. Durable work registration does not mean extraction/indexing completed.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatMessageInput" },
+              "example": {
+                "text": "Summarize the attached note.",
+                "attachments": [
+                  {
+                    "kind": "file",
+                    "path": "README.md",
+                    "content": "Offline project note.",
+                    "truncated": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE wire text. Parse each JSON data object using the inline event schema, then enforce sequence/ID/persistence rules above.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "X-Accel-Buffering": {
+                "schema": { "type": "string", "enum": ["no"] },
+                "required": true
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE frames; x-sse-event-schema describes data JSON, not the whole wire string.",
+                  "x-sse-event-schema": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": { "type": "string", "enum": ["start"] },
+                          "version": { "type": "number", "enum": [1] },
+                          "generation_id": { "type": "string", "format": "uuid" },
+                          "conversation_id": { "type": "string", "format": "uuid" },
+                          "user_message_id": { "type": "string", "format": "uuid" }
+                        },
+                        "required": [
+                          "type",
+                          "version",
+                          "generation_id",
+                          "conversation_id",
+                          "user_message_id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": { "type": "string", "enum": ["delta"] },
+                          "generation_id": { "type": "string", "format": "uuid" },
+                          "text": { "type": "string", "minLength": 1, "maxLength": 16384 }
+                        },
+                        "required": ["type", "generation_id", "text"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": { "type": "string", "enum": ["finish"] },
+                          "generation_id": { "type": "string", "format": "uuid" },
+                          "status": { "type": "string", "enum": ["complete", "interrupted"] },
+                          "message_id": { "type": "string", "format": "uuid" },
+                          "abstained": { "type": "boolean" },
+                          "history_included": { "type": "boolean" },
+                          "memories": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "belief_id": { "type": "string", "format": "uuid" },
+                                "belief_version_id": { "type": "string", "format": "uuid" },
+                                "subject": { "type": "string" },
+                                "attribute": { "type": "string" },
+                                "value": {}
+                              },
+                              "required": [
+                                "belief_id",
+                                "belief_version_id",
+                                "subject",
+                                "attribute",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 100
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "generation_id",
+                          "status",
+                          "message_id",
+                          "abstained",
+                          "history_included",
+                          "memories"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": { "type": "string", "enum": ["error"] },
+                          "generation_id": { "type": "string", "format": "uuid" },
+                          "code": {
+                            "type": "string",
+                            "enum": ["GENERATION_FAILED", "PERSISTENCE_FAILED"]
+                          }
+                        },
+                        "required": ["type", "generation_id", "code"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "example": "event: start\ndata: {\"type\":\"start\",\"version\":1,\"generation_id\":\"01900000-0000-7000-8000-000000000001\",\"conversation_id\":\"01900000-0000-7000-8000-000000000002\",\"user_message_id\":\"01900000-0000-7000-8000-000000000003\"}\n\nevent: delta\ndata: {\"type\":\"delta\",\"generation_id\":\"01900000-0000-7000-8000-000000000001\",\"text\":\"Offline answer.\"}\n\nevent: finish\ndata: {\"type\":\"finish\",\"generation_id\":\"01900000-0000-7000-8000-000000000001\",\"message_id\":\"01900000-0000-7000-8000-000000000001\",\"status\":\"complete\",\"abstained\":true,\"history_included\":false,\"memories\":[]}\n\n"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID/body or malformed JSON; field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global Bearer rejected before JSON parsing or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown/foreign scope, missing generation, or route unregistered without DB/master key.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Archived/unavailable history, conversation busy/closing or32 active streams; no new Evidence admitted by these route checks.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type; text/plain parses but fails object validation with400.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP/token request budget rejected before body/data/model work. Cancellation is also subject to these buckets; rejection is not a cancellation acknowledgement.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": false
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Fixed server/database failure; no exception payloads. Do not automatically replay.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "default": {
+            "description": "Other errors handled by the existing application boundary use problem+json. Once the SSE response has started, failures use an error event instead of a new HTTP status.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/conversations/{id}/generations/{generationId}/cancel": {
+      "post": {
+        "operationId": "cancelChatGeneration",
+        "tags": ["Conversations"],
+        "summary": "Request interruption and read the durable generation decision",
+        "description": "All three UUID paths normalized to lowercase. Same global Bearer and request rate budgets; project+conversation+assistant message must match. Query ignored. Body may be absent or JSON null (both normalized to{}); a provided object must be strictly empty. text/plain is parsed but rejected400; unsupported media415. If matching generation is active in this process, signal abort and wait for its persistence decision, not downstream frame draining. Then query saved assistant state. Response200 may be complete/interrupted/failed; it reports the existing durable decision, not a promise the call changed it to interrupted or stopped provider billing. generation_id=message_id; no answer body or citations. Repeating after completion returns same saved decision without model calls or new rows. Unknown/foreign/non-assistant/legacy assistant with null generation_status gives404; active generation with failed save gives500, subsequent request after release may instead return404. Multi-instance routing may miss another process's active registry; no distributed cancellation or crash-recovery promise. No guaranteed no-store or end-to-end SQL deadline for this legacy cancellation response. Failure/timeout/429 is not a save receipt; do not resend the original chat request automatically.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "generationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "nullable": true,
+                "properties": {},
+                "additionalProperties": false
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Persisted assistant decision, not a new execution or billing-stop acknowledgement.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChatStreamCancel" } }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID/body or malformed JSON; field errors when available.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global Bearer rejected before JSON parsing or database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown/foreign scope, missing generation, or route unregistered without DB/master key.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds server limit.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type; text/plain parses but fails object validation with400.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "IP/token request budget rejected before body/data/model work. Cancellation is also subject to these buckets; rejection is not a cancellation acknowledgement.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": false
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Active generation finished without a saved assistant decision, or database failure. No successful cancellation acknowledgement.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "default": {
+            "description": "Other errors handled by the existing application boundary use problem+json. Once the SSE response has started, failures use an error event instead of a new HTTP status.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {

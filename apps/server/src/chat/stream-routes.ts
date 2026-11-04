@@ -8,10 +8,12 @@ import { enterMessage, type RespondOptions } from "./respond.js";
 import { ChatGenerations, generationConflict } from "./generations.js";
 import { createChatStream } from "./streaming.js";
 import { ChatMessageInputSchema } from "@mnemic/shared/file-context";
+import {
+  ChatStreamParamsSchema as Params,
+  CancelGenerationParamsSchema as CancelParams,
+  CancelGenerationBodySchema,
+} from "../contracts/chat-stream.js";
 
-const UUID = z.string().uuid().toLowerCase();
-const Params = z.object({ projectId: UUID, id: UUID });
-const CancelParams = Params.extend({ generationId: UUID });
 const Body = ChatMessageInputSchema;
 function bad(reply: FastifyReply, requestId: string, error: z.ZodError) {
   return reply
@@ -115,10 +117,7 @@ export function registerChatStreamRoutes(
     "/projects/:projectId/conversations/:id/generations/:generationId/cancel",
     async (request, reply) => {
       const params = CancelParams.safeParse(request.params),
-        body = z
-          .object({})
-          .strict()
-          .safeParse(request.body ?? {});
+        body = CancelGenerationBodySchema.safeParse(request.body ?? {});
       if (!params.success) return bad(reply, request.id, params.error);
       if (!body.success) return bad(reply, request.id, body.error);
       const { projectId, id, generationId } = params.data;
