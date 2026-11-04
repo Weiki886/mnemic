@@ -18,6 +18,7 @@ import {
 import { HealthResponseSchema } from "../src/contracts/health.js";
 import { UNSUPPORTED_FEATURE_FLAGS } from "../src/flags/runtime.js";
 import { normalizeNullability } from "./openapi-nullability.js";
+import { registerJsonMessagePath } from "./openapi-chat-message.js";
 import { registerAuditPaths } from "./openapi-audit.js";
 import { registerApprovalPaths } from "./openapi-approval.js";
 import { registerUsagePaths } from "./openapi-usage.js";
@@ -157,6 +158,7 @@ export function createOpenApiDocument(): OpenApiDocument {
   registerUsagePaths(registry);
   registerApprovalPaths(registry);
   registerAuditPaths(registry);
+  registerJsonMessagePath(registry);
   const document = new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {
@@ -167,7 +169,7 @@ export function createOpenApiDocument(): OpenApiDocument {
         url: "https://www.apache.org/licenses/LICENSE-2.0.html",
       },
       description:
-        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit and global audit read APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
+        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit global audit read and JSON message send APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
     servers: [
       {
@@ -204,7 +206,7 @@ export function createOpenApiDocument(): OpenApiDocument {
       {
         name: "Conversations",
         description:
-          "Conversation creation, read, commit and resume; message send/stream not yet included.",
+          "Conversation lifecycle/read and JSON message send; streaming/cancel not yet included.",
       },
       { name: "Memory", description: "Project-scoped belief read, correction and soft deletion." },
       { name: "System", description: "Process liveness." },

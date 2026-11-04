@@ -26,6 +26,7 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/projects/{projectId}/beliefs/{id}/restore",
     "/projects/{projectId}/conversations",
     "/projects/{projectId}/conversations/{id}",
+    "/projects/{projectId}/conversations/{id}/messages",
     "/projects/{projectId}/conversations/{id}/resume",
     "/projects/{projectId}/recall",
     "/projects/{projectId}/status",
@@ -372,4 +373,43 @@ it("audit log exposes safe typed variants and opaque history with explicit null 
   expect(valid(row)).toBe(true);
   expect(valid({ ...row, meta: { private: "never exposed" } })).toBe(false);
   expect(valid({ ...row, actor: "server" })).toBe(false);
+});
+
+it("JSON send documents strict attachment input, explicit history and required arbitrary citation values", () => {
+  const doc = createOpenApiDocument();
+  const op = doc.paths["/projects/{projectId}/conversations/{id}/messages"]!.post!;
+  expect(op.responses).toHaveProperty("200");
+  expect(op.responses).toHaveProperty("503");
+  expect(op.security).toBeUndefined();
+  const body = op.requestBody as {
+    required: boolean;
+    content: Record<string, { schema: { additionalProperties?: boolean }; example: unknown }>;
+  };
+  expect(body.required).toBe(true);
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  ajv.addSchema({ components: doc.components }, "chat-message");
+  const input = ajv.compile({ $ref: "chat-message#/components/schemas/ChatMessageInput" });
+  expect(input(body.content["application/json"]!.example)).toBe(true);
+  expect(input({ text: "x", flags: {} })).toBe(false);
+  const output = ajv.compile({ $ref: "chat-message#/components/schemas/JsonChatReply" });
+  const reply = {
+    message_id: "01900000-0000-7000-8000-000000000001",
+    answer: "",
+    abstained: false,
+    history_included: false,
+    memories: [
+      {
+        belief_id: "01900000-0000-7000-8000-000000000002",
+        belief_version_id: "01900000-0000-7000-8000-000000000003",
+        subject: "p",
+        attribute: "x",
+        value: null,
+      },
+    ],
+  };
+  expect(output(reply)).toBe(true);
+  const { value: _v, ...missing } = reply.memories[0]!;
+  expect(output({ ...reply, memories: [missing] })).toBe(false);
+  const { history_included: _h, ...noHistory } = reply;
+  expect(output(noHistory)).toBe(false);
 });
