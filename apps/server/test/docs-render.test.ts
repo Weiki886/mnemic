@@ -27,7 +27,7 @@ it("renders every checked operation, field contract and named schema without fet
   expect(JSON.stringify(doc)).toBe(JSON.stringify(JSON.parse(text)));
 });
 it("escapes hostile text and attributes and never turns arbitrary URLs into executable links", () => {
-  const attack = '\"><script>alert(1)</script><img src=x onerror=alert(1)>';
+  const attack = '"><script>alert(1)</script><img src=x onerror=alert(1)>';
   const html = renderDocumentation({
     openapi: "3.0.3",
     info: { title: attack, version: "x" },

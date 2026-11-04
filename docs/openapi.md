@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作、两个审批审计操作、平台审计查询、JSON/SSE 消息发送与取消，以及统一 problem+json 错误结构。`/docs` 和完整中间件接入指南留后续 PR，最终覆盖仍需按路由盘点核对，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作、两个审批审计操作、平台审计查询、JSON/SSE 消息发送与取消，以及统一 problem+json 错误结构。已提供只读 `/docs` 与原始契约下载；完整中间件接入指南留后续 PR，最终覆盖仍需按路由盘点核对，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -265,3 +265,19 @@ cancel 的 body 可以省略或为 JSON null（都归一化为 {}），提供对
 真实 TCP + 独立测试 PG 读取提交的 JSON，用独立 Ajv 校验每个事件/回执/错误，并用一个只支持服务器当前两行 LF 帧的测试解析器检查 wire；不使用共享生产 encoder/consumer 生成预期。离线 Mock V2 控制 delta/finish/SDK 失败，测试按事件驱动取消，不靠固定 sleep。覆盖文档 body/wire 示例、保存先于 finish、引用 null、文件脱敏与父引用/outbox、三态重复回执、busy/容量/项目隔离、正常 length/tool-calls 结束、配额与 SDK 错误在 SSE 内终止、失败保存、准备期取消、截止与断流、限流拒绝取消、输入/媒体/大小、认证先于 DB 和缺依赖路由。故意不启动 worker，queued 不冒充已提取；付费 key 显式清空。
 
 本轮仍 Refs #24，在线 `/docs` 和完整三槽位/记忆 API 接入指南及最终覆盖盘点未完成，Issue 保持打开。回滚只移除这两项登记、输入 schema 抽取、对应测试和说明，保留此前全部契约与生成门禁；无真实部署变化。
+
+## 在线只读参考页
+
+服务现在提供 `GET/HEAD /docs` 与 `GET/HEAD /docs/openapi.json`。前者按操作分组展示参数、请求体、响应、示例和 Schema 索引；后者返回提交的契约原始字节。页面使用本地 HTML/CSS 与原生展开控件，不依赖 CDN、外部字体、浏览器脚本或文档服务，不接收 Token，也没有 Try it out、表单或自动 API 请求。
+
+仅这两个**精确路径**的 GET/HEAD 公开，query 不影响内容。它们只是仓库已公开的静态契约，不展示实例 Provider、密钥、数据或实时可用接口；数据库/主密钥缺失时，契约里的部分业务接口仍可能未注册。工厂仍要求有效服务端 Token；其他路径、方法、编码变体与业务 API 继续按原规则鉴权。文档仍受 IP 桶限制，超限为 429/Retry-After；匿名文档不消耗认证 Token 桶。反向代理后共用 IP 的既有部署边界没有改变。
+
+响应设置 no-store、nosniff、no-referrer；页面 CSP 禁止脚本、外部资源、表单和嵌入。所有契约文字与 JSON 在 HTML 中转义，URL/query/Host/Authorization 不参与页面生成。文档不是交互式客户端，勿将凭据放进 URL，也不要向页面粘贴真实 key。SSE 的逐帧扩展仍需客户端自行理解，不因有在线页面就获得自动 SDK 支持。
+
+本地访问 `http://127.0.0.1:3000/docs`。现有 Caddy 部署同时支持 `https://<域名>/docs`、`https://<域名>/docs/openapi.json` 以及原 `/api/docs`、`/api/docs/openapi.json`；页面相对下载链接兼容两种前缀。仅精确 docs 路径反向代理到 server，未扩张其他业务路径。服务容器显式包含 `/app/docs/openapi.json`；源码与构建后的工作区按固定相对位置读取同一产物，不接受 HTTP 参数选择文件。
+
+每进程启动时读取并缓存一份不可变契约和页面。运行 `openapi:generate` 后，需要重启服务才能更新在线内容；开发 watch 不保证感知工作区外的 JSON。缺失、损坏或不兼容的产物会以固定 `Documentation artifact unavailable` 拒绝启动，不降级为旧/空页面、不回显文件系统异常。HEAD 返回同一资源头部与空正文。
+
+真实 TCP 测试在无数据库/模型访问的 tripwire 下验证公开只读访问、原始字节与提交契约一致、独立 Ajv 校验、HEAD/安全头、路径/方法负例、IP 与 Token 预算分离及业务鉴权不变。部署冒烟新增直接与 `/api` 前缀的页面/JSON/HEAD 断言，用隔离的 HTTPS 栈确认容器产物与代理路径。浏览器验证使用构建后的独立本地服务、假 Token、无 DB/Provider；不调用模型。
+
+本轮仍 `Refs #24`。在线参考页已交付，完整中间件接入指南（三槽位、记忆 API、MCP 预告）、最终路由覆盖盘点和按指南走通仍留后续，不能关闭 Issue。回滚撤销文档路由/精确公开例外、容器静态文件与代理登记及本次测试；保留此前业务契约与门禁，无业务迁移或实例数据修改。

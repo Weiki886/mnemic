@@ -13,6 +13,8 @@ it("generation is deterministic, scoped and never includes environment-specific 
   expect(a).toEqual(b);
   expect(a.openapi).toBe("3.0.3");
   expect(Object.keys(a.paths).sort()).toEqual([
+    "/docs",
+    "/docs/openapi.json",
     "/health",
     "/pending",
     "/pending/{id}/confirm",
@@ -450,4 +452,21 @@ it("SSE is a wire string with an inline typed event extension, not a JSON respon
       memories: [],
     }),
   ).toBe(false);
+});
+
+it("online documentation is explicitly public but IP-limited, with HTML versus raw JSON and bodyless HEAD", () => {
+  const doc = createOpenApiDocument();
+  for (const path of ["/docs", "/docs/openapi.json"]) {
+    expect(Object.keys(doc.paths[path]!).sort()).toEqual(["get", "head"]);
+    for (const method of ["get", "head"] as const) {
+      const op = doc.paths[path]![method]!;
+      expect(op.security).toEqual([]);
+      expect(op.responses).toHaveProperty("429");
+    }
+    expect(doc.paths[path]!.head!.responses["200"]).not.toHaveProperty("content");
+  }
+  expect(doc.paths["/docs"]!.get!.responses["200"]).toHaveProperty("content.text/html");
+  expect(doc.paths["/docs/openapi.json"]!.get!.responses["200"]).toHaveProperty(
+    "content.application/json",
+  );
 });

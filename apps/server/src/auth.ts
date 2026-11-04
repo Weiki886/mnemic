@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { ErrorCode, problem } from "@mnemic/shared";
 import { resolveAuthToken } from "./config.js";
+import { isPublicDocumentationRequest } from "./docs/paths.js";
 
 /** Public transport only; shared with rate admission so exemptions cannot drift. */
 export function isPublicTransportRequest(request: FastifyRequest, corsOrigin?: string): boolean {
@@ -22,7 +23,8 @@ export function isPublicTransportRequest(request: FastifyRequest, corsOrigin?: s
 export function registerBearerAuth(app: FastifyInstance, token: string, corsOrigin?: string): void {
   const expected = createHash("sha256").update(resolveAuthToken(token)).digest();
   app.addHook("onRequest", async (request, reply) => {
-    if (isPublicTransportRequest(request, corsOrigin)) return;
+    if (isPublicTransportRequest(request, corsOrigin) || isPublicDocumentationRequest(request))
+      return;
     const header = request.headers.authorization;
     const match = typeof header === "string" && /^Bearer ([A-Za-z0-9._~+/-]+=*)$/i.exec(header);
     if (match && timingSafeEqual(expected, createHash("sha256").update(match[1]!).digest())) return;

@@ -42,6 +42,8 @@ pnpm dev:web                      # http://localhost:5173，输入项目 UUID �
 服务端 Token 必须为 32–256 位 Bearer 字符，旧示例 `change-me` 或空值会拒绝启动。
 单用户 Token 可操作所有项目；原生启动默认只监听环回。
 配置、轮换和日志边界见 [鉴权说明](docs/authentication.md)。
+启动后可浏览 `http://127.0.0.1:3000/docs` 的静态 API 参考，无需 Token、不会执行 API；
+原始契约与边界见 [OpenAPI 说明](docs/openapi.md)。
 全栈 Compose、Caddy HTTPS、VPS 操作和备份升级见 [部署指南](docs/deployment.md)，使用独立的 `deploy/.env`；
 真实 VPS 与公共证书签发/续期仍待环境验收，不等于已验证公网部署。
 
@@ -73,7 +75,7 @@ GET 不接受 `probe` 等查询参数；通过鉴权后，探测接口仍仅供 
 默认仅读取数据库、向量列维度和加密的三槽位配置，模型可用性显示 `SKIP`；
 `--probe` 使用固定的诊断文本探测两个文本槽位和一个 embedding 槽位，关闭自动重试，
 每槽位 15 秒中止信号，doctor 每次 HTTP 请求 25 秒超时。探测不写入记忆、Evidence 或 Trace。
-除健康检查外接口均需 Bearer Token。doctor 的 `authentication: OK` 表示当前请求已验证；
+除健康检查和精确 GET/HEAD 静态文档路径外，业务接口均需 Bearer Token。doctor 的 `authentication: OK` 表示当前请求已验证；
 缺失或错误 Token 返回 401，模型检查仍独立报告 SKIP/OK/ERROR。
 
 退出码：0 = 未检测到错误（仍可能有 `SKIP`），1 = 诊断或网络失败，2 = 参数错误。
