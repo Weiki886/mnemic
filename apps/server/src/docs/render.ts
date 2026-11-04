@@ -8,7 +8,10 @@ const documentSchema = z
       .object({ title: z.string(), version: z.string(), description: z.string().optional() })
       .passthrough(),
     paths: z.record(z.record(z.unknown())),
-    components: z.object({ schemas: z.record(z.unknown()).optional() }).optional(),
+    components: z
+      .object({ schemas: z.record(z.unknown()).optional() })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 const operationSchema = z.object({
@@ -75,9 +78,10 @@ export function renderDocumentation(input: unknown): string {
     )
     .join("");
   const schemas = Object.entries(doc.components?.schemas ?? {});
+  const { schemas: _schemas, ...otherComponents } = doc.components ?? {};
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mnemic · API reference</title><style>${css}</style></head>
-<body><header><div class="eyebrow">MNEMIC / API REFERENCE</div><h1>API 契约参考</h1><p class="intro">只读契约参考 · OpenAPI ${escape(doc.openapi)} · contract ${escape(doc.info.version)}。本页不接收 Token，不发送 API 请求。实例可用接口取决于数据库和模型配置；静态契约不代表服务就绪。</p><a href="#main">跳到接口</a> · <a href="docs/openapi.json" download="openapi.json">下载 OpenAPI JSON</a></header><div class="layout"><nav aria-label="API 导航">${nav}<strong><a href="#schemas">Schema 索引</a></strong></nav><main id="main" tabindex="-1"><p class="intro">按操作查看参数、示例和响应；所有 $ref 定义见 Schema 索引。业务请求仍需 Bearer Token；凭据不要放入 URL。完整接入指南将在后续交付。</p><details><summary>契约概览 / info</summary>${jsonBlock({ openapi: doc.openapi, info: doc.info, servers: doc.servers, security: doc.security, tags: doc.tags })}</details>${sections}<section aria-labelledby="schemas"><h2 id="schemas">Schema 索引</h2><div class="schema-index">${schemas.map(([name]) => `<a href="#${anchor("schema", name)}">${escape(name)}</a>`).join("")}</div>${schemas.map(([name, schema]) => `<details class="schema" id="${anchor("schema", name)}"><summary>${escape(name)}</summary>${jsonBlock(schema)}</details>`).join("")}</section><footer>静态、只读、无自动重试。SSE 的 x-sse-event-schema 是本项目扩展；取消回执不证明供应商停止计费。契约更新后需重启服务以更新本页。</footer></main></div></body></html>`;
+<body><header><div class="eyebrow">MNEMIC / API REFERENCE</div><h1>API 契约参考</h1><p class="intro">只读契约参考 · OpenAPI ${escape(doc.openapi)} · contract ${escape(doc.info.version)}。本页不接收 Token，不发送 API 请求。实例可用接口取决于数据库和模型配置；静态契约不代表服务就绪。</p><a href="#main">跳到接口</a> · <a href="docs/openapi.json" download="openapi.json">下载 OpenAPI JSON</a></header><div class="layout"><nav aria-label="API 导航">${nav}<strong><a href="#schemas">Schema 索引</a></strong></nav><main id="main" tabindex="-1"><p class="intro">按操作查看参数、示例和响应；所有 $ref 定义见 Schema 索引。业务请求仍需 Bearer Token；凭据不要放入 URL。完整接入指南将在后续交付。</p><details><summary>契约概览 / info</summary>${jsonBlock({ openapi: doc.openapi, info: doc.info, servers: doc.servers, security: doc.security, tags: doc.tags, components: otherComponents })}</details>${sections}<section aria-labelledby="schemas"><h2 id="schemas">Schema 索引</h2><div class="schema-index">${schemas.map(([name]) => `<a href="#${anchor("schema", name)}">${escape(name)}</a>`).join("")}</div>${schemas.map(([name, schema]) => `<details class="schema" id="${anchor("schema", name)}"><summary>${escape(name)}</summary>${jsonBlock(schema)}</details>`).join("")}</section><footer>静态、只读、无自动重试。SSE 的 x-sse-event-schema 是本项目扩展；取消回执不证明供应商停止计费。契约更新后需重启服务以更新本页。</footer></main></div></body></html>`;
 }
 
 export async function loadDocumentation(

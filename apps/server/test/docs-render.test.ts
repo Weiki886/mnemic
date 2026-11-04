@@ -17,6 +17,9 @@ it("renders every checked operation, field contract and named schema without fet
   for (const name of Object.keys(doc.components.schemas))
     expect(html).toContain(`id="schema-${encodeURIComponent(name)}"`);
   expect(html).toContain("Apache License 2.0");
+  expect(html).toContain("securitySchemes");
+  expect(html).toContain("bearerAuth");
+  expect(html).toContain("&quot;scheme&quot;: &quot;bearer&quot;");
   expect(html).toContain("http://127.0.0.1:3000");
   expect(html).toContain("x-sse-event-schema");
   expect(html).toContain("requestBody");

@@ -25,7 +25,11 @@ it("serves exact static contract and full offline reference over real TCP with n
   const model = vi.fn(() => {
     throw Error("no model access");
   });
-  const app = make({ db, providerFactory: { languageModel: model, embeddingModel: model } });
+  const app = make({
+    db,
+    masterKey: TEST_MASTER_KEY,
+    providerFactory: { languageModel: model, embeddingModel: model },
+  });
   const base = await app.listen({ host: "127.0.0.1", port: 0 });
   const page = await fetch(base + "/docs?ignored=true");
   expect(page.status).toBe(200);
