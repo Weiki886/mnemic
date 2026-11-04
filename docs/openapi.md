@@ -1,6 +1,6 @@
 # OpenAPI 部分契约（#24）
 
-当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作、两个审批审计操作、平台审计查询，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
+当前生成的是**部分契约**：`GET/HEAD /health`、`GET/PUT /v1/config/flags`、下方列出的六个项目记忆操作、五个会话生命周期/只读操作、五个 Provider/配置/状态操作、三个召回/诊断操作、三个 PENDING 操作、两个用量查询/导出操作、两个审批审计操作、平台审计查询、JSON 消息发送，以及统一 problem+json 错误结构。其余 API 尚未登记，`/docs` 和完整中间件接入指南留后续 PR，本轮不关闭 #24。契约版本 0.1.0 表示本轮产物，不代表已发布仓库 Release 或完整 API 覆盖。
 
 ## 生成与检查
 
@@ -223,3 +223,23 @@ GET 严格拒绝未知查询字段。limit 默认 50、范围 1–200；offset �
 真实 TCP + 测试 PG 使用提交产物和独立 Ajv，覆盖六种平台事件、脱敏和 CLI 报告、未知/损坏/大元数据/长 actor、所有省略字段为 null、微秒与同时间分页、opaque 游标、原始字段过滤、项目不存在但可过滤、日期/参数错误、鉴权先于 DB、429/固定500和无数据库404。测试校验省略分支无法携带秘密、count>0 不会被测试适配放宽；只清理自有审计 ID，无真实 Provider 或付费请求。
 
 本轮 Refs #24。回滚撤销这个 GET 的登记、Query 抽取、既有 Redaction schema 导出及相应测试/文档，保留 #109–#116；消息发送/SSE/取消、其余项目接口和在线 `/docs`/完整指南留后续，#24 不关闭。
+
+## JSON 消息发送契约扩展
+
+新增 `POST /projects/{projectId}/conversations/{id}/messages`。输入 body 直接复用 shared/file-context 的 strict schema；路径 schema 只抽取原有 strip 对象、UUID 小写归一规则。输出从 shared/chat 及既有必填引用值字段派生，明确要求 `history_included`；不安装生产 response serializer，不修改消息、检索、提取或鉴权行为。该路径要求数据库和主密钥，缺一时路由不存在。全局 Bearer 操作者授权仍不等于项目成员身份；URL 项目与会话必须同时匹配，外国项目/缺失会话均为 404，作用域检查先于繁忙状态和 Evidence 准入。URL 查询字段忽略，普通 CORS 适用，非一概拒绝 Origin。
+
+body 必须是 JSON 对象，`text` 为 1–8000 字符、不 trim；仅允许 `text` 和可选 `attachments`。附件为客户端声明的相对路径、文本和截断标记，不读取服务端文件。单内容最多 16 KiB UTF8、总量 64 KiB、至多 8 个文件及 8 个目录、总计最多 16 项；重复路径、敏感路径名、越界路径、非法 Unicode 和二进制控制字符会被运行时 refinement 拒绝。目录根路径 `.` 只可配 kind=directory。生成结构不完整表达字节数、路径及数量组合限制，结构通过不能代替服务器校验。
+
+用户 text **原样存储和发送给 chat 模型**，不承诺本路径对它脱敏，勿提交凭据。文件正文/路径先走秘密模式扫描，再保存独立 tool Evidence、指向同物理会话的 user 消息，并写 gate 脱敏摘要审计；模型只见文件的脱敏文本。PROJECT_FILE 来源由可信写回路径重算，HTTP/模型不能以自报来源提升权威。固定黑名单/模式不是全部秘密检测，数据边界也不是 Prompt Injection 防护承诺。`truncated` 是客户端报告，服务器不会替客户端补全文件。
+
+会话行锁内验证开放状态、继承历史与文件父引用，再原子登记用户/文件 Evidence 和持久提取 outbox。正式入口默认持久队列，库调用未配置队列时仍走旧进程内写回；`200` 不表示后续提取、Gate、索引已完成。检索可能调用计费 embedding，chat 可能调用计费模型，SDK 重试和后续提取还会新增调用。检索异常（含 embedding 日配额拒绝）降级为无记忆回答；`abstained=true` 描述检索结果，不保证 answer 为空或回答一定拒绝。
+
+成功返回完整 `answer`、助手 `message_id`、`abstained`、`history_included` 与选中引用。引用 value 必填但可为任意 JSON（含 null）；助手消息仅持久保存版本 ID，响应包含本次选中引用正文。`history_included` 表示模型接收了历史。JSON 路径没有 SSE 的 generation_id、取消回执、显式生成超时或 no-store 保证，不能把断开 HTTP 等同于模型已停止计费。既有协调器允许 JSON 轮次相互重叠，不提供跨实例串行化。
+
+准入后的模型/配置/保存错误可能返回 500，同时保留用户/文件 Evidence 和已入队任务，没有助手回答；并发归档也可能在模型成功后使保存返回 409。HTTP 令牌桶 429 (`RATE_LIMITED`) 在 body/DB/模型前拒绝；chat 日配额 429 (`MODEL_QUOTA_EXCEEDED`) 或不可用 503 (`MODEL_QUOTA_UNAVAILABLE`) 则可在 Evidence 已入库后发生，带 Retry-After/no-store。此外，既有错误处理器会保留不可重试 SDK 异常的 HTTP status；上游 400/401/403/422/429 等也可能在准入后出现。因此 `UNAUTHORIZED`/401 本身不证明是本地鉴权拒绝，其他已登记 4xx 也不一定来自本地校验。未单列的上游状态使用 default problem 响应；上游 4xx 的 detail 沿用异常 message，只有 5xx 固定隐藏详情，不承诺全部 Provider 4xx 文本安全。Provider 429/503 不保证 Retry-After，本地请求预算和本地模型配额路径才设置该头。契约如实记录旧边界，本轮不改写错误处理策略。
+
+这不是安全重放凭证：相同 body 再发送会产生新消息和新 Evidence，没有幂等键，回执不明时不要自动重发。text/plain 被解析后因不是对象返回 400；坏 JSON 400、未知媒体 415、超限 413 沿用原规则。
+
+自动化用提交 JSON + 独立 Ajv、真实 TCP 和独立 PG 执行文档 body 示例。只配置明显离线的测试 Provider 和 Mock V2；真实路由启用 durableExtraction，但故意不启动 worker，直接查表验证 Evidence、父引用、脱敏摘要、用量和 queued outbox，不能将排队冒充提取完成。另覆盖引用 null/结构值、历史、重复发送、检索降级、严格输入与运行时附件限制、项目隔离、坏历史、归档竞争、失败残留、两类配额、六种不可重试 SDK HTTP 错误、认证/请求预算先于 DB、413/415 和无依赖 404。全量运行显式置空付费评测 key，不接触真实 Provider。
+
+本轮 Refs #24。SSE 发送、取消及在线 `/docs`/完整接入指南仍未交付，不能关闭 Issue。仅回滚本轮会撤销 JSON send 登记、Params 抽取和相关测试/文档，保留 #109–#117 契约及生成门禁；无迁移、依赖或真实部署变化。
