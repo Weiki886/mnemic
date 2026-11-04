@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export and approval audit APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit and global audit read APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Audit",
+      "description": "Global operator audit history with safe metadata projection."
+    },
     {
       "name": "Approvals",
       "description": "Client-reported approval decision receipts, not tool execution evidence."
@@ -1849,6 +1853,541 @@
           "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
         },
         "required": ["items", "limit", "offset"],
+        "additionalProperties": false
+      },
+      "AuditLogPage": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "format": "date-time" },
+          "to": { "type": "string", "format": "date-time" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
+          "items": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "actor": { "type": "object", "nullable": true, "enum": [null] },
+                    "action": { "type": "object", "nullable": true, "enum": [null] },
+                    "target": { "type": "object", "nullable": true, "enum": [null] },
+                    "decision": { "type": "object", "nullable": true, "enum": [null] },
+                    "meta": { "type": "object", "nullable": true, "enum": [null] },
+                    "metadata_omitted": { "type": "boolean", "enum": [true] }
+                  },
+                  "required": [
+                    "id",
+                    "ts",
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["gate"] },
+                    "action": { "type": "string", "enum": ["redact"] },
+                    "target": {
+                      "anyOf": [
+                        { "type": "string", "format": "uuid" },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "candidate.value",
+                            "candidate.subject",
+                            "candidate.attribute",
+                            "candidate.entities"
+                          ]
+                        }
+                      ]
+                    },
+                    "decision": { "type": "string", "enum": ["redacted"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "pattern": {
+                          "type": "string",
+                          "enum": [
+                            "github_pat",
+                            "aws_access_key",
+                            "openai_style_key",
+                            "password_assignment",
+                            "private_key_block"
+                          ]
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["pattern"],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] },
+                    "actor": { "type": "string", "enum": ["cli"] },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "approval.invalid",
+                        "approval.file.read",
+                        "approval.file.create",
+                        "approval.file.overwrite",
+                        "approval.file.delete",
+                        "approval.shell"
+                      ]
+                    },
+                    "target": {
+                      "type": "string",
+                      "nullable": true,
+                      "pattern": "^sha256:[a-f0-9]{64}$"
+                    },
+                    "decision": { "type": "string", "enum": ["allow", "deny"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "event_id": { "type": "string", "format": "uuid" },
+                        "request_id": { "type": "string", "format": "uuid" },
+                        "project_id": { "type": "string", "format": "uuid" },
+                        "session_id": { "type": "string", "format": "uuid" },
+                        "mode": { "type": "string", "enum": ["read-only", "confirm", "auto"] },
+                        "operation": {
+                          "type": "string",
+                          "nullable": true,
+                          "enum": [
+                            "file.read",
+                            "file.create",
+                            "file.overwrite",
+                            "file.delete",
+                            "shell",
+                            null
+                          ]
+                        },
+                        "decision": { "type": "string", "enum": ["allow", "deny"] },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "read_allowed",
+                            "auto_create",
+                            "session_grant",
+                            "permanent_grant",
+                            "confirmed",
+                            "invalid_request",
+                            "invalid_root",
+                            "invalid_target",
+                            "outside_root",
+                            "read_only",
+                            "closed",
+                            "busy",
+                            "cancelled",
+                            "denied",
+                            "changed",
+                            "storage_error"
+                          ]
+                        },
+                        "scope": { "type": "string", "enum": ["once", "session", "permanent"] },
+                        "root_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                        "target_hash": {
+                          "type": "string",
+                          "nullable": true,
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "target_basis": {
+                          "type": "string",
+                          "enum": ["canonical", "requested", "none"]
+                        },
+                        "command_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                        "client_reported": { "type": "boolean", "enum": [true] },
+                        "version": { "type": "number", "enum": [1] }
+                      },
+                      "required": [
+                        "event_id",
+                        "request_id",
+                        "project_id",
+                        "session_id",
+                        "mode",
+                        "operation",
+                        "decision",
+                        "reason",
+                        "root_hash",
+                        "target_hash",
+                        "target_basis",
+                        "client_reported",
+                        "version"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ts",
+                    "metadata_omitted",
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["provider.create"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["created"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "protocol": {
+                          "type": "string",
+                          "enum": ["openai-compatible", "anthropic"]
+                        },
+                        "slots": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": ["chat", "extraction", "embedding"]
+                          },
+                          "maxItems": 3
+                        }
+                      },
+                      "required": ["version", "protocol", "slots"],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["provider.update"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["updated"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "changed_fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "name",
+                              "protocol",
+                              "base_url",
+                              "models.chat",
+                              "models.extraction"
+                            ]
+                          },
+                          "minItems": 1,
+                          "maxItems": 5
+                        },
+                        "before_protocol": {
+                          "type": "string",
+                          "enum": ["openai-compatible", "anthropic"]
+                        },
+                        "after_protocol": {
+                          "type": "string",
+                          "enum": ["openai-compatible", "anthropic"]
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "changed_fields",
+                        "before_protocol",
+                        "after_protocol"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["belief.delete"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["updated"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "project_id": { "type": "string", "format": "uuid" },
+                        "before": { "type": "string", "enum": ["active"] },
+                        "after": { "type": "string", "enum": ["deleted"] }
+                      },
+                      "required": ["version", "project_id", "before", "after"],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["belief.restore"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["updated"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "project_id": { "type": "string", "format": "uuid" },
+                        "before": { "type": "string", "enum": ["deleted"] },
+                        "after": { "type": "string", "enum": ["active"] }
+                      },
+                      "required": ["version", "project_id", "before", "after"],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["flags.update"] },
+                    "target": { "type": "string", "enum": ["server"] },
+                    "decision": { "type": "string", "enum": ["updated"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "schema_version": { "type": "number", "enum": [1] },
+                        "previous_revision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "before": {
+                          "type": "object",
+                          "properties": {
+                            "retrieval_vector": { "type": "boolean" },
+                            "retrieval_keyword": { "type": "boolean" },
+                            "retrieval_entity": { "type": "boolean" },
+                            "retrieval_time": { "type": "boolean" },
+                            "memory_gate": { "type": "boolean" },
+                            "decay": { "type": "boolean" },
+                            "reranker": { "type": "boolean" },
+                            "authority_resolution": { "type": "boolean" },
+                            "read_time_resolution": { "type": "boolean" },
+                            "read_time_reinforcement": { "type": "boolean" }
+                          },
+                          "required": [
+                            "retrieval_vector",
+                            "retrieval_keyword",
+                            "retrieval_entity",
+                            "retrieval_time",
+                            "memory_gate",
+                            "decay",
+                            "reranker",
+                            "authority_resolution",
+                            "read_time_resolution",
+                            "read_time_reinforcement"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "after": {
+                          "type": "object",
+                          "properties": {
+                            "retrieval_vector": { "type": "boolean" },
+                            "retrieval_keyword": { "type": "boolean" },
+                            "retrieval_entity": { "type": "boolean" },
+                            "retrieval_time": { "type": "boolean" },
+                            "memory_gate": { "type": "boolean" },
+                            "decay": { "type": "boolean" },
+                            "reranker": { "type": "boolean" },
+                            "authority_resolution": { "type": "boolean" },
+                            "read_time_resolution": { "type": "boolean" },
+                            "read_time_reinforcement": { "type": "boolean" }
+                          },
+                          "required": [
+                            "retrieval_vector",
+                            "retrieval_keyword",
+                            "retrieval_entity",
+                            "retrieval_time",
+                            "memory_gate",
+                            "decay",
+                            "reranker",
+                            "authority_resolution",
+                            "read_time_resolution",
+                            "read_time_reinforcement"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "schema_version",
+                        "previous_revision",
+                        "revision",
+                        "before",
+                        "after"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["usage.export"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["prepared"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "project_id": { "type": "string", "format": "uuid" },
+                        "conversation_id": { "type": "string", "nullable": true, "format": "uuid" },
+                        "format": { "type": "string", "enum": ["json", "csv"] },
+                        "rows": { "type": "integer", "minimum": 0, "maximum": 1000 },
+                        "from": { "type": "string", "format": "date-time" },
+                        "to": { "type": "string", "format": "date-time" },
+                        "after": { "type": "string", "nullable": true, "format": "uuid" },
+                        "next_after": { "type": "string", "nullable": true, "format": "uuid" }
+                      },
+                      "required": [
+                        "version",
+                        "project_id",
+                        "conversation_id",
+                        "format",
+                        "rows",
+                        "from",
+                        "to",
+                        "after",
+                        "next_after"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "maxItems": 200
+          },
+          "next_after": { "type": "string", "nullable": true, "format": "uuid" }
+        },
+        "required": ["from", "to", "limit", "items", "next_after"],
         "additionalProperties": false
       }
     },
@@ -4848,6 +5387,168 @@
           },
           "500": {
             "description": "Database or incompatible stored record; fixed error without raw metadata or exception.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/audit-log": {
+      "get": {
+        "operationId": "readPlatformAuditLog",
+        "tags": ["Audit"],
+        "summary": "Read safe projections of global operator audit history",
+        "description": "Requires DB, not master key; route absent without DB. Global Bearer operator authorization, not per-project membership. Strict query, unknown/duplicate scalar fields rejected. UUID filters normalize lowercase; actor/action/target are allowlisted forms. project_id only compares meta.project_id as a string; it does not check project existence or include global events without that metadata (such as Provider/flags events). This is a filter, never an access boundary. Defaults: to=server now, from=to minus30 days; half-open [from,to), positive span at most366 days. Filter dates require UTC years0001-9999 and at most millisecond precision; those refinements are runtime checks. limit default50, 1..200; digit strings accepted, fractions/exponents/blanks rejected. Keyset order (ts,id), cursor must exist inside the same filters/window or404. Cursor timestamp read as PG raw text preserves microseconds; output ts also has microseconds. Reuse resolved from/to across pages; each page is a separate query, not a frozen snapshot. Unknown/corrupt/oversized (>65536 UTF8 bytes of meta::text) or envelope-inconsistent rows remain opaque history positions: id/ts retained, actor/action/target/decision/meta all null, metadata_omitted=true. Actor/action/decision >64 bytes or target >128 bytes are similarly suppressed before projection. Opaque rows still count toward limit and can serve as cursors. Known metadata is projected through existing strict schemas: platform events, gate redaction summaries and client-reported approval events. Cross-field consistency uses runtime projection and is not fully encoded by OpenAPI. This differs from the project approval endpoint, which fails the whole page for selected incompatible rows. No new audit write, permission mutation, Provider resolution or model invocation. Client reports and prepared receipts are not execution/delivery proof. Route hook sets no-store after root auth/rate admission; earlier errors obey their own rules. Ordinary CORS applies. Not a backup or proof that all real-world actions were recorded.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "date-time" },
+            "required": false,
+            "example": "2026-11-01T00:00:00Z",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "date-time" },
+            "required": false,
+            "example": "2026-11-02T00:00:00Z",
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [{ "type": "number" }, { "type": "string", "pattern": "^\\d+$" }],
+              "default": 50
+            },
+            "required": false,
+            "example": 2,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "enum": ["server", "cli", "gate"] },
+            "required": false,
+            "name": "actor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "provider.create",
+                "provider.update",
+                "flags.update",
+                "belief.delete",
+                "belief.restore",
+                "usage.export",
+                "redact",
+                "approval.file.read",
+                "approval.file.create",
+                "approval.file.overwrite",
+                "approval.file.delete",
+                "approval.shell",
+                "approval.invalid"
+              ]
+            },
+            "required": false,
+            "name": "action",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                { "type": "string", "format": "uuid" },
+                { "type": "string", "enum": ["server"] },
+                { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+                {
+                  "type": "string",
+                  "enum": [
+                    "candidate.value",
+                    "candidate.subject",
+                    "candidate.attribute",
+                    "candidate.entities"
+                  ]
+                }
+              ]
+            },
+            "required": false,
+            "name": "target",
+            "in": "query"
+          },
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": false,
+            "name": "project_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One safe page including opaque history positions; next_after=null at end.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuditLogPage" } }
+            }
+          },
+          "400": {
+            "description": "Invalid strict filters or time window; structured field errors.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Operator Bearer required before query validation and database access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Cursor not found inside current selection, or route unavailable without DB.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or authenticated-token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected database/server failure; fixed detail, no raw errors or metadata.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {

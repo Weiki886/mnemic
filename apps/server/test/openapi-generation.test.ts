@@ -33,6 +33,7 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/projects/{projectId}/usage/export",
     "/providers",
     "/providers/{id}",
+    "/v1/audit-log",
     "/v1/config",
     "/v1/config/flags",
     "/v1/conversations",
@@ -334,4 +335,41 @@ it("approval audit documents client-report receipts, idempotent status codes and
   expect(components.ApprovalAuditEvent!.properties).not.toHaveProperty("command");
   expect(components.ApprovalAuditRecord!.properties).toHaveProperty("recorded_at");
   expect(components.ApprovalAuditPage!.properties).not.toHaveProperty("next_after");
+});
+
+it("audit log exposes safe typed variants and opaque history with explicit null fields", () => {
+  const doc = createOpenApiDocument();
+  const op = doc.paths["/v1/audit-log"]!.get!;
+  expect(op.parameters).toContainEqual(
+    expect.objectContaining({ name: "limit", schema: expect.objectContaining({ default: 50 }) }),
+  );
+  expect(op.responses).toHaveProperty("404");
+  expect(op.responses).toHaveProperty("429");
+  const schemas = doc.components!.schemas! as Record<
+    string,
+    {
+      properties: Record<
+        string,
+        { items?: { anyOf?: { properties?: Record<string, { enum?: unknown[] }> }[] } }
+      >;
+    }
+  >;
+  const variants = schemas.AuditLogPage!.properties.items!.items!.anyOf!;
+  expect(variants).toHaveLength(9);
+  const opaque = variants.find((x) => x.properties?.metadata_omitted?.enum?.includes(true))!;
+  const ajv = new Ajv({ strict: false, validateFormats: false });
+  const valid = ajv.compile(opaque);
+  const row = {
+    id: "019abcde-0000-7000-8000-000000000001",
+    ts: "2026-01-01T00:00:00Z",
+    actor: null,
+    action: null,
+    target: null,
+    decision: null,
+    meta: null,
+    metadata_omitted: true,
+  };
+  expect(valid(row)).toBe(true);
+  expect(valid({ ...row, meta: { private: "never exposed" } })).toBe(false);
+  expect(valid({ ...row, actor: "server" })).toBe(false);
 });

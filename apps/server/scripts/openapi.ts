@@ -18,6 +18,7 @@ import {
 import { HealthResponseSchema } from "../src/contracts/health.js";
 import { UNSUPPORTED_FEATURE_FLAGS } from "../src/flags/runtime.js";
 import { normalizeNullability } from "./openapi-nullability.js";
+import { registerAuditPaths } from "./openapi-audit.js";
 import { registerApprovalPaths } from "./openapi-approval.js";
 import { registerUsagePaths } from "./openapi-usage.js";
 import { registerPendingPaths } from "./openapi-pending.js";
@@ -155,6 +156,7 @@ export function createOpenApiDocument(): OpenApiDocument {
   registerPendingPaths(registry);
   registerUsagePaths(registry);
   registerApprovalPaths(registry);
+  registerAuditPaths(registry);
   const document = new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {
@@ -165,7 +167,7 @@ export function createOpenApiDocument(): OpenApiDocument {
         url: "https://www.apache.org/licenses/LICENSE-2.0.html",
       },
       description:
-        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export and approval audit APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
+        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit and global audit read APIs (Issue #24). Other implemented API families and the online documentation page are not included yet. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
     servers: [
       {
@@ -174,6 +176,10 @@ export function createOpenApiDocument(): OpenApiDocument {
       },
     ],
     tags: [
+      {
+        name: "Audit",
+        description: "Global operator audit history with safe metadata projection.",
+      },
       {
         name: "Approvals",
         description: "Client-reported approval decision receipts, not tool execution evidence.",
