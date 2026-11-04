@@ -236,8 +236,10 @@ body 必须是 JSON 对象，`text` 为 1–8000 字符、不 trim；仅允许 `
 
 成功返回完整 `answer`、助手 `message_id`、`abstained`、`history_included` 与选中引用。引用 value 必填但可为任意 JSON（含 null）；助手消息仅持久保存版本 ID，响应包含本次选中引用正文。`history_included` 表示模型接收了历史。JSON 路径没有 SSE 的 generation_id、取消回执、显式生成超时或 no-store 保证，不能把断开 HTTP 等同于模型已停止计费。既有协调器允许 JSON 轮次相互重叠，不提供跨实例串行化。
 
-准入后的模型/配置/保存错误可能返回 500，同时保留用户/文件 Evidence 和已入队任务，没有助手回答；并发归档也可能在模型成功后使保存返回 409。HTTP 令牌桶 429 (`RATE_LIMITED`) 在 body/DB/模型前拒绝；chat 日配额 429 (`MODEL_QUOTA_EXCEEDED`) 或不可用 503 (`MODEL_QUOTA_UNAVAILABLE`) 则可在 Evidence 已入库后发生，带 Retry-After/no-store。这不是安全重放凭证：相同 body 再发送会产生新消息和新 Evidence，没有幂等键，回执不明时不要自动重发。text/plain 被解析后因不是对象返回 400；坏 JSON 400、未知媒体 415、超限 413 沿用原规则。
+准入后的模型/配置/保存错误可能返回 500，同时保留用户/文件 Evidence 和已入队任务，没有助手回答；并发归档也可能在模型成功后使保存返回 409。HTTP 令牌桶 429 (`RATE_LIMITED`) 在 body/DB/模型前拒绝；chat 日配额 429 (`MODEL_QUOTA_EXCEEDED`) 或不可用 503 (`MODEL_QUOTA_UNAVAILABLE`) 则可在 Evidence 已入库后发生，带 Retry-After/no-store。此外，既有错误处理器会保留不可重试 SDK 异常的 HTTP status；上游 400/401/403/422/429 等也可能在准入后出现。因此 `UNAUTHORIZED`/401 本身不证明是本地鉴权拒绝，其他已登记 4xx 也不一定来自本地校验。未单列的上游状态使用 default problem 响应；上游 4xx 的 detail 沿用异常 message，只有 5xx 固定隐藏详情，不承诺全部 Provider 4xx 文本安全。Provider 429/503 不保证 Retry-After，本地请求预算和本地模型配额路径才设置该头。契约如实记录旧边界，本轮不改写错误处理策略。
 
-自动化用提交 JSON + 独立 Ajv、真实 TCP 和独立 PG 执行文档 body 示例。只配置明显离线的测试 Provider 和 Mock V2；真实路由启用 durableExtraction，但故意不启动 worker，直接查表验证 Evidence、父引用、脱敏摘要、用量和 queued outbox，不能将排队冒充提取完成。另覆盖引用 null/结构值、历史、重复发送、检索降级、严格输入与运行时附件限制、项目隔离、坏历史、归档竞争、失败残留、两类配额、认证/请求预算先于 DB、413/415 和无依赖 404。全量运行显式置空付费评测 key，不接触真实 Provider。
+这不是安全重放凭证：相同 body 再发送会产生新消息和新 Evidence，没有幂等键，回执不明时不要自动重发。text/plain 被解析后因不是对象返回 400；坏 JSON 400、未知媒体 415、超限 413 沿用原规则。
+
+自动化用提交 JSON + 独立 Ajv、真实 TCP 和独立 PG 执行文档 body 示例。只配置明显离线的测试 Provider 和 Mock V2；真实路由启用 durableExtraction，但故意不启动 worker，直接查表验证 Evidence、父引用、脱敏摘要、用量和 queued outbox，不能将排队冒充提取完成。另覆盖引用 null/结构值、历史、重复发送、检索降级、严格输入与运行时附件限制、项目隔离、坏历史、归档竞争、失败残留、两类配额、六种不可重试 SDK HTTP 错误、认证/请求预算先于 DB、413/415 和无依赖 404。全量运行显式置空付费评测 key，不接触真实 Provider。
 
 本轮 Refs #24。SSE 发送、取消及在线 `/docs`/完整接入指南仍未交付，不能关闭 Issue。仅回滚本轮会撤销 JSON send 登记、Params 抽取和相关测试/文档，保留 #109–#117 契约及生成门禁；无迁移、依赖或真实部署变化。

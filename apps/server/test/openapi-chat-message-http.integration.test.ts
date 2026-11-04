@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { Ajv } from "ajv";
 import { uuidv7 } from "uuidv7";
+import { APICallError } from "ai";
 import { MockLanguageModelV2 } from "ai/test";
 import type { ChatReply, ProblemDetails } from "@mnemic/shared";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -56,11 +57,20 @@ let cite = false,
   value: unknown = null,
   retrievalFails = false,
   failChat = false;
+let upstreamStatus: number | undefined;
 let archiveDuringGeneration: string | undefined;
 const model = new MockLanguageModelV2({
   doGenerate: async (opts) => {
     prompts.push(JSON.stringify(opts.prompt));
     if (failChat) throw Error(secret);
+    if (upstreamStatus)
+      throw new APICallError({
+        message: "offline-upstream-denial",
+        url: "https://offline.invalid/v1",
+        requestBodyValues: {},
+        statusCode: upstreamStatus,
+        isRetryable: false,
+      });
     if (archiveDuringGeneration)
       await t.sql`update conversations set ended_at=now() where id=${archiveDuringGeneration}`;
     return {
@@ -168,7 +178,8 @@ async function send<T = ChatReply>(
     status === 200 ? "application/json" : "application/problem+json",
   );
   expect(r.headers.get("x-request-id")).toBeTruthy();
-  const response = doc.paths[path]!.post!.responses[String(status)] as
+  const response = (doc.paths[path]!.post!.responses[String(status)] ??
+    doc.paths[path]!.post!.responses.default) as
     { content: Record<string, { schema: unknown }> } | undefined;
   expect(response, `undocumented status ${status}`).toBeTruthy();
   validate(Object.values(response!.content)[0]!.schema, body);
@@ -211,6 +222,7 @@ beforeEach(() => {
   retrievalFails = false;
   failChat = false;
   archiveDuringGeneration = undefined;
+  upstreamStatus = undefined;
 });
 afterAll(async () => {
   await app?.close();
@@ -552,5 +564,37 @@ it.each(["database", "master key"])(
     } finally {
       await isolated.close();
     }
+  },
+);
+
+it.each([400, 401, 403, 422, 429, 503])(
+  "nonretryable upstream SDK status %s can arrive after Evidence admission",
+  async (status) => {
+    upstreamStatus = status;
+    const id = await conversation(),
+      before = prompts.length;
+    const { body, response } = await send<ProblemDetails>(id, status, {
+      body: { text: "upstream rejection" },
+    });
+    expect(body.detail).toBe(status >= 500 ? "服务器内部错误" : "offline-upstream-denial");
+    expect(body.code).toBe(
+      status === 401
+        ? "UNAUTHORIZED"
+        : status === 403
+          ? "FORBIDDEN"
+          : status === 429
+            ? "RATE_LIMITED"
+            : status >= 500
+              ? "INTERNAL_ERROR"
+              : "VALIDATION_FAILED",
+    );
+    expect(response.headers.get("retry-after")).toBeNull();
+    expect(prompts).toHaveLength(before + 1);
+    const { rows, tasks } = await effects(id);
+    expect(rows.map((r) => r.speaker)).toEqual(["user"]);
+    expect(tasks).toHaveLength(1);
+    expect(
+      (await t.sql`select status from model_usage where conversation_id=${id}`)[0]!.status,
+    ).toBe("error");
   },
 );
