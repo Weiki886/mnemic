@@ -175,7 +175,7 @@ curl --fail-with-body --request POST "$mnemic_url/projects/$mnemic_project_id/re
   --data-binary @recall-memory.json
 ```
 
-手动 recall 可能发送查询给 embedding 并计费；只选本项目 active 的当前版本，最多五条 candidates，并保存 score-only trace。abstained=true 是没有达到证据阈值，不代表错误或允许编造；手动路关闭读时强化，不提高 confidence / salience。检索失败可能降级关键词，不保证向量调用失败一定是 HTTP 错误。
+手动 recall 可能发送查询给 embedding 并计费；只选本项目 active 的当前版本，最多五条 candidates，并持久化 query_text；候选轨迹只含引用 / 得分、不复制记忆正文。查询文本也会被存储，请勿在查询里放凭据或敏感内容。abstained=true 是没有达到证据阈值，不代表错误或允许编造；手动路关闭读时强化，不提高 confidence / salience。检索失败可能降级关键词，不保证向量调用失败一定是 HTTP 错误。
 
 `correct-memory.json`：
 
