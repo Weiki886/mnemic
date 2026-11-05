@@ -36,6 +36,14 @@ jobs:
       - name: OpenAPI contract
         run: pnpm --filter @mnemic/server run openapi:check
 
+      - name: PostgreSQL 17 backup tools
+        run: |
+          if [ ! -x /usr/lib/postgresql/17/bin/pg_dump ]; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client-17
+          fi
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
       - name: Test
         run: pnpm -r run test && node --test scripts/*.test.mjs
 
