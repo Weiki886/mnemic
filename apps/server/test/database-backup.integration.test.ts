@@ -10,6 +10,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { uuidv7 } from "uuidv7";
 import { setupTestDb } from "./db-helper.js";
+import { plainRecoveryTestUrl, recoveryConnections } from "./fixtures/recovery-connection.js";
 import { encrypt, decrypt } from "../src/providers/crypto.js";
 import { TEST_MASTER_KEY } from "./test-keys.js";
 const exec = promisify(execFile);
@@ -56,6 +57,9 @@ async function snapshot(client: postgres.Sql) {
   };
 }
 it("native backup -> clear a database created by this test -> restore preserves every table, constraints, encrypted config and exact provenance", async () => {
+  // Must precede setupTestDb: postgres-js URL queries can override startup database/options.
+  for (const value of [process.env.DATABASE_URL, process.env.MNEMIC_TEST_ADMIN_URL])
+    if (value !== undefined) plainRecoveryTestUrl(value);
   const testDb = await setupTestDb();
   const name = `mnemic_recovery_${uuidv7().replaceAll("-", "")}`;
   let adminSql: postgres.Sql | undefined,
@@ -63,18 +67,15 @@ it("native backup -> clear a database created by this test -> restore preserves 
     directory: string | undefined;
   let created = false;
   try {
-    const adminUrl = process.env.MNEMIC_TEST_ADMIN_URL ?? testDb.url;
-    const selected = new URL(adminUrl),
-      base = new URL(testDb.url);
-    // Optional local test-admin role only on the SAME isolated test host/port/database.
-    expect(selected.hostname).toBe(base.hostname);
-    expect(selected.port).toBe(base.port);
-    expect(selected.pathname).toBe(base.pathname);
+    const { adminUrl, recoveryUrl } = recoveryConnections(
+      testDb.url,
+      process.env.MNEMIC_TEST_ADMIN_URL,
+      name,
+    );
     adminSql = postgres(adminUrl, { max: 1 });
     directory = await mkdtemp(join(tmpdir(), "mnemic-recovery-"));
     const archive = join(directory, "database.dump");
-    const url = new URL(adminUrl);
-    url.pathname = "/" + name;
+    const url = new URL(recoveryUrl);
     const env = {
       PATH: process.env.PATH,
       PGHOST: url.hostname,

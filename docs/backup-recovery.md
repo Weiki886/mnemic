@@ -70,7 +70,7 @@ createdb --no-password --maintenance-db=postgres --template=template0 "$restore_
 
 测试只在创建成功后设置本地标记；之后关闭自有连接，DROP 并按同一随机名重新 CREATE，明确断言空库，再运行 pg_restore。最后只删除这个测试自己创建的库；不使用 FORCE 或终止他人的数据库连接。完成后比较**所有用户表全文、FK / CHECK / 索引、扩展、序列**，核对原始 Provider 夹具密文可解密、版本 / Evidence 链，并验证重跑 migrate 不改数据。PG17 对两条历史 BETWEEN CHECK 的相邻 AND 括号会规范化；测试仅归一这两种明确等价写法，并额外实测原数值约束仍拒绝非法值，不泛化移除 SQL 括号。
 
-CI 将 PostgreSQL17工具放进 PATH，Testcontainers 角色具备创建数据库 / 扩展权限；缺工具或权限会失败，**不跳过恢复验收**。本地也需 PG17 工具；若普通测试角色无权创建 vector，可显式设置 `MNEMIC_TEST_ADMIN_URL`，只允许与测试库同 host / port / database，区别仅为测试管理员身份。它不能指向开发库或生产库；不得把含密码 URL 写进 Git / 输出。未设置时复用测试连接身份。
+CI 将 PostgreSQL17工具放进 PATH，Testcontainers 角色具备创建数据库 / 扩展权限；缺工具或权限会失败，**不跳过恢复验收**。本地也需 PG17 工具；若普通测试角色无权创建 vector，可显式设置 `MNEMIC_TEST_ADMIN_URL`，只允许与测试库同 host / port / database，区别仅为测试管理员身份；该变量和测试 DATABASE_URL 都不接受 query / fragment 或编码的数据库名，建立任何连接前即拒绝，防止 startup database/options 覆盖随机库名。它不能指向开发库或生产库；不得把含密码 URL 写进 Git / 输出。未设置时复用测试连接身份。
 
 ```sh
 DEEPSEEK_API_KEY= DASHSCOPE_API_KEY= \
