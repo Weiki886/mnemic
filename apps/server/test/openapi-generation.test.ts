@@ -45,6 +45,7 @@ it("generation is deterministic, scoped and never includes environment-specific 
     "/v1/conversations/{id}/commit",
     "/v1/doctor",
     "/v1/doctor/probe",
+    "/v1/exports/memory",
   ]);
   expect(Object.keys(a.paths["/health"]!).sort()).toEqual(["get", "head"]);
   expect(Object.keys(a.paths["/v1/config/flags"]!).sort()).toEqual(["get", "put"]);
@@ -360,7 +361,7 @@ it("audit log exposes safe typed variants and opaque history with explicit null 
     }
   >;
   const variants = schemas.AuditLogPage!.properties.items!.items!.anyOf!;
-  expect(variants).toHaveLength(9);
+  expect(variants).toHaveLength(10);
   const opaque = variants.find((x) => x.properties?.metadata_omitted?.enum?.includes(true))!;
   const ajv = new Ajv({ strict: false, validateFormats: false });
   const valid = ajv.compile(opaque);

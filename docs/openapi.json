@@ -433,6 +433,12 @@
         "required": ["kind", "snapshot"],
         "additionalProperties": false
       },
+      "MemoryExportRequest": {
+        "type": "object",
+        "properties": { "scope": { "type": "string", "enum": ["instance"] } },
+        "required": ["scope"],
+        "additionalProperties": false
+      },
       "BeliefVersion": {
         "type": "object",
         "properties": {
@@ -2067,6 +2073,58 @@
                   "type": "object",
                   "properties": {
                     "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["memory.export"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["prepared"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "scope": { "type": "string", "enum": ["instance"] },
+                        "format": { "type": "string", "enum": ["mnemic-memory-jsonl"] },
+                        "schema_version": { "type": "number", "enum": [1] },
+                        "export_id": { "type": "string", "format": "uuid" },
+                        "rows": { "type": "integer", "minimum": 0, "maximum": 10000 },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 16777216
+                        },
+                        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                      },
+                      "required": [
+                        "version",
+                        "scope",
+                        "format",
+                        "schema_version",
+                        "export_id",
+                        "rows",
+                        "bytes",
+                        "sha256"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
                     "action": { "type": "string", "enum": ["provider.create"] },
                     "target": { "type": "string", "format": "uuid" },
                     "decision": { "type": "string", "enum": ["created"] },
@@ -2783,6 +2841,124 @@
                 "required": true
               }
             },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/exports/memory": {
+      "post": {
+        "operationId": "exportInstanceMemory",
+        "tags": ["Data export"],
+        "summary": "Prepare a bounded lossless whole-instance core-table JSONL archive",
+        "description": "Requires DB and global operator Bearer, not master key or per-project membership. Explicit scope=instance acknowledges ALL projects, conversations/messages, observations, beliefs, ALL belief_versions, memory_embeddings and raw audit_log, including sensitive/unknown historical JSONB. No project/table/query filter; unknown body and query fields rejected. Never contains provider_configs or later module tables; not a whole-database backup. One repeatable-read transaction reads rows in fixed table and UUID order in pages of8; deleted/retracted facts and inherited reference metadata remain unchanged. to_jsonb(row)::text is stored as row_json STRING to preserve numeric lexemes and microsecond timestamps; clients must not parse/reserialize through lossy JS numbers. UTF8 LF JSONL manifest/row/end format v1, trailing LF required, eight table counts and SHA256 over manifest+row bytes including LF, excluding end. Hash detects corruption, not authenticity/encryption. Fixed bounds10000rows,1MiB per encoded line,16MiB entire archive including footer; any overflow rejects the whole export, never truncates. Oversized raw rows suppressed by SQL before transfer; SQL pages<=8 rows; each query5s and lock wait1s. No hard whole-process memory/CPU guarantee. Archive is fully encoded before audit_log actor=server/action=memory.export/target=export_id/decision=prepared with counts/bytes/hash only, in same transaction. Transaction commit must succeed before any download bytes/attachment header. Current receipt is excluded from its own earlier snapshot, previous audit rows are included. prepared proves payload preparation and audit commit, NOT client delivery or disk persistence; lost responses may still leave receipts and manual retry creates another export. No importer, file write, model call, data mutation except audit. No redaction/encryption: protect transport and downloaded file. GET is not an export route. Handler hook sets no-store after root auth/rate; earlier transport errors keep existing rules. Ordinary configured CORS applies.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MemoryExportRequest" },
+              "example": { "scope": "instance" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Complete sensitive JSONL archive; never a partial snapshot or full-instance SQL backup.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^attachment; filename=\"mnemic-memory-[0-9a-f-]+\\.jsonl\"$"
+                },
+                "required": true
+              },
+              "X-Content-Type-Options": {
+                "schema": { "type": "string", "enum": ["nosniff"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "UTF8 JSONL v1; see docs/data-export.md for framing and raw row_json precision."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid explicit scope/body, unknown query fields or malformed JSON; schema failures carry field errors.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before parsing, media validation or DB access.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Route unavailable without database, or unsupported method/path.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds HTTP limit, or archive exceeds fixed row/line/file limit. No prepared receipt or partial archive.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Requires application/json, optional charset parameter; other/missing media rejected before parsing.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "Root IP/token request budget exhausted before preparation.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Snapshot, codec or audit failure. No archive returned, fixed detail and no raw exception or row data. A connection loss around COMMIT can leave a prepared receipt.",
+            "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/problem+json": {
                 "schema": { "$ref": "#/components/schemas/ProblemDetails" }
@@ -5520,6 +5696,7 @@
                 "belief.delete",
                 "belief.restore",
                 "usage.export",
+                "memory.export",
                 "redact",
                 "approval.file.read",
                 "approval.file.create",

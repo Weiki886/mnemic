@@ -28,6 +28,7 @@ import { registerPendingPaths } from "./openapi-pending.js";
 import { registerDiagnosticPaths } from "./openapi-diagnostics.js";
 import { registerProviderPaths } from "./openapi-providers.js";
 import { registerConversationPaths } from "./openapi-conversations.js";
+import { registerMemoryExportPaths } from "./openapi-data-export.js";
 import { registerMemoryPaths } from "./openapi-memory.js";
 extendZodWithOpenApi(z);
 const artifact = new URL("../../../docs/openapi.json", import.meta.url);
@@ -152,6 +153,7 @@ export function createOpenApiDocument(): OpenApiDocument {
       415: error("Content-Type must be application/json, optionally with charset."),
     },
   });
+  registerMemoryExportPaths(registry);
   registerMemoryPaths(registry);
   registerConversationPaths(registry);
   registerProviderPaths(registry);

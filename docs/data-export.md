@@ -1,8 +1,35 @@
-# 记忆 JSONL 格式基座（#25，拆分 1/3）
+# 记忆 JSONL 导出（#25，拆分 1/3 + 2/3）
 
-本轮只提供服务端内部的有界编码 / 解码器，**没有导出 HTTP API、下载按钮、文件写入器或数据导入器**，不会访问数据库、模型、磁盘或写审计。不能将函数可编码解释为已经可以导出整个实例，也不能据此关闭 #25。
+服务端现提供内部 codec 和显式实例级下载 API `POST /v1/exports/memory`。#25 尚未完成：整库 PostgreSQL 备份脚本与“备份 → 清空 → 恢复”隔离演练仍留拆分 3/3。已有用量 CSV/JSON 导出是另一类能力。
 
-后续拆分分别负责：一致性快照读取 + 鉴权下载 / 导出审计 / OpenAPI；PostgreSQL 备份脚本 + 隔离库清空恢复演练。现有用量 CSV/JSON 导出仍是另一类能力，不替代记忆归档。
+## 授权下载与审计
+
+这是**实例所有者操作**：现有全局 Bearer Token 可读取所有项目及八张核心表，不是项目成员鉴权；没有项目、会话、表名或字段筛选。严格 JSON 请求体只能为 `{"scope":"instance"}`，查询参数不接受任何字段，不能用传入 project_id 假装隔离。只需数据库，不依赖 master key，不解析 Provider、不调用模型。无 DB 时路由不存在；GET 不执行导出。
+
+在已配置 Token 的终端运行（`MNEMIC_AUTH_TOKEN`、`MNEMIC_BASE_URL` 由操作者配置；不把 Token 放进 URL）。示例使用 `umask 077` 和新建私有目录保护本地文件；服务端不创建本地文件。真实部署须用 HTTPS 或受控本机连接。
+
+```sh
+umask 077
+archive_dir=$(mktemp -d)
+curl --fail-with-body --silent --show-error \
+  -X POST "${MNEMIC_BASE_URL}/v1/exports/memory" \
+  -H "Authorization: Bearer ${MNEMIC_AUTH_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  --data '{"scope":"instance"}' \
+  --output "$archive_dir/memory.jsonl"
+```
+
+仅在 curl 成功且文件通过完整格式 / hash 校验后才作为归档使用；失败时该文件可能是 problem+json 或传输残片，不是可用备份。响应为 `application/x-ndjson`，带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 和仅含服务端 UUID 的 attachment 文件名。没有 UI、客户端 SDK 或导入器。
+
+准入沿用 IP 限流 → 全局 Bearer → Token 限流，早于请求体解析及数据库访问。路由 hook 要求 application/json（可带 charset）；缺失 / 其他媒体类型415。非法 JSON、非实例范围、未知 body/query 字段400；没有配置 DB404；HTTP 请求体或归档超限413；根限流429（Retry-After）；数据库、编码完整性或审计失败固定500。沿用 problem+json，schema 错误带字段详情。no-store 在路由 onRequest 设置，根鉴权 / 限流等更早响应遵循各自已有规则。
+
+一次 **REPEATABLE READ** 事务覆盖八表全部读取与审计：按固定表顺序及 UUID 分页，每批最多8行；SQL 端先检查 `to_jsonb(row)::text` 字节，超大行不传给 JS；JS 逐行累计实际转义后的 wire 字节，最后 codec 校验 manifest/footer 总预算。每条 SQL statement_timeout=5s、lock_timeout=1s；这些是单语句上限，不是整个请求的硬时限，也不保证进程精确内存上限。超限整体拒绝，不能偷偷截断或用不一致的多页下载替代快照；大实例请等待整库备份方案。
+
+快照包含 active/deleted/retracted 信念及全部历史版本，不过滤软删除内容；原始引用、JSONB、时间与向量不被修复或改写。不验证历史 JSONB 引用的业务有效性，也不补齐这八表之外的对象。并发事务在第一次快照建立后提交的新行 / 更新不混入后续表；manifest.created_at 为该事务内查询的数据库时间，不是 WAL/LSN 恢复点。
+
+完整 payload 编码成功后，同事务写 `audit_log`：actor=server、action=memory.export、target=export_id、decision=prepared；meta 仅含 version/scope/format/schema_version/export_id/rows/bytes/sha256，不复制正文、路径、凭据或下载内容。审计提交成功才设置 attachment 并发送文件；审计失败回滚，无文件返回。**prepared 不证明客户端收到或保存文件**，COMMIT 附近断线可能留下回执；手动重试是新的导出及新回执，不自动重放。
+
+本次回执在快照读取后插入，故不在自己的文件中；之前的原始审计记录正常包含。可通过 `GET /v1/audit-log?action=memory.export&target=<export_id>` 查询安全投影（仍需全局 Token）。实例级事件没有 meta.project_id，按 project_id 筛选会排除它。
 
 ## 表范围与数据边界
 
@@ -21,7 +48,7 @@
 
 表名单不包含后续 Issue 新增的 Provider 配置、特性开关、用量、任务、PENDING、检索 / 消解轨迹等表；**这不是完整数据库备份**。后续需要可恢复的整库备份，而不能把本格式当作 pg_dump。将来格式扩张需显式版本决策，不能默默加入 Provider 密文或私钥。
 
-归档可能含原始会话、任意 JSONB 和原始 audit_log 元数据中的敏感内容；本 codec **不脱敏、不加密、不提供权限边界**。它不复用公共审计 API 的安全投影，因为那会丢失备份字段。实际导出入口必须单独落实鉴权、项目范围 / 引用校验、私密传输 / 文件权限与导出审计，不能直接公开这些函数返回值。不要把真实归档放进仓库、Issue、PR、日志或截图。
+归档可能含原始会话、任意 JSONB 和原始 audit_log 元数据中的敏感内容；本 codec **不脱敏、不加密**，下载入口使用全局实例所有者权限。它不复用公共审计 API 的安全投影，因为那会丢失备份字段。本下载入口有意提供实例全量原始数据，不采用公共审计安全投影；若未来新增项目级导出，必须另做作用域和 JSONB 引用校验。操作者仍需保护私密传输与文件权限。不要把真实归档放进仓库、Issue、PR、日志或截图。
 
 ## v1 封装
 
@@ -53,10 +80,10 @@ sha256 覆盖 manifest 与所有 row 的实际 UTF8 字节，包含各自 LF，�
 
 编码器先限制集合数量，再逐行验证；每行 wire 字节限制在内层 JSON 解析前执行，累计文件预算在接收各行与 end 时检查。解码器先限制输入字节，再 fatal UTF8 解码与逐行限制；不接受 BOM、CRLF、空行、部分文件、未知封装或自动修复。超限整体失败，没有截断、分页续传或部分成功。上限限制的是接受的格式 / 载荷，不是整个进程的精确内存或 CPU 硬隔离保证。
 
-仅抛固定 `MemoryExportError`，code 为 EXPORT_INVALID、EXPORT_LIMIT_EXCEEDED 或 EXPORT_INTEGRITY_FAILED，不附原始 JSON / parser 异常。解码结果的 metadata / tables / records / counts 被独立复制并冻结，row_json 保留原文本；编码得到的 Buffer 是普通可变字节，不宣称不可修改。内部入口为 `apps/server/src/data-export/codec.ts`，未注册 shared SDK 或公开路由。
+仅抛固定 `MemoryExportError`，code 为 EXPORT_INVALID、EXPORT_LIMIT_EXCEEDED 或 EXPORT_INTEGRITY_FAILED，不附原始 JSON / parser 异常。解码结果的 metadata / tables / records / counts 被独立复制并冻结，row_json 保留原文本；编码得到的 Buffer 是普通可变字节，不宣称不可修改。内部 codec 入口为 `apps/server/src/data-export/codec.ts`；下载入口在 `data-export/routes.ts`，未增加 shared SDK。
 
 ## 验证与未交付项
 
 纯测试覆盖八表、精确数值 / Unicode / 转义、微秒、空归档、重复、未知字段、数量 / hash、UTF8 / framing、超限提前拒绝和调用方不可回改。PG 测试为八表创建独立夹具，包含两个版本、来源链、向量、NULL 与任意审计元数据；经 codec 后对每行用 **SELECT** `jsonb_populate_record` 重建 composite 并比较完整原始 JSON，不对现有表执行恢复写入。数据库会按会话时区表示 timestamptz，验证保留原始文本、微秒与同一时刻，不强制原始行输出 UTC。
 
-这证明格式基座可保留所提供的关键数据，**不等于已经完成“备份 → 清空 → 恢复”演练**。快照仓储、授权导出与审计、完整恢复脚本 / 演练、版本兼容与实际大库操作均留后续。没有迁移、新依赖、运行时调用方或生产行为变更；回滚只移除 codec、格式定义、对应测试和说明，已有业务与用量导出不变。
+这证明格式基座可保留所提供的关键数据，**不等于已经完成“备份 → 清空 → 恢复”演练**。快照仓储、授权下载与审计已交付；完整恢复脚本 / 演练、导入兼容与实际大库操作均留后续。下载测试在随机私有 schema 的八张核心表副本上运行（复制真实列 / 默认值 / CHECK / 索引，不复制 FK），不读取或清理共享库的其他项目或 Provider。原有 codec PG 测试继续验证真实 FK 表上的来源链。新增并发提交验证、失败审计回滚、全版本 / 精度、真实 TCP + 提交 OpenAPI 校验、准入与字节上限。无迁移、新依赖；回滚本次路由注册、仓储、memory.export 审计契约及 OpenAPI 变更即可停止新导出，保留历史回执且不影响既有业务 / 用量导出。

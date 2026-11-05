@@ -23,6 +23,7 @@ export const AuditQuerySchema = z
         "belief.delete",
         "belief.restore",
         "usage.export",
+        "memory.export",
         "redact",
         "approval.file.read",
         "approval.file.create",

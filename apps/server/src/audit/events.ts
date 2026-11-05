@@ -13,6 +13,30 @@ export const PlatformEventSchema = z
     z
       .object({
         ...base,
+        action: z.literal("memory.export"),
+        target: uuid,
+        decision: z.literal("prepared"),
+        meta: z
+          .object({
+            ...version,
+            scope: z.literal("instance"),
+            format: z.literal("mnemic-memory-jsonl"),
+            schema_version: z.literal(1),
+            export_id: uuid,
+            rows: z.number().int().min(0).max(10000),
+            bytes: z
+              .number()
+              .int()
+              .positive()
+              .max(16 * 1024 * 1024),
+            sha256: z.string().regex(/^[0-9a-f]{64}$/),
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        ...base,
         action: z.literal("provider.create"),
         target: uuid,
         decision: z.literal("created"),
@@ -120,6 +144,8 @@ export const PlatformEventSchema = z
       .strict(),
   ])
   .superRefine((event, ctx) => {
+    if (event.action === "memory.export" && event.target !== event.meta.export_id)
+      ctx.addIssue({ code: "custom", message: "invalid memory export identity" });
     if (
       event.action === "flags.update" &&
       (event.meta.revision !== event.meta.previous_revision + 1 ||
