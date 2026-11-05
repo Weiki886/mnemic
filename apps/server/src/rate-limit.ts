@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { ErrorCode, problem } from "@mnemic/shared";
 import { isPublicTransportRequest } from "./auth.js";
+import { isPublicDocumentationRequest } from "./docs/paths.js";
 
 const BucketSettings = z
   .object({
@@ -105,7 +106,8 @@ export function createRequestRateLimits(
       if (!decision.allowed) return reject(request, reply, decision);
     },
     async token(request: FastifyRequest, reply: FastifyReply) {
-      if (isPublicTransportRequest(request, corsOrigin)) return;
+      if (isPublicTransportRequest(request, corsOrigin) || isPublicDocumentationRequest(request))
+        return;
       const decision = token.consume("authenticated");
       if (!decision.allowed) return reject(request, reply, decision);
     },

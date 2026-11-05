@@ -155,6 +155,26 @@ try {
     assert.match(response.text, /<html/);
   }
   assert.equal((await request("/api/health")).status, 200);
+  // Public static reference works both directly and through /api, without a Token.
+  const checkedContract = await readFile(join(cwd, "docs/openapi.json"), "utf8");
+  for (const path of ["/docs", "/api/docs"]) {
+    const page = await request(path);
+    assert.equal(page.status, 200);
+    assert.match(page.headers["content-type"], /text\/html/);
+    assert.match(page.text, /Schema 索引/);
+    assert.match(page.headers["content-security-policy"], /default-src 'none'/);
+    const head = await request(path, { method: "HEAD" });
+    assert.equal(head.status, 200);
+    assert.equal(head.text, "");
+  }
+  for (const path of ["/docs/openapi.json", "/api/docs/openapi.json"]) {
+    const schema = await request(path);
+    assert.equal(schema.status, 200);
+    assert.equal(schema.text, checkedContract);
+    const head = await request(path, { method: "HEAD" });
+    assert.equal(head.status, 200);
+    assert.equal(head.text, "");
+  }
   for (const bearer of [undefined, "wrong-token"]) {
     const response = await request("/api/v1/doctor", { bearer });
     assert.equal(response.status, 401);

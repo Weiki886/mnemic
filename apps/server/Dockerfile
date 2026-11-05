@@ -22,6 +22,7 @@ COPY --from=build --chown=node:node /workspace/apps/server/dist ./apps/server/di
 COPY --from=build --chown=node:node /workspace/apps/server/drizzle ./apps/server/drizzle
 COPY --from=build --chown=node:node /workspace/packages/shared/package.json ./packages/shared/package.json
 COPY --from=build --chown=node:node /workspace/packages/shared/dist ./packages/shared/dist
+COPY --from=build --chown=node:node /workspace/docs/openapi.json ./docs/openapi.json
 WORKDIR /app/apps/server
 USER node
 EXPOSE 3000

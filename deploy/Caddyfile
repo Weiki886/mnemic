@@ -4,6 +4,11 @@
 		reverse_proxy server:3000
 	}
 
+	@docs path /docs /docs/openapi.json
+	handle @docs {
+		reverse_proxy server:3000
+	}
+
 	handle {
 		reverse_proxy web:8080
 	}

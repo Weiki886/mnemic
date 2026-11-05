@@ -18,6 +18,7 @@ import {
 import { HealthResponseSchema } from "../src/contracts/health.js";
 import { UNSUPPORTED_FEATURE_FLAGS } from "../src/flags/runtime.js";
 import { normalizeNullability } from "./openapi-nullability.js";
+import { registerDocumentationPaths } from "./openapi-docs.js";
 import { registerChatStreamPaths } from "./openapi-chat-stream.js";
 import { registerJsonMessagePath } from "./openapi-chat-message.js";
 import { registerAuditPaths } from "./openapi-audit.js";
@@ -161,6 +162,7 @@ export function createOpenApiDocument(): OpenApiDocument {
   registerAuditPaths(registry);
   registerJsonMessagePath(registry);
   registerChatStreamPaths(registry);
+  registerDocumentationPaths(registry);
   const document = new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
     info: {
@@ -171,7 +173,7 @@ export function createOpenApiDocument(): OpenApiDocument {
         url: "https://www.apache.org/licenses/LICENSE-2.0.html",
       },
       description:
-        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit global audit read JSON message send, SSE and cancellation APIs (Issue #24). The online documentation page and complete integration guide are not included yet; final route coverage still needs verification. Error type URIs are stable identifiers, not guaranteed live web pages.",
+        "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit global audit read JSON message send, SSE and cancellation APIs (Issue #24). Online read-only documentation and raw artifact download are included; the complete integration guide and final route coverage verification remain pending. Error type URIs are stable identifiers, not guaranteed live web pages.",
     },
     servers: [
       {
@@ -180,6 +182,10 @@ export function createOpenApiDocument(): OpenApiDocument {
       },
     ],
     tags: [
+      {
+        name: "Documentation",
+        description: "Public static API reference; no credential entry or API execution.",
+      },
       {
         name: "Audit",
         description: "Global operator audit history with safe metadata projection.",

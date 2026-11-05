@@ -7,7 +7,7 @@
       "name": "Apache License 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit global audit read JSON message send, SSE and cancellation APIs (Issue #24). The online documentation page and complete integration guide are not included yet; final route coverage still needs verification. Error type URIs are stable identifiers, not guaranteed live web pages."
+    "description": "Partial contract for health, feature flag management, project-scoped belief APIs, conversation lifecycle/read, Provider configuration, recall, diagnostic, PENDING candidate usage read/export approval audit global audit read JSON message send, SSE and cancellation APIs (Issue #24). Online read-only documentation and raw artifact download are included; the complete integration guide and final route coverage verification remain pending. Error type URIs are stable identifiers, not guaranteed live web pages."
   },
   "servers": [
     {
@@ -16,6 +16,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "Documentation",
+      "description": "Public static API reference; no credential entry or API execution."
+    },
     {
       "name": "Audit",
       "description": "Global operator audit history with safe metadata projection."
@@ -2446,6 +2450,15 @@
         },
         "required": ["generation_id", "message_id", "status"],
         "additionalProperties": false
+      },
+      "OpenApiArtifact": {
+        "type": "object",
+        "properties": {
+          "openapi": { "type": "string", "enum": ["3.0.3"] },
+          "info": { "type": "object", "additionalProperties": {} },
+          "paths": { "type": "object", "additionalProperties": {} }
+        },
+        "required": ["openapi", "info", "paths"]
       }
     },
     "parameters": {}
@@ -6132,6 +6145,176 @@
             "content": {
               "application/problem+json": {
                 "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "operationId": "getApiDocumentation",
+        "tags": ["Documentation"],
+        "security": [],
+        "summary": "Read the offline API reference",
+        "description": "Public read-only static contract metadata, not live instance configuration or data. Only exact GET/HEAD paths exempt Bearer; IP admission still applies, authenticated-token budget does not. Query/header values ignored and never embedded. No token input, interactive API execution, model, database or network/CDN dependency. HTML contains native operation/schema disclosures and all contract examples; the JSON endpoint returns exact checked-artifact bytes. Source and compiled workspace/container use the same packaged artifact; one boot snapshot per process, restart after regenerating. Missing/corrupt artifact fails startup with a fixed error, not a partial page. Contract describes supported interfaces, not runtime availability/readiness. Complete integration guide remains a separate delivery. Successful responses no-store/nosniff/no-referrer, HTML has restrictive no-script/frame/form CSP. The relative download link works directly and behind the existing /api prefix. No automatic requests, retries or billable probes.",
+        "responses": {
+          "200": {
+            "description": "Complete read-only HTML reference generated from the artifact, with no executable code or credential fields.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "X-Content-Type-Options": {
+                "schema": { "type": "string", "enum": ["nosniff"] },
+                "required": true
+              },
+              "Referrer-Policy": {
+                "schema": { "type": "string", "enum": ["no-referrer"] },
+                "required": true
+              },
+              "Content-Security-Policy": { "schema": { "type": "string" }, "required": true }
+            },
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          },
+          "429": {
+            "description": "IP request budget exhausted; wait according to Retry-After. HEAD has no body.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headApiDocumentation",
+        "tags": ["Documentation"],
+        "security": [],
+        "summary": "Inspect headers of the offline API reference",
+        "description": "Public read-only static contract metadata, not live instance configuration or data. Only exact GET/HEAD paths exempt Bearer; IP admission still applies, authenticated-token budget does not. Query/header values ignored and never embedded. No token input, interactive API execution, model, database or network/CDN dependency. HTML contains native operation/schema disclosures and all contract examples; the JSON endpoint returns exact checked-artifact bytes. Source and compiled workspace/container use the same packaged artifact; one boot snapshot per process, restart after regenerating. Missing/corrupt artifact fails startup with a fixed error, not a partial page. Contract describes supported interfaces, not runtime availability/readiness. Complete integration guide remains a separate delivery. Successful responses no-store/nosniff/no-referrer, HTML has restrictive no-script/frame/form CSP. The relative download link works directly and behind the existing /api prefix. No automatic requests, retries or billable probes.",
+        "responses": {
+          "200": {
+            "description": "Same static response headers as GET; empty body.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "X-Content-Type-Options": {
+                "schema": { "type": "string", "enum": ["nosniff"] },
+                "required": true
+              },
+              "Referrer-Policy": {
+                "schema": { "type": "string", "enum": ["no-referrer"] },
+                "required": true
+              },
+              "Content-Security-Policy": { "schema": { "type": "string" }, "required": true }
+            }
+          },
+          "429": {
+            "description": "IP request budget exhausted; wait according to Retry-After. HEAD has no body.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs/openapi.json": {
+      "get": {
+        "operationId": "getOpenApiArtifact",
+        "tags": ["Documentation"],
+        "security": [],
+        "summary": "Read the checked OpenAPI document",
+        "description": "Public read-only static contract metadata, not live instance configuration or data. Only exact GET/HEAD paths exempt Bearer; IP admission still applies, authenticated-token budget does not. Query/header values ignored and never embedded. No token input, interactive API execution, model, database or network/CDN dependency. HTML contains native operation/schema disclosures and all contract examples; the JSON endpoint returns exact checked-artifact bytes. Source and compiled workspace/container use the same packaged artifact; one boot snapshot per process, restart after regenerating. Missing/corrupt artifact fails startup with a fixed error, not a partial page. Contract describes supported interfaces, not runtime availability/readiness. Complete integration guide remains a separate delivery. Successful responses no-store/nosniff/no-referrer, HTML has restrictive no-script/frame/form CSP. The relative download link works directly and behind the existing /api prefix. No automatic requests, retries or billable probes.",
+        "responses": {
+          "200": {
+            "description": "Exact submitted OpenAPI3.0.3 document, not a filtered runtime capability report.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "X-Content-Type-Options": {
+                "schema": { "type": "string", "enum": ["nosniff"] },
+                "required": true
+              },
+              "Referrer-Policy": {
+                "schema": { "type": "string", "enum": ["no-referrer"] },
+                "required": true
+              },
+              "Content-Security-Policy": { "schema": { "type": "string" }, "required": true }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OpenApiArtifact" } }
+            }
+          },
+          "429": {
+            "description": "IP request budget exhausted; wait according to Retry-After. HEAD has no body.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headOpenApiArtifact",
+        "tags": ["Documentation"],
+        "security": [],
+        "summary": "Inspect headers of the checked OpenAPI document",
+        "description": "Public read-only static contract metadata, not live instance configuration or data. Only exact GET/HEAD paths exempt Bearer; IP admission still applies, authenticated-token budget does not. Query/header values ignored and never embedded. No token input, interactive API execution, model, database or network/CDN dependency. HTML contains native operation/schema disclosures and all contract examples; the JSON endpoint returns exact checked-artifact bytes. Source and compiled workspace/container use the same packaged artifact; one boot snapshot per process, restart after regenerating. Missing/corrupt artifact fails startup with a fixed error, not a partial page. Contract describes supported interfaces, not runtime availability/readiness. Complete integration guide remains a separate delivery. Successful responses no-store/nosniff/no-referrer, HTML has restrictive no-script/frame/form CSP. The relative download link works directly and behind the existing /api prefix. No automatic requests, retries or billable probes.",
+        "responses": {
+          "200": {
+            "description": "Same static response headers as GET; empty body.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "X-Content-Type-Options": {
+                "schema": { "type": "string", "enum": ["nosniff"] },
+                "required": true
+              },
+              "Referrer-Policy": {
+                "schema": { "type": "string", "enum": ["no-referrer"] },
+                "required": true
+              },
+              "Content-Security-Policy": { "schema": { "type": "string" }, "required": true }
+            }
+          },
+          "429": {
+            "description": "IP request budget exhausted; wait according to Retry-After. HEAD has no body.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Retry-After": {
+                "schema": { "type": "string", "pattern": "^[1-9]\\d*$" },
+                "required": true
               }
             }
           }

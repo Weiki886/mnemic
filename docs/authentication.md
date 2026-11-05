@@ -33,12 +33,14 @@ pnpm cli doctor --server http://127.0.0.1:3000
 `VITE_API_BASE_URL` 仅配置服务地址，不能在任何 `VITE_*` 变量里填写 Token。
 
 跨源开发需让 `CORS_ORIGIN` 精确等于 Web 源（含协议、主机、端口，默认 `http://localhost:5173`）。
-配置源的 OPTIONS 预检不带 Token，只返回 CORS 协议响应，不执行业务逻辑；真实请求仍必须鉴权。
+配置源的 OPTIONS 预检不带 Token，只返回 CORS 协议响应，不执行业务逻辑；真实业务请求仍必须鉴权。
 普通 OPTIONS 和其他源的未认证预检返回 401。CORS 不替代鉴权。
 
 ## 接口与安全边界
 
-- 仅 `GET/HEAD /health` 公开用于存活检查。所有业务接口、未知路由和模型探测均先鉴权，
+- `GET/HEAD /health` 公开用于存活检查；精确的 `GET/HEAD /docs` 与 `/docs/openapi.json`
+  公开静态契约，不展示实例数据、不接收 Token、不执行 API。文档仍受 IP 限流，不消耗认证 Token 桶。
+  其余业务接口、未知路由和模型探测均先鉴权，
   包括读取记忆、修正、软删除、Providers 管理、对话和 doctor。没有按项目 UUID 推断用户权限。
 - 认证失败统一 `401 application/problem+json`，`code: UNAUTHORIZED`、请求 ID、
   `WWW-Authenticate: Bearer realm="mnemic"`、`Cache-Control: no-store`。不接受 cookie/query/x-api-key 代替 Bearer。

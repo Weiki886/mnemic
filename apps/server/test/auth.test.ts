@@ -38,7 +38,7 @@ describe("#20 最小 Bearer 鉴权", () => {
     ).toBe("skipped");
   });
 
-  it("仅健康检查公开；路径前缀/编码/业务/未知路由均不能绕过", async () => {
+  it("健康与静态文档之外的路径前缀/编码/业务/未知路由均不能绕过", async () => {
     const app = fixture();
     expect((await app.inject({ url: "/health" })).statusCode).toBe(200);
     expect((await app.inject({ url: "/health?probe=1" })).statusCode).toBe(200);
