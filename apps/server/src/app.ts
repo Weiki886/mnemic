@@ -1,3 +1,4 @@
+import { registerMemoryExportRoutes } from "./data-export/routes.js";
 import { HealthResponseSchema } from "./contracts/health.js";
 import { registerDocumentationRoutes } from "./docs/routes.js";
 import { registerAuditRoutes } from "./audit/routes.js";
@@ -236,6 +237,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     );
   }
   if (options.db) {
+    registerMemoryExportRoutes(app, options.db);
     registerAuditRoutes(app, options.db);
     registerFeatureFlagRoutes(app, options.db);
     registerUsageRoutes(app, options.db, options.usagePricing);
