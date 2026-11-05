@@ -66,7 +66,7 @@ it("encodes an empty manifest/end archive with hand-computed line hash and all e
   expect(decodeMemoryExport(Buffer.from(golden)).counts).toEqual(counts);
 });
 it("preserves exact inner PG JSON text including bigint/numeric lexemes, NULL, microseconds and escaped newline", () => {
-  const raw = ` {"id":"${id}","n":9007199254740993,"price":0.12345678901234567890,"at":"2026-11-05T00:00:00.123456Z","v":[null,true],"text":"中文\\n\\\"x\\\""} `;
+  const raw = ` {"id":"${id}","n":9007199254740993,"price":0.12345678901234567890,"at":"2026-11-05T00:00:00.123456Z","v":[null,true],"text":"中文\\n\\"x\\""} `;
   const records = tables.map((table) => row(table, raw));
   const decoded = decodeMemoryExport(encodeMemoryExport(input(records)));
   expect(decoded.records).toEqual(records);

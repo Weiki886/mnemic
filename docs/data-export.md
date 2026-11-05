@@ -51,7 +51,7 @@ sha256 覆盖 manifest 与所有 row 的实际 UTF8 字节，包含各自 LF，�
 
 固定 v1 上限：10000 条 row、每个编码后物理行 1 MiB（不含 LF）、整个文件 16 MiB（含 LF）。元数据和 end 也计入预算，JSON 转义扩张按实际 wire 字节计算；UTF8 多字节字符不能按 JS 字符数冒充字节。空归档有效，但仍需 manifest、完整零计数和 end。
 
-编码器先限制集合数量，再逐行验证；字节限制在内层 JSON 解析前执行。解码器先限制输入字节，再 fatal UTF8 解码与逐行限制；不接受 BOM、CRLF、空行、部分文件、未知封装或自动修复。超限整体失败，没有截断、分页续传或部分成功。上限限制的是接受的格式 / 载荷，不是整个进程的精确内存或 CPU 硬隔离保证。
+编码器先限制集合数量，再逐行验证；每行 wire 字节限制在内层 JSON 解析前执行，累计文件预算在接收各行与 end 时检查。解码器先限制输入字节，再 fatal UTF8 解码与逐行限制；不接受 BOM、CRLF、空行、部分文件、未知封装或自动修复。超限整体失败，没有截断、分页续传或部分成功。上限限制的是接受的格式 / 载荷，不是整个进程的精确内存或 CPU 硬隔离保证。
 
 仅抛固定 `MemoryExportError`，code 为 EXPORT_INVALID、EXPORT_LIMIT_EXCEEDED 或 EXPORT_INTEGRITY_FAILED，不附原始 JSON / parser 异常。解码结果的 metadata / tables / records / counts 被独立复制并冻结，row_json 保留原文本；编码得到的 Buffer 是普通可变字节，不宣称不可修改。内部入口为 `apps/server/src/data-export/codec.ts`，未注册 shared SDK 或公开路由。
 
