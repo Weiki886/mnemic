@@ -43,7 +43,8 @@ pnpm dev:web                      # http://localhost:5173，输入项目 UUID �
 单用户 Token 可操作所有项目；原生启动默认只监听环回。
 配置、轮换和日志边界见 [鉴权说明](docs/authentication.md)。
 启动后可浏览 `http://127.0.0.1:3000/docs` 的静态 API 参考，无需 Token、不会执行 API；
-原始契约与边界见 [OpenAPI 说明](docs/openapi.md)。
+原始契约与边界见 [OpenAPI 说明](docs/openapi.md)；三槽位配置、项目准备与记忆 API 闭环见
+[中间件接入指南](docs/integration-guide.md)。
 全栈 Compose、Caddy HTTPS、VPS 操作和备份升级见 [部署指南](docs/deployment.md)，使用独立的 `deploy/.env`；
 真实 VPS 与公共证书签发/续期仍待环境验收，不等于已验证公网部署。
 
