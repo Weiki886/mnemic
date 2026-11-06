@@ -36,6 +36,23 @@ jobs:
       - name: OpenAPI contract
         run: pnpm --filter @mnemic/server run openapi:check
 
+      - name: PostgreSQL 17 backup tools
+        run: |
+          if [ ! -x /usr/lib/postgresql/17/bin/pg_dump ]; then
+            curl --fail --silent --show-error --location \
+              https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              --output "$RUNNER_TEMP/mnemic-pgdg.asc"
+            postgres_fingerprint=$(gpg --show-keys --with-colons "$RUNNER_TEMP/mnemic-pgdg.asc" | awk -F: '$1 == "fpr" { print $10; exit }')
+            test "$postgres_fingerprint" = B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+            sudo install -D -m 644 "$RUNNER_TEMP/mnemic-pgdg.asc" /usr/share/keyrings/mnemic-pgdg.asc
+            postgres_codename=$(lsb_release -cs)
+            postgres_arch=$(dpkg --print-architecture)
+            echo "deb [arch=$postgres_arch signed-by=/usr/share/keyrings/mnemic-pgdg.asc] https://apt.postgresql.org/pub/repos/apt $postgres_codename-pgdg main" | sudo tee /etc/apt/sources.list.d/mnemic-pgdg.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client-17
+          fi
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
       - name: Test
         run: pnpm -r run test && node --test scripts/*.test.mjs
 
