@@ -1,8 +1,8 @@
 # SQL 融合基座（#9，第一切片）
 
-本节描述内部 `buildRankFusionQuery()`：对调用方已经提供的候选分数关系生成纯 SQL SELECT，支持 RRF / 加权两种模式。**尚未接入 retrieve()**；现有两路加权检索、拒答阈值、API、trace、默认开关与运行时行为保持不变。后续[候选读取组件](retrieval-candidates.md)已在内部接入实体匹配和当前版本时间过滤；生产接线、Reranker、读时消解和 Token 预算仍未交付，不能据此关闭 #9 / #22。
+本节描述内部 `buildRankFusionQuery()`：对调用方已经提供的候选分数关系生成纯 SQL SELECT，支持 RRF / 加权两种模式。已通过[运行时融合实验](runtime-rank-fusion.md)接入 `retrieve({fusion: ...})`；未传实验选项时原两路检索、拒答阈值、API 与默认开关保持不变。后续[候选读取组件](retrieval-candidates.md)已在内部接入实体匹配和当前版本时间过滤；实体/时间生产接线、Reranker、读时消解和 Token 预算完整链路仍未交付，不能据此关闭 #9 / #22。
 
-后续按小 PR 接入：已实现候选仓储的生产编排；可关闭的 Reranker；不落库的读时消解；按 salience 降序、recorded_from 新者优先的 Token 预算及截断轨迹。完整矩阵 / 指标由 #12 消费，不以本轮 SQL 用例替代指标验收。
+后续按小 PR 接入：实体/时间的输入策略及运行时开关；可关闭的 Reranker；不落库的读时消解；按 salience 降序、recorded_from 新者优先的 Token 预算及截断轨迹。完整矩阵 / 指标由 #12 消费，不以本轮 SQL 用例替代指标验收。
 
 ## 输入与 SQL 组合
 
@@ -30,7 +30,7 @@ const query = buildRankFusionQuery({
 const result = await db.execute(sql`WITH recall_scores AS (...) ${query}`);
 ```
 
-省略号表示尚未接线的上游召回，不是可直接运行的 API 示例。真实 PostgreSQL 测试使用完整 VALUES CTE，独立手算预期。
+省略号表示调用方提供的上游召回关系，不是可直接运行的 API 示例。真实 PostgreSQL 测试使用完整 VALUES CTE，独立手算预期。
 
 flags 直接校验 shared 的完整十键 `FeatureFlagsSchema`，只读取其中四个 retrieval_* 开关。调用方应传同一次操作捕获的受信快照，不接受 HTTP / 模型自报配置。此函数接受实体 / 时间布尔值，**不代表生产 captureFeatureFlags 已支持开启它们**；现有运行时仍拒绝未实现字段，管理 API 不变。
 
@@ -63,6 +63,6 @@ SQL 用 numeric 运算 / 汇总，不通过 float8 累加把极端输入算成 I
 
 ## 验证与回滚
 
-真实 PG VALUES CTE 测试覆盖手算 RRF / weighted、分数尺度变化、并列、重复、非有限值、16种开关组合、最大800项及裁剪、参数捕获和 read-only 执行。纯配置测试覆盖边界与非法值，不访问数据库 / 模型。本模块被内部候选仓储复用，与现有 retrieve() 仍没有调用边，原检索行为继续由原套件验证。
+真实 PG VALUES CTE 测试覆盖手算 RRF / weighted、分数尺度变化、并列、重复、非有限值、16种开关组合、最大800项及裁剪、参数捕获和 read-only 执行。纯配置测试覆盖边界与非法值，不访问数据库 / 模型。本模块被内部候选仓储及显式运行时融合路径复用；未传 fusion 的原检索行为继续由原套件验证。
 
 回滚移除 fusion.ts、对应测试和本说明即可；无数据 / schema 回退。#9 的公开实体 / 时间接线、Reranker / 读时消解 / Token预算 / 轨迹和 #22 完整消融矩阵尚未完成，Issue 均保持打开。
