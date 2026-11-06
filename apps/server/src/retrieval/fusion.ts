@@ -12,7 +12,7 @@ const weights = z
   .object({ vector: coefficient, keyword: coefficient, entity: coefficient, time: coefficient })
   .strict()
   .refine((w) => Math.abs(w.vector + w.keyword + w.entity + w.time - 1) <= 1e-9);
-const optionsSchema = z.discriminatedUnion("mode", [
+export const RankFusionOptionsSchema = z.discriminatedUnion("mode", [
   z
     .object({ ...common, mode: z.literal("rrf"), k: z.number().int().min(1).max(1000).default(60) })
     .strict(),
@@ -25,7 +25,7 @@ const optionsSchema = z.discriminatedUnion("mode", [
  * fused_score is PostgreSQL numeric text: callers must not assume an HTTP number contract.
  */
 export function buildRankFusionQuery(value: unknown): SQL {
-  const parsed = optionsSchema.safeParse(value);
+  const parsed = RankFusionOptionsSchema.safeParse(value);
   if (!parsed.success) throw Error("INVALID_FUSION_OPTIONS");
   const options = parsed.data,
     f = options.flags;
