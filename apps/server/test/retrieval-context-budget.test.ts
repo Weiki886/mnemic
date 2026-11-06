@@ -197,3 +197,23 @@ it("hides counter errors including content or tokenizer internals", () => {
     }),
   ).toThrow(/^MEMORY_TOKEN_COUNT_FAILED$/);
 });
+
+it("does not return an accepted partial prefix when later token counting fails", () => {
+  const counter = (text: string) => {
+    if (text.includes("[2]")) throw Error("private tokenizer response");
+    return text === "（无相关记忆）" ? 0 : 1;
+  };
+  expect(() =>
+    packMemoryContext({ maxTokens: 2, candidates: [entry(1), entry(2)] }, counter),
+  ).toThrow(/^MEMORY_TOKEN_COUNT_FAILED$/);
+});
+it("accepts leap day and UTC year boundaries without losing timestamp order", () => {
+  const candidates = [
+    entry(1, { recordedFrom: "0001-01-01T00:00:00Z" }),
+    entry(2, { recordedFrom: "2024-02-29T23:59:59.999999Z" }),
+    entry(3, { recordedFrom: "9999-12-31T23:59:59.999999Z" }),
+  ];
+  expect(packMemoryContext({ maxTokens: 3, candidates }, onePerEntry).selectedIds).toEqual(
+    [3, 2, 1].map(id),
+  );
+});
