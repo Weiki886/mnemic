@@ -1,8 +1,8 @@
 # SQL 融合基座（#9，第一切片）
 
-本轮只新增内部 `buildRankFusionQuery()`：对调用方已经提供的候选分数关系生成纯 SQL SELECT，支持 RRF / 加权两种模式。**尚未接入 retrieve()**；现有两路加权检索、拒答阈值、API、trace、默认开关与运行时行为保持不变。没有实体 / 时间召回、Reranker、读时消解或 Token 预算实现，不能据此关闭 #9 / #22。
+本节描述内部 `buildRankFusionQuery()`：对调用方已经提供的候选分数关系生成纯 SQL SELECT，支持 RRF / 加权两种模式。**尚未接入 retrieve()**；现有两路加权检索、拒答阈值、API、trace、默认开关与运行时行为保持不变。后续[候选读取组件](retrieval-candidates.md)已在内部接入实体匹配和当前版本时间过滤；生产接线、Reranker、读时消解和 Token 预算仍未交付，不能据此关闭 #9 / #22。
 
-后续按小 PR 接入：项目内当前 active 版本的实体 / 时间候选及四路查询；可关闭的 Reranker；不落库的读时消解；按 salience 降序、recorded_from 新者优先的 Token 预算及截断轨迹。完整矩阵 / 指标由 #12 消费，不以本轮 SQL 用例替代指标验收。
+后续按小 PR 接入：已实现候选仓储的生产编排；可关闭的 Reranker；不落库的读时消解；按 salience 降序、recorded_from 新者优先的 Token 预算及截断轨迹。完整矩阵 / 指标由 #12 消费，不以本轮 SQL 用例替代指标验收。
 
 ## 输入与 SQL 组合
 
@@ -63,6 +63,6 @@ SQL 用 numeric 运算 / 汇总，不通过 float8 累加把极端输入算成 I
 
 ## 验证与回滚
 
-真实 PG VALUES CTE 测试覆盖手算 RRF / weighted、分数尺度变化、并列、重复、非有限值、16种开关组合、最大800项及裁剪、参数捕获和 read-only 执行。纯配置测试覆盖边界与非法值，不访问数据库 / 模型。本模块与现有 retrieve() 没有调用边，原检索行为继续由原套件验证。
+真实 PG VALUES CTE 测试覆盖手算 RRF / weighted、分数尺度变化、并列、重复、非有限值、16种开关组合、最大800项及裁剪、参数捕获和 read-only 执行。纯配置测试覆盖边界与非法值，不访问数据库 / 模型。本模块被内部候选仓储复用，与现有 retrieve() 仍没有调用边，原检索行为继续由原套件验证。
 
-回滚移除 fusion.ts、对应测试和本说明即可；无数据 / schema 回退。#9 的实体 / 时间 / Reranker / 读时消解 / Token预算 / 轨迹和 #22 完整消融矩阵尚未完成，Issue 均保持打开。
+回滚移除 fusion.ts、对应测试和本说明即可；无数据 / schema 回退。#9 的公开实体 / 时间接线、Reranker / 读时消解 / Token预算 / 轨迹和 #22 完整消融矩阵尚未完成，Issue 均保持打开。
