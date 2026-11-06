@@ -14,7 +14,7 @@
   将来数据库适配器需先明确转换 PG numeric，不能用 confidence 或 importance 替代 salience。
 - `recordedFrom` 必须是有效的 UTC ISO 时间（年 0001–9999、可带 1–6 位小数）。
   保留 PostgreSQL 微秒；不能先经 JS Date 丢掉后三位精度。
-- 单条 `content` 1–16 KiB UTF-8，总和不超过 64 KiB；不截断正文凑限制。
+- `content` 非空、单条不超过 16 KiB UTF-8，总和不超过 64 KiB；不截断正文凑限制。
   非法 Unicode 孤代理、NUL、未知字段和超限输入整体拒绝，且不调用计数器。
 - `countTokens` 是**可信调用方提供的同步分词器**，必须对应最终使用的聊天模型。
   没有默认字符数估算、字节数估算或额外计费调用。返回值必须是非负安全整数；失败或非法值只抛固定错误，
