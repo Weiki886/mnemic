@@ -1,7 +1,6 @@
 import { beforeAll, afterAll, afterEach, expect, it } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DEFAULT_FEATURE_FLAGS } from "@mnemic/shared/flags";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { readCandidateScores } from "../src/retrieval/candidates.js";
