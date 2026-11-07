@@ -1,6 +1,11 @@
 import { captureFeatureFlags } from "../flags/runtime.js";
 import { parseRuntimeFusion, readFusedCandidates } from "./runtime-fusion.js";
 import type { CandidateScore } from "./candidates.js";
+import {
+  budgetShortlist,
+  parseRuntimeMemoryBudget,
+  type BudgetMetadata,
+} from "./runtime-budget.js";
 import { embed } from "ai";
 import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -39,6 +44,8 @@ export interface RetrieveResult {
 export interface RetrieveOptions extends ResolveOptions {
   /** Trusted internal experiment, requires its own threshold; not accepted from HTTP bodies. */
   fusion?: unknown;
+  /** Trusted final-chat tokenizer + memory-block budget; requires explicit fusion. Never HTTP input. */
+  memoryBudget?: unknown;
   /** 显式手动召回的 embedding 时间预算；不改变普通调用方的默认重试。 */
   signal?: AbortSignal;
   topK?: number;
@@ -62,6 +69,7 @@ export async function retrieve(
 ): Promise<RetrieveResult> {
   const topK = options.topK ?? DEFAULT_TOP_K;
   const fusion = parseRuntimeFusion(options.fusion);
+  const memoryBudget = parseRuntimeMemoryBudget(options.memoryBudget, fusion !== undefined);
   if (
     fusion &&
     (options.threshold !== undefined || !Number.isInteger(topK) || topK < 1 || topK > 200)
@@ -108,6 +116,7 @@ export async function retrieve(
   }
   let all: RetrievalCandidate[];
   let fusionDetails = new Map<string, CandidateScore["components"]>();
+  let budgetMetadata = new Map<string, BudgetMetadata>();
   if (fusion) {
     const result = await readFusedCandidates(
       db,
@@ -119,6 +128,7 @@ export async function retrieve(
     );
     all = result.candidates;
     fusionDetails = result.details;
+    budgetMetadata = result.budgetMetadata;
   } else {
     // 向量字面量占位：queryVec 为 null 时 vec CTE 零行（where false），
     // 占位用单位向量——零向量会使 cosine 距离产生 NaN，必须避开
@@ -183,12 +193,39 @@ export async function retrieve(
   }
 
   // 3. 拒答判定：零命中或最高融合分低于阈值
-  const abstained = all.length === 0 || all[0]!.fusedScore < threshold;
+  let abstained = all.length === 0 || all[0]!.fusedScore < threshold;
   all.forEach((c, i) => {
     c.selected = !abstained && i < topK;
     c.reason = c.selected ? "top_k" : abstained ? "below_threshold" : "below_topk";
   });
-  const selected = all.filter((c) => c.selected);
+  let selected = all.filter((c) => c.selected);
+  const budgetDetails = new Map<
+    string,
+    { maxTokens: number; tokenCount: number; contextPosition: number | null }
+  >();
+  const budgetDiscarded = new Set<string>();
+  if (memoryBudget) {
+    const before = selected;
+    const result = budgetShortlist(before, budgetMetadata, memoryBudget);
+    selected = result.selected;
+    const positions = new Map(selected.map((c, i) => [c.beliefVersionId, i + 1]));
+    for (const c of before) {
+      const position = positions.get(c.beliefVersionId) ?? null;
+      c.selected = position !== null;
+      if (!c.selected) {
+        c.reason = "below_topk";
+        budgetDiscarded.add(c.beliefVersionId);
+      }
+      budgetDetails.set(c.beliefVersionId, {
+        maxTokens: memoryBudget.maxTokens,
+        tokenCount: result.packed.tokenCount,
+        contextPosition: position,
+      });
+    }
+    abstained = abstained || selected.length === 0;
+  }
+  // Trace's selected order matches numbered context; fusion ranks remain in rankFusion metadata.
+  const traceOrder = memoryBudget ? [...selected, ...all.filter((c) => !c.selected)] : all;
 
   // 4. trace 落库（只存 ID 与得分，不存内容快照；开关状态入 trace）
   const traceId = uuidv7();
@@ -196,13 +233,16 @@ export async function retrieve(
     id: traceId,
     projectId,
     queryText: query,
-    candidates: all.map((c) => ({
+    candidates: traceOrder.map((c) => ({
       beliefVersionId: c.beliefVersionId,
       vectorScore: c.vectorScore,
       keywordScore: c.keywordScore,
       fusedScore: c.fusedScore,
       selected: c.selected,
-      reason: c.reason,
+      reason: budgetDiscarded.has(c.beliefVersionId) ? "token_budget" : c.reason,
+      ...(budgetDetails.has(c.beliefVersionId)
+        ? { memoryBudget: budgetDetails.get(c.beliefVersionId)! }
+        : {}),
       ...(fusion
         ? { rankFusion: { ...fusion, components: fusionDetails.get(c.beliefVersionId)! } }
         : {}),
