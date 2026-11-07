@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RecallTimePointSchema } from "@mnemic/shared/memory";
 import { RankFusionOptionsSchema } from "./fusion.js";
 const text = z
   .string()
@@ -6,18 +7,6 @@ const text = z
   .min(1)
   .regex(/^[^\p{Cc}\p{Cs}]*$/u);
 const label = text.max(128);
-const validAt = z
-  .string()
-  .datetime()
-  .regex(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z$/)
-  .refine((s) => {
-    const date = new Date(s.slice(0, 10) + "T00:00:00Z");
-    return (
-      !s.startsWith("0000-") &&
-      Number.isFinite(date.getTime()) &&
-      date.toISOString().slice(0, 10) === s.slice(0, 10)
-    );
-  });
 const Input = z
   .object({
     projectId: z.string().uuid().toLowerCase(),
@@ -28,7 +17,7 @@ const Input = z
       .regex(/^[^\0\p{Cs}]*$/u)
       .default(""),
     entities: z.array(label).max(32).default([]),
-    validAt: validAt.optional(),
+    validAt: RecallTimePointSchema.optional(),
     embedding: z
       .object({
         model: z

@@ -1,6 +1,6 @@
 import { captureFeatureFlags } from "../flags/runtime.js";
-import { parseRuntimeFusion, readFusedCandidates } from "./runtime-fusion.js";
-import type { CandidateScore } from "./candidates.js";
+import { captureRecallTime, parseRuntimeFusion, readFusedCandidates } from "./runtime-fusion.js";
+import { buildValidTimeFilter, type CandidateScore } from "./candidates.js";
 import {
   budgetShortlist,
   parseRuntimeMemoryBudget,
@@ -44,6 +44,8 @@ export interface RetrieveResult {
 export interface RetrieveOptions extends ResolveOptions {
   /** Trusted internal experiment, requires its own threshold; not accepted from HTTP bodies. */
   fusion?: unknown;
+  /** Trusted UTC time override; HTTP remains query-only. Ignored when retrieval_time is off. */
+  validAt?: unknown;
   /** Trusted final-chat tokenizer + memory-block budget; requires explicit fusion. Never HTTP input. */
   memoryBudget?: unknown;
   /** 显式手动召回的 embedding 时间预算；不改变普通调用方的默认重试。 */
@@ -69,14 +71,17 @@ export async function retrieve(
 ): Promise<RetrieveResult> {
   const topK = options.topK ?? DEFAULT_TOP_K;
   const fusion = parseRuntimeFusion(options.fusion);
+  const capturedTime = captureRecallTime(options.validAt);
+  const legacyThreshold = options.threshold ?? ABSTAIN_THRESHOLD;
   const memoryBudget = parseRuntimeMemoryBudget(options.memoryBudget, fusion !== undefined);
   if (
     fusion &&
     (options.threshold !== undefined || !Number.isInteger(topK) || topK < 1 || topK > 200)
   )
     throw Error("INVALID_RUNTIME_FUSION_OPTIONS");
-  const threshold = fusion?.threshold ?? options.threshold ?? ABSTAIN_THRESHOLD;
   const flagsSnapshot = await captureFeatureFlags(db, options);
+  const queryValidAt = flagsSnapshot.flags.retrieval_time ? capturedTime : null;
+  const threshold = fusion?.threshold ?? legacyThreshold;
   const reinforce = flagsSnapshot.flags.read_time_reinforcement;
 
   // 1. 查询向量化（无 embedding 配置时降级为仅关键词路，向量路空集）
@@ -125,6 +130,7 @@ export async function retrieve(
       flagsSnapshot.flags,
       fusion,
       queryVec && queryModelId !== null ? { model: queryModelId, vector: queryVec } : null,
+      queryValidAt ?? undefined,
     );
     all = result.candidates;
     fusionDetails = result.details;
@@ -141,6 +147,7 @@ export async function retrieve(
       from beliefs b
       join belief_versions bv on bv.id = b.current_version_id and bv.belief_id = b.id
       where b.project_id = ${projectId} and b.status = 'active'
+        ${queryValidAt !== null ? sql`and bv.recorded_to is null ${buildValidTimeFilter(queryValidAt)}` : sql``}
     ), raw_vec as (
       select me.belief_version_id as version_id,
              1 - (me.embedding <=> ${vecLiteral}::vector) as vscore
@@ -233,6 +240,7 @@ export async function retrieve(
     id: traceId,
     projectId,
     queryText: query,
+    queryValidAt,
     candidates: traceOrder.map((c) => ({
       beliefVersionId: c.beliefVersionId,
       vectorScore: c.vectorScore,
