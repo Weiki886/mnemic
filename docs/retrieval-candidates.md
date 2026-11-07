@@ -2,7 +2,7 @@
 
 内部 `readCandidateScores(db, input)` 从真实 PostgreSQL 表召回并复用 [SQL 融合基座](retrieval-fusion.md)。当前支持**向量 / 关键词 / 实体三种分数来源，加当前版本的时间过滤**。这不是三路之外再给所有事实添加一个“时间票”；Issue #9 明确描述的是作用于当前 BeliefVersion 的 valid_from / valid_to 过滤。
 
-向量/关键词部分已通过[运行时融合实验](runtime-rank-fusion.md)接入 `retrieve` 的显式选项；实体/时间仍未接入默认 chat 或 recall HTTP。未传实验选项时现有 A0 两路路径、默认值、拒答、API / trace schema、配置管理 API 不改变；captureFeatureFlags 仍拒绝开启未实现字段。#9 / #22 保持打开，实体 / 时间公开接线、Reranker、只读消解、Token 预算及截断轨迹留后续。B 阶段实体关联图和自然语言时间理解不在本轮。
+向量/关键词部分已通过[运行时融合实验](runtime-rank-fusion.md)接入 `retrieve` 的显式选项；实体仍未接入默认 chat 或 recall HTTP；[时间过滤](runtime-time-filter.md)已接通。未传实验选项时现有 A0 两路路径、默认值、拒答、API / trace schema、配置管理 API 不改变；captureFeatureFlags 仍拒绝开启其余未实现字段。#9 / #22 保持打开，实体公开接线、Reranker、只读消解、Token 预算及截断轨迹留后续。B 阶段实体关联图和自然语言时间理解不在本轮。
 
 ## 内部契约
 
