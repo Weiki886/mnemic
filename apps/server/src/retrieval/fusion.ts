@@ -21,7 +21,7 @@ export const RankFusionOptionsSchema = z.discriminatedUnion("mode", [
 
 /**
  * SELECT over the caller's CTE recall_scores(belief_version_id uuid, route text, score float8).
- * No DB/model calls or project eligibility logic; not wired into retrieve() yet (#9 slice1).
+ * No DB/model calls or project eligibility logic; reused by opt-in retrieve() fusion (#9).
  * fused_score is PostgreSQL numeric text: callers must not assume an HTTP number contract.
  */
 export function buildRankFusionQuery(value: unknown): SQL {

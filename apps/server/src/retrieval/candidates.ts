@@ -14,16 +14,13 @@ export type CandidateScore = {
 };
 const empty = sql`select null::uuid as belief_version_id,null::float8 as score where false`;
 /** Project-scoped, current active version scores only. No model calls, trace writes or mutation. */
-export async function readCandidateScores(
-  db: Pick<PostgresJsDatabase, "execute">,
-  value: unknown,
-): Promise<CandidateScore[]> {
+export function buildCandidateScoresQuery(value: unknown): SQL | null {
   const input = candidateInput(value),
     flags = input.fusion.flags;
   const vectorOn = flags.retrieval_vector && input.embedding !== null;
   const keywordOn = flags.retrieval_keyword && input.query.length > 0;
   const entityOn = flags.retrieval_entity && input.entities.length > 0;
-  if (!vectorOn && !keywordOn && !entityOn) return [];
+  if (!vectorOn && !keywordOn && !entityOn) return null;
   const limit = input.fusion.perRouteLimit;
   let vector: SQL = empty,
     keyword: SQL = empty,
@@ -62,7 +59,7 @@ export async function readCandidateScores(
     ? sql`and bv.valid_from<=${input.validAt}::timestamptz and (bv.valid_to is null or ${input.validAt}::timestamptz < bv.valid_to)`
     : sql``;
   // One SQL statement: source membership and all rank votes share one MVCC statement snapshot.
-  const result = await db.execute<CandidateScore>(sql`
+  return sql`
    with eligible as (
      select bv.id as belief_version_id,bv.value,bv.source_observation_id
      from beliefs b join belief_versions bv on bv.id=b.current_version_id and bv.belief_id=b.id
@@ -72,6 +69,14 @@ export async function readCandidateScores(
      select belief_version_id,'vector'::text as route,score from vector_scores
      union all select belief_version_id,'keyword'::text,score from keyword_scores
      union all select belief_version_id,'entity'::text,score from entity_scores
-   ) ${buildRankFusionQuery(input.fusion)}`);
-  return [...result];
+   ) ${buildRankFusionQuery(input.fusion)}`;
+}
+
+export async function readCandidateScores(
+  db: Pick<PostgresJsDatabase, "execute">,
+  value: unknown,
+): Promise<CandidateScore[]> {
+  const query = buildCandidateScoresQuery(value);
+  if (!query) return [];
+  return [...(await db.execute<CandidateScore>(query))];
 }

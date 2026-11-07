@@ -1,4 +1,6 @@
 import { captureFeatureFlags } from "../flags/runtime.js";
+import { parseRuntimeFusion, readFusedCandidates } from "./runtime-fusion.js";
+import type { CandidateScore } from "./candidates.js";
 import { embed } from "ai";
 import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -35,6 +37,8 @@ export interface RetrieveResult {
 }
 
 export interface RetrieveOptions extends ResolveOptions {
+  /** Trusted internal experiment, requires its own threshold; not accepted from HTTP bodies. */
+  fusion?: unknown;
   /** 显式手动召回的 embedding 时间预算；不改变普通调用方的默认重试。 */
   signal?: AbortSignal;
   topK?: number;
@@ -57,15 +61,22 @@ export async function retrieve(
   options: RetrieveOptions = {},
 ): Promise<RetrieveResult> {
   const topK = options.topK ?? DEFAULT_TOP_K;
-  const threshold = options.threshold ?? ABSTAIN_THRESHOLD;
+  const fusion = parseRuntimeFusion(options.fusion);
+  if (
+    fusion &&
+    (options.threshold !== undefined || !Number.isInteger(topK) || topK < 1 || topK > 200)
+  )
+    throw Error("INVALID_RUNTIME_FUSION_OPTIONS");
+  const threshold = fusion?.threshold ?? options.threshold ?? ABSTAIN_THRESHOLD;
   const flagsSnapshot = await captureFeatureFlags(db, options);
   const reinforce = flagsSnapshot.flags.read_time_reinforcement;
 
   // 1. 查询向量化（无 embedding 配置时降级为仅关键词路，向量路空集）
   let queryVec: number[] | null = null;
+  let queryModelId: string | null = null;
   if (flagsSnapshot.flags.retrieval_vector) {
     try {
-      const { model } = await resolveModel(db, masterKey, "embedding", {
+      const { model, modelId } = await resolveModel(db, masterKey, "embedding", {
         ...options,
         usageContext: {
           projectId,
@@ -76,6 +87,7 @@ export async function retrieve(
           purpose: "embedding_query",
         },
       });
+      queryModelId = modelId;
       queryVec = (
         await embed({
           model,
@@ -84,17 +96,36 @@ export async function retrieve(
         })
       ).embedding;
       // 零向量无余弦方向；错误数值也不能进入 pgvector 排序/trace。
-      if (!queryVec.every(Number.isFinite) || queryVec.every((n) => n === 0)) queryVec = null;
+      if (
+        !queryVec.every(Number.isFinite) ||
+        queryVec.every((n) => n === 0) ||
+        (fusion && queryVec.length !== 1024)
+      )
+        queryVec = null;
     } catch {
       queryVec = null;
     }
   }
-  // 向量字面量占位：queryVec 为 null 时 vec CTE 零行（where false），
-  // 占位用单位向量——零向量会使 cosine 距离产生 NaN，必须避开
-  const vecLiteral = `[${(queryVec ?? [1, ...new Array(1023).fill(0)]).join(",")}]`;
+  let all: RetrievalCandidate[];
+  let fusionDetails = new Map<string, CandidateScore["components"]>();
+  if (fusion) {
+    const result = await readFusedCandidates(
+      db,
+      projectId,
+      query,
+      flagsSnapshot.flags,
+      fusion,
+      queryVec && queryModelId !== null ? { model: queryModelId, vector: queryVec } : null,
+    );
+    all = result.candidates;
+    fusionDetails = result.details;
+  } else {
+    // 向量字面量占位：queryVec 为 null 时 vec CTE 零行（where false），
+    // 占位用单位向量——零向量会使 cosine 距离产生 NaN，必须避开
+    const vecLiteral = `[${(queryVec ?? [1, ...new Array(1023).fill(0)]).join(",")}]`;
 
-  // 2. 两路召回 + 加权融合（仅当前版本 + active belief）
-  const rows = await db.execute(sql`
+    // 2. 两路召回 + 加权融合（仅当前版本 + active belief）
+    const rows = await db.execute(sql`
     with eligible as (
       select b.id as belief_id, bv.id as version_id, b.subject, b.attribute, bv.value
       from beliefs b
@@ -133,22 +164,23 @@ export async function retrieve(
     order by fused desc, e.version_id
   `);
 
-  const all = rows.map((r): RetrievalCandidate => {
-    const vectorScore = r.vscore === null ? null : Number(r.vscore);
-    const keywordScore = r.kscore === null ? null : Number(r.kscore);
-    return {
-      beliefId: r.belief_id as string,
-      beliefVersionId: r.version_id as string,
-      subject: r.subject as string,
-      attribute: r.attribute as string,
-      value: r.value,
-      vectorScore,
-      keywordScore,
-      fusedScore: Number(r.fused),
-      selected: false,
-      reason: "below_threshold",
-    };
-  });
+    all = rows.map((r): RetrievalCandidate => {
+      const vectorScore = r.vscore === null ? null : Number(r.vscore);
+      const keywordScore = r.kscore === null ? null : Number(r.kscore);
+      return {
+        beliefId: r.belief_id as string,
+        beliefVersionId: r.version_id as string,
+        subject: r.subject as string,
+        attribute: r.attribute as string,
+        value: r.value,
+        vectorScore,
+        keywordScore,
+        fusedScore: Number(r.fused),
+        selected: false,
+        reason: "below_threshold",
+      };
+    });
+  }
 
   // 3. 拒答判定：零命中或最高融合分低于阈值
   const abstained = all.length === 0 || all[0]!.fusedScore < threshold;
@@ -171,6 +203,9 @@ export async function retrieve(
       fusedScore: c.fusedScore,
       selected: c.selected,
       reason: c.reason,
+      ...(fusion
+        ? { rankFusion: { ...fusion, components: fusionDetails.get(c.beliefVersionId)! } }
+        : {}),
     })),
     abstained,
     reinforceEnabled: reinforce,

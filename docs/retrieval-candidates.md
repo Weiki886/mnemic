@@ -2,7 +2,7 @@
 
 内部 `readCandidateScores(db, input)` 从真实 PostgreSQL 表召回并复用 [SQL 融合基座](retrieval-fusion.md)。当前支持**向量 / 关键词 / 实体三种分数来源，加当前版本的时间过滤**。这不是三路之外再给所有事实添加一个“时间票”；Issue #9 明确描述的是作用于当前 BeliefVersion 的 valid_from / valid_to 过滤。
 
-**尚未接入生产 retrieve()、chat 或 recall HTTP。** 现有 A0 两路加权路径、默认值、拒答、API / trace schema、配置管理 API 都不改变；captureFeatureFlags 仍拒绝开启未实现字段。#9 / #22 保持打开，实体 / 时间公开接线、Reranker、只读消解、Token 预算及截断轨迹留后续。B 阶段实体关联图和自然语言时间理解不在本轮。
+向量/关键词部分已通过[运行时融合实验](runtime-rank-fusion.md)接入 `retrieve` 的显式选项；实体/时间仍未接入默认 chat 或 recall HTTP。未传实验选项时现有 A0 两路路径、默认值、拒答、API / trace schema、配置管理 API 不改变；captureFeatureFlags 仍拒绝开启未实现字段。#9 / #22 保持打开，实体 / 时间公开接线、Reranker、只读消解、Token 预算及截断轨迹留后续。B 阶段实体关联图和自然语言时间理解不在本轮。
 
 ## 内部契约
 
@@ -12,7 +12,7 @@ input 是严格的普通配置对象：
 - fusion：直接使用 #125 的 `RankFusionOptionsSchema`，包括完整受信十键 flags、rrf / weighted、每路 / 总上限和相应系数，避免另一份配置定义。
 - query：可选，默认空串，trim 后最多1000字符；仅关键词路使用。不是 tsquery 语言或 SQL。
 - entities：可选，默认空数组，最多32个非空标签，每个 trim 后最多128字符，拒绝控制字符 / 孤代理。与存储标签的标准化及去重在 SQL 内完成。
-- embedding：可选 / null，形如 `{model, vector}`。vector 是1024个有限数字的非零数组；model 是 Provider 工厂选出的**原始 ID**，最长256字符，不做 trim / 大小写改写，拒绝纯空白和控制字符。模型解析、用量、配额和付费调用由未来上游执行；此函数既不查询 Provider，也不生成 embedding。
+- embedding：可选 / null，形如 `{model, vector}`。vector 是1024个有限数字的非零数组；model 是 Provider 工厂选出的**原始 ID**，最长256字符，不做 trim / 大小写改写，拒绝纯空白和控制字符。模型解析、用量、配额和付费调用由上游执行；此函数既不查询 Provider，也不生成 embedding。
 - validAt：可选的 UTC ISO 字符串，只接受 Z、最多6位小数、合法日历且年份0001..9999。时间开关开启时必须提供；关闭时该值不参与 SQL 过滤。验证日历时不把时间点重新序列化，原始微秒直接绑定为 timestamptz；当前不接受偏移量或自然语言。
 
 集合在 Zod 遍历前先限长，防止用巨型实体 / 向量数组耗费逐项验证。非法输入在读取 db.execute 前返回固定 INVALID_RECALL_INPUT。参数 / flags / 数组由 Zod 复制，首次异步数据库等待前完成 SQL 构造，调用方随后改对象不能换项目、分数模式或查询条件。无可用输入源时返回空数组且不查询数据库；单开时间过滤不会凭空产生候选。
@@ -62,4 +62,4 @@ vector / keyword / entity 各自在构造 SQL 前门控；关闭的分数源不�
 
 测试只创建 / 清理随机项目下的自有夹具，不读真实 Provider 或环境文件。覆盖两个项目、损坏 current 指针 / 来源、完整当前与历史版本、软删除 / 撤回 / 关闭版本、未知实体 JSON、重复 / Unicode / 字面匹配、选定模型、重复 / 零向量、极端查询尺度、关键词 AND、端点与微秒、16开关组合、有界输出、配置捕获和无写入。
 
-当前变化是内部候选读取组件及共享内部融合 schema 的导出，不增加 API、默认配置或应用接线。回滚移除新仓储 / 输入校验 / 测试 / 本说明并恢复 fusion schema 的私有声明即可，无数据回退。#9 的默认 Reranker、拒答校准、salience优先预算、读时消解与截断 trace 尚未验收，#22 也不关闭。
+候选 SQL 现由 `buildCandidateScoresQuery` 导出，`readCandidateScores` 保持执行包装；运行时融合通过同语句 CTE 读取正文，保留原查询契约。本组件不增加 API 或默认配置。回滚移除新仓储 / 输入校验 / 测试 / 本说明并恢复 fusion schema 的私有声明即可，无数据回退。#9 的默认 Reranker、拒答校准、salience优先预算、读时消解与截断 trace 尚未验收，#22 也不关闭。
