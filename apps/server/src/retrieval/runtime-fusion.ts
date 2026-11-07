@@ -5,6 +5,7 @@ import { z } from "zod";
 import { RankFusionOptionsSchema } from "./fusion.js";
 import { buildCandidateScoresQuery, type CandidateScore } from "./candidates.js";
 import type { RetrievalCandidate } from "./search.js";
+import type { BudgetMetadata } from "./runtime-budget.js";
 
 // Reuse the SQL fusion contract; callers cannot override the operation's frozen flags.
 const threshold = z.number().finite().min(0).max(1);
@@ -37,19 +38,23 @@ export async function readFusedCandidates(
     fusion: { ...config, flags },
   });
   const details = new Map<string, CandidateScore["components"]>();
-  if (!scores) return { candidates: [] as RetrievalCandidate[], details };
+  const budgetMetadata = new Map<string, BudgetMetadata>();
+  if (!scores) return { candidates: [] as RetrievalCandidate[], details, budgetMetadata };
   const rows = await db.execute<{
     belief_id: string;
     belief_version_id: string;
     subject: string;
     attribute: string;
     value: unknown;
+    salience: number | null;
+    recorded_from: string;
     fused_score: string;
     components: CandidateScore["components"];
   }>(sql`
     with fused as (${scores})
     select b.id as belief_id,bv.id as belief_version_id,b.subject,b.attribute,bv.value,
-           fused.fused_score,fused.components
+           fused.fused_score,fused.components,b.salience::float8 as salience,
+           to_char(bv.recorded_from at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as recorded_from
     from fused join belief_versions bv on bv.id=fused.belief_version_id
     join beliefs b on b.id=bv.belief_id and b.current_version_id=bv.id
     where b.project_id=${projectId}::uuid and b.status='active' and bv.recorded_to is null
@@ -57,6 +62,10 @@ export async function readFusedCandidates(
   `);
   const candidates = rows.map((row): RetrievalCandidate => {
     details.set(row.belief_version_id, row.components);
+    budgetMetadata.set(row.belief_version_id, {
+      salience: row.salience,
+      recordedFrom: row.recorded_from,
+    });
     return {
       beliefId: row.belief_id,
       beliefVersionId: row.belief_version_id,
@@ -70,5 +79,5 @@ export async function readFusedCandidates(
       reason: "below_threshold",
     };
   });
-  return { candidates, details };
+  return { candidates, details, budgetMetadata };
 }

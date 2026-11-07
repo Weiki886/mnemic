@@ -7,6 +7,18 @@ export function renderMemoryContext(contents: readonly string[]): string {
     : contents.map((content, i) => `[${i + 1}] ${content}`).join("\n");
 }
 
+/** Shared memory-block budget bound, not a full model context-window limit. */
+export const MemoryTokenLimitSchema = z.number().int().min(0).max(1_000_000);
+
+/** Shared literal content format: runtime counting and chat injection must stay byte-identical. */
+export function memoryContent(memory: {
+  subject: string;
+  attribute: string;
+  value: unknown;
+}): string {
+  return `${memory.subject} / ${memory.attribute} = ${JSON.stringify(memory.value)}`;
+}
+
 const Candidate = z
   .object({
     beliefVersionId: z.string().uuid().toLowerCase(),
@@ -24,7 +36,7 @@ const Candidate = z
   .strict();
 const Input = z
   .object({
-    maxTokens: z.number().int().min(0).max(1_000_000),
+    maxTokens: MemoryTokenLimitSchema,
     candidates: z.array(Candidate).max(800),
   })
   .strict();
@@ -74,8 +86,12 @@ export function packMemoryContext(
   });
   const count = (text: string) => {
     try {
-      const n = countTokens(text);
-      if (!Number.isSafeInteger(n) || n < 0) throw Error();
+      const n: unknown = countTokens(text);
+      // Reject asynchronous counters, but consume their rejection so a mistaken adapter cannot
+      // cause an unhandled rejection after this operation has already failed closed.
+      if ((typeof n === "object" && n !== null) || typeof n === "function")
+        void Promise.resolve(n).catch(() => {});
+      if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0) throw Error();
       return n;
     } catch {
       throw Error("MEMORY_TOKEN_COUNT_FAILED");

@@ -1,5 +1,5 @@
 import type { RetrievalCandidate } from "../retrieval/search.js";
-import { renderMemoryContext } from "../retrieval/context-budget.js";
+import { memoryContent, renderMemoryContext } from "../retrieval/context-budget.js";
 
 /**
  * 记忆注入提示词（#7）：记忆带编号供模型引用标注；
@@ -10,9 +10,7 @@ export function buildChatSystemPrompt(
   hasHistory = false,
   hasFiles = false,
 ): string {
-  const block = renderMemoryContext(
-    memories.map((m) => `${m.subject} / ${m.attribute} = ${JSON.stringify(m.value)}`),
-  );
+  const block = renderMemoryContext(memories.map(memoryContent));
   return [
     "你是 Mnemic 的记忆增强对话助手，回答用户关于其项目的问题。",
     "",
