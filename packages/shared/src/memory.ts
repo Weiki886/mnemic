@@ -1,6 +1,20 @@
 import { FeatureFlagSnapshotSchema } from "./flags.js";
 import { z } from "zod";
 
+/** UTC query point with PostgreSQL microsecond precision; never round-trip through Date serialization. */
+export const RecallTimePointSchema = z
+  .string()
+  .datetime()
+  .regex(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z$/)
+  .refine((s) => {
+    const date = new Date(s.slice(0, 10) + "T00:00:00Z");
+    return (
+      !s.startsWith("0000-") &&
+      Number.isFinite(date.getTime()) &&
+      date.toISOString().slice(0, 10) === s.slice(0, 10)
+    );
+  });
+
 /** 当前版本的来源 Observation 类型；缺少可验证来源时为 null，不推测历史类型。 */
 export const MemoryTypeSchema = z.enum(["fact", "preference", "decision", "progress"]);
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;

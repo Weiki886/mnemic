@@ -97,25 +97,22 @@ it("eight same-revision HTTP requests admit exactly one mutation and one audit",
   expect(results.filter((r) => r.statusCode === 409)).toHaveLength(7);
   expect((await audits()).length).toBe(before + 1);
 });
-it.each([
-  "retrieval_entity",
-  "retrieval_time",
-  "decay",
-  "reranker",
-  "read_time_resolution",
-] as const)("management rejects unsupported %s with no mutation/audit", async (key) => {
-  const before = (await audits()).length;
-  const r = await put({ ...DEFAULT_FEATURE_FLAGS, [key]: true });
-  expect(r.statusCode).toBe(400);
-  expect(r.json().errors).toContainEqual({ path: `flags.${key}`, message: expect.any(String) });
-  expect(await readFeatureFlags(t.db)).toEqual({
-    schema_version: 1,
-    revision: 0,
-    flags: DEFAULT_FEATURE_FLAGS,
-  });
-  expect((await audits()).length).toBe(before);
-  expect(models).not.toHaveBeenCalled();
-});
+it.each(["retrieval_entity", "decay", "reranker", "read_time_resolution"] as const)(
+  "management rejects unsupported %s with no mutation/audit",
+  async (key) => {
+    const before = (await audits()).length;
+    const r = await put({ ...DEFAULT_FEATURE_FLAGS, [key]: true });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().errors).toContainEqual({ path: `flags.${key}`, message: expect.any(String) });
+    expect(await readFeatureFlags(t.db)).toEqual({
+      schema_version: 1,
+      revision: 0,
+      flags: DEFAULT_FEATURE_FLAGS,
+    });
+    expect((await audits()).length).toBe(before);
+    expect(models).not.toHaveBeenCalled();
+  },
+);
 it("GET can diagnose internal unsupported state and PUT can repair it without invoking runtime consumers", async () => {
   const state = (
     await updateFeatureFlags(t.db, {
@@ -207,4 +204,12 @@ it("GET reports persisted flags, not environment materialization for individual 
   } finally {
     vi.unstubAllEnvs();
   }
+});
+it("management admits the implemented time filter and audits the configuration transition", async () => {
+  const before = (await audits()).length;
+  const result = await put({ ...DEFAULT_FEATURE_FLAGS, retrieval_time: true });
+  expect(result.statusCode).toBe(200);
+  expect(result.json().snapshot.flags.retrieval_time).toBe(true);
+  expect((await audits()).length).toBe(before + 1);
+  expect(models).not.toHaveBeenCalled();
 });

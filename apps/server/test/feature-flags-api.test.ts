@@ -148,7 +148,10 @@ it("all unsupported fields are rejected together before DB access", async () => 
       },
     });
     expect(r.statusCode).toBe(400);
-    expect(r.json().errors).toHaveLength(5);
+    expect(r.json().errors).toHaveLength(4);
+    expect(r.json().errors.some((e: { path: string }) => e.path === "flags.retrieval_time")).toBe(
+      false,
+    );
     expect(db.count()).toBe(0);
   } finally {
     await app.close();

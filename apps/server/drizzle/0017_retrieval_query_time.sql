@@ -1,0 +1,1 @@
+ALTER TABLE "retrieval_traces" ADD COLUMN IF NOT EXISTS "query_valid_at" text;
