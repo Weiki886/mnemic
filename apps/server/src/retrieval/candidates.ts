@@ -13,6 +13,11 @@ export type CandidateScore = {
   }[];
 };
 const empty = sql`select null::uuid as belief_version_id,null::float8 as score where false`;
+/** Fixed bv alias; callers must validate/capture the UTC point before constructing this predicate. */
+export function buildValidTimeFilter(validAt: string): SQL {
+  return sql`and bv.valid_from<=${validAt}::timestamptz and (bv.valid_to is null or ${validAt}::timestamptz < bv.valid_to)`;
+}
+
 /** Project-scoped, current active version scores only. No model calls, trace writes or mutation. */
 export function buildCandidateScoresQuery(value: unknown): SQL | null {
   const input = candidateInput(value),
@@ -55,9 +60,7 @@ export function buildCandidateScoresQuery(value: unknown): SQL | null {
   where jsonb_typeof(label.value)='string'
   group by e.belief_version_id order by score desc,e.belief_version_id limit ${limit}`;
   }
-  const timeFilter = flags.retrieval_time
-    ? sql`and bv.valid_from<=${input.validAt}::timestamptz and (bv.valid_to is null or ${input.validAt}::timestamptz < bv.valid_to)`
-    : sql``;
+  const timeFilter = flags.retrieval_time ? buildValidTimeFilter(input.validAt!) : sql``;
   // One SQL statement: source membership and all rank votes share one MVCC statement snapshot.
   return sql`
    with eligible as (

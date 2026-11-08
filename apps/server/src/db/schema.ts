@@ -308,6 +308,8 @@ export const retrievalTraces = pgTable("retrieval_traces", {
     .notNull()
     .references(() => projects.id),
   queryText: text("query_text").notNull(),
+  /** Effective UTC time parameter, kept verbatim for microsecond replay; null = off/unknown history. */
+  queryValidAt: text("query_valid_at"),
   candidates: jsonb("candidates").notNull(),
   abstained: boolean("abstained").notNull(),
   reinforceEnabled: boolean("reinforce_enabled").notNull().default(false),

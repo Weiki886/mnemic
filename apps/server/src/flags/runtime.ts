@@ -7,7 +7,6 @@ export interface FeatureFlagOptions {
 }
 export const UNSUPPORTED_FEATURE_FLAGS = Object.freeze([
   "retrieval_entity",
-  "retrieval_time",
   "decay",
   "reranker",
   "read_time_resolution",

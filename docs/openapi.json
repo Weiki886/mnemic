@@ -2694,7 +2694,7 @@
         "operationId": "replaceFeatureFlags",
         "tags": ["Configuration"],
         "summary": "Replace all feature flags with revision checking",
-        "description": "JSON-only full replacement, no query parameters. Audit and update are atomic; unchanged flags do not increase revision or write an audit. Unsupported true flags (retrieval_entity, retrieval_time, decay, reranker, read_time_resolution) return 400 before database access even though their syntactic type is boolean. Cache-Control: no-store.",
+        "description": "JSON-only full replacement, no query parameters. Audit and update are atomic; unchanged flags do not increase revision or write an audit. Unsupported true flags (retrieval_entity, decay, reranker, read_time_resolution) return 400 before database access even though their syntactic type is boolean. Cache-Control: no-store.",
         "requestBody": {
           "required": true,
           "description": "Use the current revision from GET. This offline example assumes a fresh revision=0 snapshot; otherwise refresh and deliberately choose a new full replacement.",

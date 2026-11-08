@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { FeatureFlags } from "@mnemic/shared/flags";
 import { z } from "zod";
+import { RecallTimePointSchema } from "@mnemic/shared/memory";
 import { RankFusionOptionsSchema } from "./fusion.js";
 import { buildCandidateScoresQuery, type CandidateScore } from "./candidates.js";
 import type { RetrievalCandidate } from "./search.js";
@@ -21,6 +22,14 @@ export function parseRuntimeFusion(value: unknown): RuntimeFusion | undefined {
   return parsed.data;
 }
 
+/** Capture before flags/model awaits; an omitted point means server operation-entry time. */
+export function captureRecallTime(value: unknown): string {
+  if (value === undefined) return new Date().toISOString();
+  const parsed = RecallTimePointSchema.safeParse(value);
+  if (!parsed.success) throw Error("INVALID_RECALL_TIME");
+  return parsed.data;
+}
+
 /** One read-only SQL statement: ranking and hydration share a single MVCC snapshot. */
 export async function readFusedCandidates(
   db: Pick<PostgresJsDatabase, "execute">,
@@ -29,12 +38,14 @@ export async function readFusedCandidates(
   flags: Readonly<FeatureFlags>,
   fusion: RuntimeFusion,
   embedding: { model: string; vector: number[] } | null,
+  validAt?: string,
 ) {
   const { threshold: _threshold, ...config } = fusion;
   const scores = buildCandidateScoresQuery({
     projectId,
     query,
     embedding,
+    ...(validAt !== undefined ? { validAt } : {}),
     fusion: { ...config, flags },
   });
   const details = new Map<string, CandidateScore["components"]>();
