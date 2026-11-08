@@ -16,7 +16,7 @@ it("a trusted snapshot is cloned/frozen synchronously and wins over later overri
   expect(snapshot.flags.read_time_reinforcement).toBe(false);
   expect(Object.isFrozen(snapshot.flags)).toBe(true);
 });
-it.each(["retrieval_entity", "decay", "reranker", "read_time_resolution"] as const)(
+it.each(["decay", "reranker", "read_time_resolution"] as const)(
   "unsupported %s cannot silently pretend to run",
   async (key) => {
     const flagsSnapshot = createFeatureFlagSnapshot({
@@ -53,6 +53,15 @@ it("time filtering is a supported capability whose trusted snapshot still needs 
     schema_version: 1,
     revision: 0,
     flags: { ...DEFAULT_FEATURE_FLAGS, retrieval_time: true },
+  });
+  expect(await captureFeatureFlags(db, { flagsSnapshot: input })).toEqual(input);
+});
+
+it("entity retrieval is a supported capability with an immutable effective snapshot", async () => {
+  const input = createFeatureFlagSnapshot({
+    schema_version: 1,
+    revision: 0,
+    flags: { ...DEFAULT_FEATURE_FLAGS, retrieval_entity: true },
   });
   expect(await captureFeatureFlags(db, { flagsSnapshot: input })).toEqual(input);
 });

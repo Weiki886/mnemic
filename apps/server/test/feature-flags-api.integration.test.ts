@@ -97,7 +97,7 @@ it("eight same-revision HTTP requests admit exactly one mutation and one audit",
   expect(results.filter((r) => r.statusCode === 409)).toHaveLength(7);
   expect((await audits()).length).toBe(before + 1);
 });
-it.each(["retrieval_entity", "decay", "reranker", "read_time_resolution"] as const)(
+it.each(["decay", "reranker", "read_time_resolution"] as const)(
   "management rejects unsupported %s with no mutation/audit",
   async (key) => {
     const before = (await audits()).length;
@@ -210,6 +210,15 @@ it("management admits the implemented time filter and audits the configuration t
   const result = await put({ ...DEFAULT_FEATURE_FLAGS, retrieval_time: true });
   expect(result.statusCode).toBe(200);
   expect(result.json().snapshot.flags.retrieval_time).toBe(true);
+  expect((await audits()).length).toBe(before + 1);
+  expect(models).not.toHaveBeenCalled();
+});
+
+it("management admits implemented entity retrieval and audits the transition", async () => {
+  const before = (await audits()).length;
+  const result = await put({ ...DEFAULT_FEATURE_FLAGS, retrieval_entity: true });
+  expect(result.statusCode).toBe(200);
+  expect(result.json().snapshot.flags.retrieval_entity).toBe(true);
   expect((await audits()).length).toBe(before + 1);
   expect(models).not.toHaveBeenCalled();
 });

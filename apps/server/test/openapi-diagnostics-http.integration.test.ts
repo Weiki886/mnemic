@@ -343,7 +343,7 @@ it("embedding failure degrades to keyword recall without leaking errors", async 
 });
 it("unsupported persistent flags produce documented500 before any model invocation or trace", async () => {
   const traces = await traceCount();
-  await setFlags({ ...fixtureFlags, retrieval_entity: true });
+  await setFlags({ ...fixtureFlags, reranker: true });
   try {
     const r = await request<ProblemDetails>(recallPath, "post", 500, {
       body: { query: "PostgreSQL" },

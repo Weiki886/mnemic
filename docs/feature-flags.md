@@ -71,7 +71,7 @@ GET/PUT 及其业务错误均返回 Cache-Control: no-store；不从 query/body 
 | PUT /v1/config/flags | JSON 完整替换 `{expected_revision, flags}`；成功返回 `{kind:'updated'或'unchanged', snapshot}` |
 
 GET 返回持久配置，**不应用 env 或内部 reinforce 覆盖**；具体操作实际采用什么仍以其 trace 快照为准。
-四项未支持字段任一为 true，PUT 返回400，errors 指向 `flags.<字段>`，不访问配置仓储或写审计。
+三项未支持字段任一为 true，PUT 返回400，errors 指向 `flags.<字段>`，不访问配置仓储或写审计。
 若受信内部代码/SQL 已写入未支持配置，GET 仍可读取；用当前 revision 和这些字段为 false 的完整 flags 修复。
 
 ```sh
@@ -131,7 +131,7 @@ HTTP 或模型输出不能设置 flagsSnapshot；现有输入契约仍拒绝额�
 - 手动 recall 固定 reinforce:false；即使全局开启也不强化。响应的 trace.flags_snapshot 提供实际快照，
   shared schema 拒绝与该只读约定矛盾的快照。消解历史 API 以 camelCase flagsSnapshot 返回，兼容旧服务器字段缺失。
 
-当前不支持启用 retrieval_entity/decay/reranker/read_time_resolution；内部配置可以表达它们，
+当前不支持启用 decay/reranker/read_time_resolution；内部配置可以表达它们，
 但记忆操作入口检测到 true 会以固定错误拒绝，在查询嵌入/提取调用和记忆写入之前停止，不能静默当成已运行。
 聊天仍沿用既有“检索失败→无记忆回答”降级：可能继续调用聊天模型、保存聊天消息，这不是整个聊天请求的计费关闭开关。
 这可能让待提取任务退避、最终进入死信；修正配置不会自动重置既有死信。管理 API 已拒绝不受支持的启用；GET 仍可读取这种内部状态，便于修复。
@@ -155,6 +155,8 @@ Resolver 新增受控 authority-off 分支，算法版本升为 0.2.0。
 回滚应用代码可保留新增列，不能通过默认回填或清空配置来伪造历史。
 配置管理 API 已完成；未实现模块与完整消融矩阵的验收仍依赖 #9/#10，#22 保持 OPEN。
 
-3/3 测试额外覆盖鉴权/无效输入先于 DB、剩余四项未支持字段拒绝及已实现时间过滤的启用、GET 诊断与修复、HTTP 并发 CAS、
+3/3 测试额外覆盖鉴权/无效输入先于 DB、剩余三项未支持字段拒绝及已实现时间过滤的启用、GET 诊断与修复、HTTP 并发 CAS、
 审计失败回滚、no-op/409/耗尽、PUT 预检与实际鉴权、500 日志不含原始异常；
 真实 TCP HTTP GET→PUT→recall 的响应/trace 闭环使用两路关闭和禁止模型调用的替身。
+
+实体检索的查询标签策略、普通/实验融合评分及回滚要求见 [运行时实体召回](runtime-entity-recall.md)。默认仍关闭；开关开启已产生实际召回，不代表 NER/实体图或质量指标验收。

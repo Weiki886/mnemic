@@ -1,5 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { buildEntityScoresQuery } from "./entity-scores.js";
 import { buildRankFusionQuery } from "./fusion.js";
 import { candidateInput, unitQueryVector } from "./candidate-input.js";
 export type CandidateScore = {
@@ -24,7 +25,7 @@ export function buildCandidateScoresQuery(value: unknown): SQL | null {
     flags = input.fusion.flags;
   const vectorOn = flags.retrieval_vector && input.embedding !== null;
   const keywordOn = flags.retrieval_keyword && input.query.length > 0;
-  const entityOn = flags.retrieval_entity && input.entities.length > 0;
+  const entityOn = flags.retrieval_entity && (input.entities.length > 0 || !!input.entityQuery);
   if (!vectorOn && !keywordOn && !entityOn) return null;
   const limit = input.fusion.perRouteLimit;
   let vector: SQL = empty,
@@ -45,21 +46,12 @@ export function buildCandidateScoresQuery(value: unknown): SQL | null {
    from eligible e where to_tsvector('simple',e.value::text) @@ plainto_tsquery('simple',${input.query})
    order by score desc,e.belief_version_id limit ${limit}
  ) bounded_keyword`;
-  if (entityOn) {
-    const terms = sql.join(
-      input.entities.map((term) => sql`(${term}::text)`),
-      sql`,`,
+  if (entityOn)
+    entity = buildEntityScoresQuery(
+      input.projectId,
+      input.entities.length > 0 ? { terms: input.entities } : { query: input.entityQuery! },
+      limit,
     );
-    entity = sql`with wanted as (
-    select distinct lower(btrim(normalize(term,NFKC)) collate "C") as term from (values ${terms}) labels(term)
-  )
-  select e.belief_version_id,count(distinct wanted.term)::float8/(select count(*) from wanted) as score
-  from eligible e join observations o on o.id=e.source_observation_id and o.project_id=${input.projectId}::uuid
-  cross join lateral jsonb_array_elements(case when jsonb_typeof(o.entities)='array' then o.entities else '[]'::jsonb end) label(value)
-  join wanted on wanted.term=lower(btrim(normalize(label.value #>> '{}',NFKC)) collate "C")
-  where jsonb_typeof(label.value)='string'
-  group by e.belief_version_id order by score desc,e.belief_version_id limit ${limit}`;
-  }
   const timeFilter = flags.retrieval_time ? buildValidTimeFilter(input.validAt!) : sql``;
   // One SQL statement: source membership and all rank votes share one MVCC statement snapshot.
   return sql`

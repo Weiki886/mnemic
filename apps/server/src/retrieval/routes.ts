@@ -113,7 +113,13 @@ export function registerRecallRoutes(
             flags_snapshot: trace.flagsSnapshot,
             candidate_count: trace.candidates.length,
             truncated: trace.candidates.length > 200,
-            candidates: trace.candidates.slice(0, 200),
+            // Internal entity scoring metadata is not part of the existing strict public DTO.
+            candidates: trace.candidates.slice(0, 200).map((value) => {
+              if (!value || typeof value !== "object" || Array.isArray(value))
+                throw new Error("invalid trace candidate");
+              const { entityMatch: _entityMatch, ...candidate } = value as Record<string, unknown>;
+              return candidate;
+            }),
           },
         });
       } catch {
