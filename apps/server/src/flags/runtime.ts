@@ -6,7 +6,6 @@ export interface FeatureFlagOptions {
   flagsSnapshot?: FeatureFlagSnapshot;
 }
 export const UNSUPPORTED_FEATURE_FLAGS = Object.freeze([
-  "retrieval_entity",
   "decay",
   "reranker",
   "read_time_resolution",

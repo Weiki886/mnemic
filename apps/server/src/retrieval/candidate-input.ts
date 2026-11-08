@@ -7,15 +7,17 @@ const text = z
   .min(1)
   .regex(/^[^\p{Cc}\p{Cs}]*$/u);
 const label = text.max(128);
+const queryText = z
+  .string()
+  .trim()
+  .max(1000)
+  .regex(/^[^\0\p{Cs}]*$/u);
 const Input = z
   .object({
     projectId: z.string().uuid().toLowerCase(),
-    query: z
-      .string()
-      .trim()
-      .max(1000)
-      .regex(/^[^\0\p{Cs}]*$/u)
-      .default(""),
+    query: queryText.default(""),
+    /** Trusted runtime query-label policy; explicit entities remain unchanged when omitted. */
+    entityQuery: queryText.optional(),
     entities: z.array(label).max(32).default([]),
     validAt: RecallTimePointSchema.optional(),
     embedding: z

@@ -45,6 +45,7 @@ export async function readFusedCandidates(
     projectId,
     query,
     embedding,
+    ...(flags.retrieval_entity ? { entityQuery: query } : {}),
     ...(validAt !== undefined ? { validAt } : {}),
     fusion: { ...config, flags },
   });

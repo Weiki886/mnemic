@@ -2,7 +2,7 @@
 
 内部 `readCandidateScores(db, input)` 从真实 PostgreSQL 表召回并复用 [SQL 融合基座](retrieval-fusion.md)。当前支持**向量 / 关键词 / 实体三种分数来源，加当前版本的时间过滤**。这不是三路之外再给所有事实添加一个“时间票”；Issue #9 明确描述的是作用于当前 BeliefVersion 的 valid_from / valid_to 过滤。
 
-向量/关键词部分已通过[运行时融合实验](runtime-rank-fusion.md)接入 `retrieve` 的显式选项；实体仍未接入默认 chat 或 recall HTTP；[时间过滤](runtime-time-filter.md)已接通。未传实验选项时现有 A0 两路路径、默认值、拒答、API / trace schema、配置管理 API 不改变；captureFeatureFlags 仍拒绝开启其余未实现字段。#9 / #22 保持打开，实体公开接线、Reranker、只读消解、Token 预算及截断轨迹留后续。B 阶段实体关联图和自然语言时间理解不在本轮。
+向量/关键词部分已通过[运行时融合实验](runtime-rank-fusion.md)接入 `retrieve` 的显式选项；实体已通过[运行时接线](runtime-entity-recall.md)接入 chat 与 recall HTTP，默认关闭；[时间过滤](runtime-time-filter.md)已接通。未传实验选项时现有 A0 两路路径、默认值、拒答、API / trace schema、配置管理 API 不改变；captureFeatureFlags 仍拒绝开启其余未实现字段。#9 / #22 保持打开，Reranker、只读消解、默认聊天预算与完整指标留后续。B 阶段实体关联图和自然语言时间理解不在本轮。
 
 ## 内部契约
 
@@ -11,6 +11,7 @@ input 是严格的普通配置对象：
 - projectId：UUID，归一为小写；不接受额外资源名或 SQL 标识符。
 - fusion：直接使用 #125 的 `RankFusionOptionsSchema`，包括完整受信十键 flags、rrf / weighted、每路 / 总上限和相应系数，避免另一份配置定义。
 - query：可选，默认空串，trim 后最多1000字符；仅关键词路使用。不是 tsquery 语言或 SQL。
+- entityQuery：受信运行时可选，采用与 query 一样的输入校验，显式启用 query_labels_v1 标签发现；见运行时实体说明。没有它时仍只有显式 entities。
 - entities：可选，默认空数组，最多32个非空标签，每个 trim 后最多128字符，拒绝控制字符 / 孤代理。与存储标签的标准化及去重在 SQL 内完成。
 - embedding：可选 / null，形如 `{model, vector}`。vector 是1024个有限数字的非零数组；model 是 Provider 工厂选出的**原始 ID**，最长256字符，不做 trim / 大小写改写，拒绝纯空白和控制字符。模型解析、用量、配额和付费调用由上游执行；此函数既不查询 Provider，也不生成 embedding。
 - validAt：可选的 UTC ISO 字符串，只接受 Z、最多6位小数、合法日历且年份0001..9999。时间开关开启时必须提供；关闭时该值不参与 SQL 过滤。验证日历时不把时间点重新序列化，原始微秒直接绑定为 timestamptz；当前不接受偏移量或自然语言。

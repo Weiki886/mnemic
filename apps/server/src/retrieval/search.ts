@@ -1,5 +1,6 @@
 import { captureFeatureFlags } from "../flags/runtime.js";
 import { captureRecallTime, parseRuntimeFusion, readFusedCandidates } from "./runtime-fusion.js";
+import { buildEntityScoresQuery } from "./entity-scores.js";
 import { buildValidTimeFilter, type CandidateScore } from "./candidates.js";
 import {
   budgetShortlist,
@@ -120,6 +121,7 @@ export async function retrieve(
     }
   }
   let all: RetrievalCandidate[];
+  const entityScores = new Map<string, number>();
   let fusionDetails = new Map<string, CandidateScore["components"]>();
   let budgetMetadata = new Map<string, BudgetMetadata>();
   if (fusion) {
@@ -134,16 +136,26 @@ export async function retrieve(
     );
     all = result.candidates;
     fusionDetails = result.details;
+    for (const [id, components] of fusionDetails) {
+      const entity = components.find((c) => c.route === "entity");
+      if (entity) entityScores.set(id, entity.score);
+    }
     budgetMetadata = result.budgetMetadata;
   } else {
     // 向量字面量占位：queryVec 为 null 时 vec CTE 零行（where false），
     // 占位用单位向量——零向量会使 cosine 距离产生 NaN，必须避开
     const vecLiteral = `[${(queryVec ?? [1, ...new Array(1023).fill(0)]).join(",")}]`;
 
-    // 2. 两路召回 + 加权融合（仅当前版本 + active belief）
+    const entityQuery = flagsSnapshot.flags.retrieval_entity
+      ? buildEntityScoresQuery(projectId, { query }, 200)
+      : sql`select null::uuid as belief_version_id,null::float8 as score where false`;
+    // Entity augmentation takes the best of the existing two-route score and entity fraction.
+    // This opt-in heuristic is not RRF; explicit fusion retains its own coefficients/threshold.
+    const baseScore = sql`(${VECTOR_WEIGHT} * coalesce(vec.vscore, 0) + ${KEYWORD_WEIGHT} * coalesce(kwn.kscore, 0))`;
+    // 2. 原加权融合；实体开关开启时独立召回并取最佳路分，校准归 #12。
     const rows = await db.execute(sql`
     with eligible as (
-      select b.id as belief_id, bv.id as version_id, b.subject, b.attribute, bv.value
+      select b.id as belief_id, bv.id as version_id, bv.id as belief_version_id, bv.source_observation_id, b.subject, b.attribute, bv.value
       from beliefs b
       join belief_versions bv on bv.id = b.current_version_id and bv.belief_id = b.id
       where b.project_id = ${projectId} and b.status = 'active'
@@ -171,17 +183,20 @@ export async function retrieve(
       -- 使两路可加权融合；本查询零命中时 CTE 为空集，不受影响
       select version_id, kscore / nullif(max(kscore) over (), 0) as kscore from kw
     )
+    , entity_scores as (${entityQuery})
     select e.belief_id, e.version_id, e.subject, e.attribute, e.value,
-           vec.vscore, kwn.kscore,
-           (${VECTOR_WEIGHT} * coalesce(vec.vscore, 0) + ${KEYWORD_WEIGHT} * coalesce(kwn.kscore, 0)) as fused
+           vec.vscore, kwn.kscore, entity_scores.score as escore,
+           ${flagsSnapshot.flags.retrieval_entity ? sql`greatest(${baseScore},coalesce(entity_scores.score,0))` : baseScore} as fused
     from eligible e
     left join vec on vec.version_id = e.version_id
     left join kwn on kwn.version_id = e.version_id
-    where vec.vscore is not null or kwn.kscore is not null
+    left join entity_scores on entity_scores.belief_version_id = e.version_id
+    where vec.vscore is not null or kwn.kscore is not null or entity_scores.score is not null
     order by fused desc, e.version_id
   `);
 
     all = rows.map((r): RetrievalCandidate => {
+      if (r.escore !== null) entityScores.set(r.version_id as string, Number(r.escore));
       const vectorScore = r.vscore === null ? null : Number(r.vscore);
       const keywordScore = r.kscore === null ? null : Number(r.kscore);
       return {
@@ -248,6 +263,11 @@ export async function retrieve(
       fusedScore: c.fusedScore,
       selected: c.selected,
       reason: budgetDiscarded.has(c.beliefVersionId) ? "token_budget" : c.reason,
+      ...(entityScores.has(c.beliefVersionId)
+        ? {
+            entityMatch: { policy: "query_labels_v1", score: entityScores.get(c.beliefVersionId)! },
+          }
+        : {}),
       ...(budgetDetails.has(c.beliefVersionId)
         ? { memoryBudget: budgetDetails.get(c.beliefVersionId)! }
         : {}),
