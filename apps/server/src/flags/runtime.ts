@@ -14,7 +14,10 @@ export const UNSUPPORTED_FEATURE_FLAGS = Object.freeze([
 export async function captureFeatureFlags(
   db: PostgresJsDatabase,
   options: FeatureFlagOptions & { reinforce?: boolean } = {},
+  capabilities: { reranker?: boolean } = {},
 ): Promise<FeatureFlagSnapshot> {
+  // A valid internal retrieval binding may support this operation; it does not enable the flag.
+  const supportsReranker = capabilities.reranker === true;
   const supplied =
     options.flagsSnapshot !== undefined
       ? createFeatureFlagSnapshot(options.flagsSnapshot)
@@ -32,7 +35,11 @@ export async function captureFeatureFlags(
           flags: { ...stored.flags, read_time_reinforcement: override },
         })
       : stored;
-  if (UNSUPPORTED_FEATURE_FLAGS.some((key) => snapshot.flags[key]))
+  if (
+    UNSUPPORTED_FEATURE_FLAGS.some(
+      (key) => snapshot.flags[key] && !(key === "reranker" && supportsReranker),
+    )
+  )
     throw Error("unsupported feature flag enabled");
   return snapshot;
 }

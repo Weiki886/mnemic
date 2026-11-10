@@ -1,7 +1,8 @@
 # Reranker 调用准入与用量
 
 这是 #9 / #22 的内部接线准备，依赖 [Score API 适配器](qwen-reranker-adapter.md)。
-正式 chat / recall 尚未调用它，`reranker=true` 仍被管理 API 和运行时拒绝；不关闭 #9/#22。
+正式 chat / recall 尚未调用它，管理 API 仍拒绝 `reranker=true`；不关闭 #9/#22。
+受信内部检索的显式实验接线见 [运行时精排](runtime-reranker.md)，未持有绑定的运行时仍拒绝启用。
 
 ## 唯一受计量入口
 

@@ -160,3 +160,6 @@ Resolver 新增受控 authority-off 分支，算法版本升为 0.2.0。
 真实 TCP HTTP GET→PUT→recall 的响应/trace 闭环使用两路关闭和禁止模型调用的替身。
 
 实体检索的查询标签策略、普通/实验融合评分及回滚要求见 [运行时实体召回](runtime-entity-recall.md)。默认仍关闭；开关开启已产生实际召回，不代表 NER/实体图或质量指标验收。
+
+受信内部检索现在可持有显式精排绑定并提供本次快照，见 [运行时精排](runtime-reranker.md)。
+这不会放开上述管理 API 的 reranker 校验，也不会改变全局默认配置。
