@@ -6,12 +6,12 @@ import { conversations, modelUsage } from "../db/schema.js";
 export interface UsageContext {
   projectId: string | null;
   conversationId: string | null;
-  purpose: "chat" | "extraction" | "embedding_query" | "embedding_index" | "probe";
+  purpose: "chat" | "extraction" | "embedding_query" | "embedding_index" | "probe" | "rerank";
 }
 export interface UsageRecord extends UsageContext {
   providerName: string;
   modelId: string;
-  slot: "chat" | "extraction" | "embedding";
+  slot: "chat" | "extraction" | "embedding" | "reranker";
   status: "success" | "error" | "aborted";
   startedAt: Date;
   durationMs: number;

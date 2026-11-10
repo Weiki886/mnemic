@@ -354,7 +354,7 @@ export const pendingCandidates = pgTable("pending_candidates", {
   decidedAt: ts("decided_at"),
 });
 
-/** #36: one row per actual SDK provider invocation (including retries), never content snapshots.
+/** #36: one row per actual provider invocation (SDK or Score API) (including retries), never content snapshots.
  * Null tokens mean not reported; provider total is independent of input + output. */
 export const modelUsage = pgTable(
   "model_usage",
@@ -382,7 +382,7 @@ export const modelUsage = pgTable(
       "model_usage_scope_check",
       sql`${t.conversationId} is null or ${t.projectId} is not null`,
     ),
-    check("model_usage_slot_check", sql`${t.slot} in ('chat','extraction','embedding')`),
+    check("model_usage_slot_check", sql`${t.slot} in ('chat','extraction','embedding','reranker')`),
     check("model_usage_status_check", sql`${t.status} in ('success','error','aborted')`),
     check(
       "model_usage_counts_check",

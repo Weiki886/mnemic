@@ -47,3 +47,22 @@ it("normalizes timezones, defaults to 30 days and rejects unbounded or reversed 
   ])
     expect(() => usageWindow(q, now)).toThrow("usage window");
 });
+
+it("accepts an explicit reranker usage rate without inventing missing token usage", () => {
+  const prices = parseUsagePricing(
+    JSON.stringify({
+      currency: "USD",
+      rates: [
+        {
+          provider_name: "qwen-score-api",
+          model_id: "Qwen/Qwen3-Reranker-0.6B",
+          slot: "reranker",
+          effective_from: "2026-11-01T00:00:00Z",
+          input_per_million: "0.1",
+          output_per_million: "0.2",
+        },
+      ],
+    }),
+  );
+  expect(prices.rates[0]?.slot).toBe("reranker");
+});

@@ -51,3 +51,26 @@ it("keeps very large aggregate counters as exact decimal strings and exposes mis
   });
   expect(r.totals.prompt_tokens).toEqual(metric);
 });
+
+it("accepts reranker as a usage category without admitting arbitrary slots", async () => {
+  const { UsageRowSchema } = await import("../src/usage.js");
+  const row = {
+    id: "019a19da-7454-7b46-b716-e39383f37a53",
+    conversation_id: null,
+    provider_name: "qwen-score-api",
+    model_id: "Qwen/Qwen3-Reranker-0.6B",
+    slot: "reranker",
+    purpose: "rerank",
+    status: "success",
+    started_at: "2026-11-10T00:00:00Z",
+    duration_ms: "1",
+    prompt_tokens: "4",
+    completion_tokens: null,
+    total_tokens: "9",
+    reasoning_tokens: null,
+    cached_input_tokens: null,
+    estimated_cost: null,
+  };
+  expect(UsageRowSchema.parse(row)).toEqual(row);
+  expect(UsageRowSchema.safeParse({ ...row, slot: "arbitrary" }).success).toBe(false);
+});
