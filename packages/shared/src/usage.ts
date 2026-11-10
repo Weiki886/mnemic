@@ -1,4 +1,5 @@
 import { z } from "zod";
+export const UsageSlotSchema = z.enum(["chat", "extraction", "embedding", "reranker"]);
 const uuid = z.string().uuid().toLowerCase();
 const date = z.string().datetime({ offset: true });
 export const UsageTimeSchema = date.refine((s) => {
@@ -83,7 +84,7 @@ export const UsageRowSchema = z
     conversation_id: uuid.nullable(),
     provider_name: z.string(),
     model_id: z.string(),
-    slot: z.enum(["chat", "extraction", "embedding"]),
+    slot: UsageSlotSchema,
     purpose: z.string(),
     status: z.enum(["success", "error", "aborted"]),
     started_at: date,

@@ -50,3 +50,9 @@ provider 响应快照。选定 Provider/模型名以调用时配置为准，配�
 统计范围是服务端三槽位运行路径；`scripts/spike`、手工 `verify:providers` 和测试直接构造的
 SDK 模型不经生产槽位，不纳入项目用量。本轮不改变这些诊断脚本，也不主动调用真实模型。
 回滚代码可停止新增记录，表中历史可以保留，不需要删除 Evidence 或更改现有对话数据。
+
+## 后续：Reranker 用量类别
+
+内部 Score API 的受计量入口及 0018 CHECK 扩展见
+[Reranker 调用准入与用量](reranker-usage-admission.md)。`slot=reranker` 是用量分类，
+不是新增 Provider 配置槽位；现有三槽位解析不变。正式检索尚未使用该入口。

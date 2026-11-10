@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { UsageTimeSchema } from "@mnemic/shared/usage";
+import { UsageSlotSchema, UsageTimeSchema } from "@mnemic/shared/usage";
 const decimal = z.string().regex(/^(?:0|[1-9]\d{0,8})(?:\.\d{1,6})?$/);
 const PriceSchema = z
   .object({
@@ -11,7 +11,7 @@ const PriceSchema = z
           .object({
             provider_name: z.string().min(1).max(200),
             model_id: z.string().min(1).max(200),
-            slot: z.enum(["chat", "extraction", "embedding"]),
+            slot: UsageSlotSchema,
             effective_from: UsageTimeSchema,
             input_per_million: decimal,
             output_per_million: decimal,

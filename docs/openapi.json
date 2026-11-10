@@ -1603,7 +1603,10 @@
                 "conversation_id": { "type": "string", "nullable": true, "format": "uuid" },
                 "provider_name": { "type": "string" },
                 "model_id": { "type": "string" },
-                "slot": { "type": "string", "enum": ["chat", "extraction", "embedding"] },
+                "slot": {
+                  "type": "string",
+                  "enum": ["chat", "extraction", "embedding", "reranker"]
+                },
                 "purpose": { "type": "string" },
                 "status": { "type": "string", "enum": ["success", "error", "aborted"] },
                 "started_at": { "type": "string", "format": "date-time" },
