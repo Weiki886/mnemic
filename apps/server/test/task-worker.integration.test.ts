@@ -527,20 +527,22 @@ it("never reclaims its own still-running timed-out handler when another concurre
     block = gate(),
     calls: string[] = [];
   let entered = false,
-    signal!: AbortSignal;
+    signal!: AbortSignal,
+    checkpoint!: () => void;
   const w = new TaskWorker({
     db: t.db,
     projectId: p,
     concurrency: 2,
     leaseMs: 400,
     heartbeatMs: 100,
-    taskTimeoutMs: 100,
+    taskTimeoutMs: 5000,
     handlers: {
       DECAY: async (row, ctx) => {
         calls.push(row.id);
         if (row.id === first.id) {
           entered = true;
           signal = ctx.signal;
+          checkpoint = ctx.checkpoint;
           await block.promise;
         }
       },
@@ -549,7 +551,15 @@ it("never reclaims its own still-running timed-out handler when another concurre
   workers.push(w);
   await w.tick();
   await vi.waitFor(() => expect(entered).toBe(true));
-  await vi.waitFor(() => expect(signal.aborted).toBe(true));
+  // Expire only the held first handler. A 100ms global budget also expires a new
+  // task during its real scope SELECT on a busy runner, before its handler starts.
+  const expiredClock = vi.spyOn(performance, "now").mockReturnValue(performance.now() + 5001);
+  try {
+    expect(checkpoint).toThrow();
+    expect(signal.aborted).toBe(true);
+  } finally {
+    expiredClock.mockRestore();
+  }
   const owned = await state(first.id);
   await t.db.execute(
     sql`select pg_sleep(greatest(0, extract(epoch from (${owned.lease_expires_at}::timestamptz-clock_timestamp()))) + 0.05)`,
