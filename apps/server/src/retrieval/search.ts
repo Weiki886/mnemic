@@ -1,3 +1,4 @@
+import { prepareRuntimeReranker, type RerankerDetail } from "./runtime-reranker.js";
 import { captureFeatureFlags } from "../flags/runtime.js";
 import { captureRecallTime, parseRuntimeFusion, readFusedCandidates } from "./runtime-fusion.js";
 import { buildEntityScoresQuery } from "./entity-scores.js";
@@ -45,6 +46,8 @@ export interface RetrieveResult {
 export interface RetrieveOptions extends ResolveOptions {
   /** Trusted internal experiment, requires its own threshold; not accepted from HTTP bodies. */
   fusion?: unknown;
+  /** Trusted explicit Score API experiment; requires fusion, snapshot and admission. Never HTTP input. */
+  reranker?: unknown;
   /** Trusted UTC time override; HTTP remains query-only. Ignored when retrieval_time is off. */
   validAt?: unknown;
   /** Trusted final-chat tokenizer + memory-block budget; requires explicit fusion. Never HTTP input. */
@@ -80,7 +83,10 @@ export async function retrieve(
     (options.threshold !== undefined || !Number.isInteger(topK) || topK < 1 || topK > 200)
   )
     throw Error("INVALID_RUNTIME_FUSION_OPTIONS");
-  const flagsSnapshot = await captureFeatureFlags(db, options);
+  const reranker = prepareRuntimeReranker(db, projectId, options, fusion);
+  const flagsSnapshot = await captureFeatureFlags(db, options, {
+    reranker: reranker !== undefined,
+  });
   const queryValidAt = flagsSnapshot.flags.retrieval_time ? capturedTime : null;
   const threshold = fusion?.threshold ?? legacyThreshold;
   const reinforce = flagsSnapshot.flags.read_time_reinforcement;
@@ -216,6 +222,12 @@ export async function retrieve(
 
   // 3. 拒答判定：零命中或最高融合分低于阈值
   let abstained = all.length === 0 || all[0]!.fusedScore < threshold;
+  let rerankerDetails = new Map<string, RerankerDetail>();
+  if (flagsSnapshot.flags.reranker && reranker) {
+    const ranked = await reranker.run(all, query, abstained);
+    all = ranked.candidates;
+    rerankerDetails = ranked.details;
+  }
   all.forEach((c, i) => {
     c.selected = !abstained && i < topK;
     c.reason = c.selected ? "top_k" : abstained ? "below_threshold" : "below_topk";
@@ -250,6 +262,7 @@ export async function retrieve(
   const traceOrder = memoryBudget ? [...selected, ...all.filter((c) => !c.selected)] : all;
 
   // 4. trace 落库（只存 ID 与得分，不存内容快照；开关状态入 trace）
+  if (flagsSnapshot.flags.reranker) reranker?.check();
   const traceId = uuidv7();
   await db.insert(retrievalTraces).values({
     id: traceId,
@@ -263,6 +276,9 @@ export async function retrieve(
       fusedScore: c.fusedScore,
       selected: c.selected,
       reason: budgetDiscarded.has(c.beliefVersionId) ? "token_budget" : c.reason,
+      ...(rerankerDetails.has(c.beliefVersionId)
+        ? { reranker: rerankerDetails.get(c.beliefVersionId)! }
+        : {}),
       ...(entityScores.has(c.beliefVersionId)
         ? {
             entityMatch: { policy: "query_labels_v1", score: entityScores.get(c.beliefVersionId)! },

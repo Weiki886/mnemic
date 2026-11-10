@@ -65,3 +65,30 @@ it("entity retrieval is a supported capability with an immutable effective snaps
   });
   expect(await captureFeatureFlags(db, { flagsSnapshot: input })).toEqual(input);
 });
+
+it("only an explicit trusted reranker capability admits its operation snapshot", async () => {
+  const input = createFeatureFlagSnapshot({
+    schema_version: 1,
+    revision: 4,
+    flags: { ...DEFAULT_FEATURE_FLAGS, reranker: true },
+  });
+  const result = await captureFeatureFlags(db, { flagsSnapshot: input }, { reranker: true });
+  expect(result).toEqual(input);
+  expect(Object.isFrozen(result.flags)).toBe(true);
+  await expect(
+    captureFeatureFlags(db, { flagsSnapshot: input }, { reranker: false }),
+  ).rejects.toThrow("unsupported feature flag enabled");
+});
+it.each(["decay", "read_time_resolution"] as const)(
+  "a reranker capability cannot admit unsupported %s",
+  async (key) => {
+    const input = createFeatureFlagSnapshot({
+      schema_version: 1,
+      revision: 0,
+      flags: { ...DEFAULT_FEATURE_FLAGS, reranker: true, [key]: true },
+    });
+    await expect(
+      captureFeatureFlags(db, { flagsSnapshot: input }, { reranker: true }),
+    ).rejects.toThrow("unsupported feature flag enabled");
+  },
+);
