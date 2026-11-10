@@ -47,7 +47,7 @@ provider 响应快照。选定 Provider/模型名以调用时配置为准，配�
 直接取消在遥测写入挂起时仍立即转发给 provider，不等待数据库才请求上游停止。
 测试模型与 HTTP 端点均为离线夹具，模型 key 显式置空。
 
-统计范围是服务端三槽位运行路径；`scripts/spike`、手工 `verify:providers` 和测试直接构造的
+统计范围是服务端三个 Provider 配置槽位及单独计量的 Score API；`scripts/spike`、手工 `verify:providers` 和测试直接构造的
 SDK 模型不经生产槽位，不纳入项目用量。本轮不改变这些诊断脚本，也不主动调用真实模型。
 回滚代码可停止新增记录，表中历史可以保留，不需要删除 Evidence 或更改现有对话数据。
 

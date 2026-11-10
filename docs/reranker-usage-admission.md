@@ -74,5 +74,5 @@ OpenAPI 的 UsageExportPage 中 `slot` 枚举增加 `reranker`，没有新增公
 依赖/输入 mutation、SQL/日志失败、迁移旧 CHECK 升级/重放和真实鉴权 HTTP 导出契约。
 没有读取真实 Provider 或环境文件、没有付费请求、真实 Qwen 推理、默认开启、生产检索接线或指标验收。
 
-本 PR 堆叠在仍待审查的 #132 分支上。合并顺序为先 #132，再将本 PR 移到 main 并复验；
-本轮开发不代表任一 PR 获得合并授权。
+#132 已 squash 合入 main，本 PR 已将自身新增提交重放到最新 main 并重新验证。
+这里不再依赖未合并的分支；验证证据以当前 PR head 为准。
