@@ -1,3 +1,4 @@
+import { registerProviderRerankerPaths } from "./openapi-reranker.js";
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { ProblemDetailsSchema } from "@mnemic/shared";
@@ -16,6 +17,7 @@ import {
 } from "../src/contracts/providers.js";
 
 export function registerProviderPaths(registry: OpenAPIRegistry) {
+  registerProviderRerankerPaths(registry);
   const problem = registry.register("ProblemDetails", ProblemDetailsSchema);
   const legacy = registry.register("LegacyProvider", LegacyProviderViewSchema);
   const config = registry.register("ProviderConfig", ProviderConfigSchema);

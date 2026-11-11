@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const QWEN_RERANKER_MODEL = "Qwen/Qwen3-Reranker-0.6B";
+import { QWEN_RERANKER_MODEL } from "@mnemic/shared/management";
+export { QWEN_RERANKER_MODEL };
 export const MAX_RERANK_DOCUMENTS = 200;
 export const MAX_RERANK_RESPONSE_BYTES = 256 * 1024;
 const text = (max: number) =>

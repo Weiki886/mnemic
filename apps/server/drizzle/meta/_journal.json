@@ -134,6 +134,13 @@
       "when": 1794286392878,
       "tag": "0018_reranker_usage_category",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794302429429,
+      "tag": "0019_provider_reranker_config",
+      "breakpoints": true
     }
   ]
 }
