@@ -9,6 +9,7 @@ import { projects, retrievalTraces } from "../db/schema.js";
 import type { ProviderFactory } from "../providers/factory.js";
 import { retrieve } from "./search.js";
 import type { DebugTrace } from "../debug/trace.js";
+import type { RecallBinding } from "./recall-binding.js";
 
 function fail(
   reply: FastifyReply,
@@ -32,6 +33,7 @@ export function registerRecallRoutes(
   factory?: ProviderFactory,
   debugTrace?: DebugTrace,
   admitModelCall?: ModelAdmission,
+  binding?: RecallBinding,
 ): void {
   app.post(
     "/projects/:projectId/recall",
@@ -86,6 +88,7 @@ export function registerRecallRoutes(
       if (!project) return fail(reply, request.id, 404, ErrorCode.NOT_FOUND, "项目不存在");
       try {
         const result = await retrieve(db, masterKey, projectId, body.data.query, {
+          ...binding,
           ...(debugTrace ? { debugTrace } : {}),
           usageLogger: app.log,
           ...(admitModelCall ? { admitModelCall } : {}),
@@ -113,12 +116,19 @@ export function registerRecallRoutes(
             flags_snapshot: trace.flagsSnapshot,
             candidate_count: trace.candidates.length,
             truncated: trace.candidates.length > 200,
-            // Internal entity scoring metadata is not part of the existing strict public DTO.
+            // Internal fusion/reranker metadata is not part of the strict public DTO.
             candidates: trace.candidates.slice(0, 200).map((value) => {
               if (!value || typeof value !== "object" || Array.isArray(value))
                 throw new Error("invalid trace candidate");
-              const { entityMatch: _entityMatch, ...candidate } = value as Record<string, unknown>;
-              return candidate;
+              const candidate = value as Record<string, unknown>;
+              return {
+                beliefVersionId: candidate.beliefVersionId,
+                vectorScore: candidate.vectorScore,
+                keywordScore: candidate.keywordScore,
+                fusedScore: candidate.fusedScore,
+                selected: candidate.selected,
+                reason: candidate.reason,
+              };
             }),
           },
         });
