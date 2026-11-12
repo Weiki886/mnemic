@@ -468,3 +468,34 @@ it.each([
     spy.mockRestore();
   }
 });
+
+it("POST authentication precedes malformed JSON and credential-bearing registration", async () => {
+  let reads = 0;
+  const db = new Proxy(t.db, {
+    get() {
+      reads++;
+      throw Error("private DB");
+    },
+  });
+  const isolated = buildApp({
+    db,
+    masterKey: TEST_MASTER_KEY,
+    authToken: token,
+    logStream: { write: () => {} },
+  });
+  try {
+    for (const payload of ["{broken", JSON.stringify(body())]) {
+      const response = await isolated.inject({
+        method: "POST",
+        url: "/v1/providers/reranker",
+        headers: { "content-type": "application/json" },
+        payload,
+      });
+      expect(response.statusCode).toBe(401);
+      expect(reads).toBe(0);
+      expect(response.body).not.toContain(key);
+    }
+  } finally {
+    await isolated.close();
+  }
+});
