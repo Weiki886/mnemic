@@ -48,6 +48,8 @@ export interface RetrieveOptions extends ResolveOptions {
   fusion?: unknown;
   /** Trusted explicit Score API experiment; requires fusion, snapshot and admission. Never HTTP input. */
   reranker?: unknown;
+  /** Trusted persisted source: {} selects earliest configured capability; never HTTP input. */
+  rerankerProvider?: unknown;
   /** Trusted UTC time override; HTTP remains query-only. Ignored when retrieval_time is off. */
   validAt?: unknown;
   /** Trusted final-chat tokenizer + memory-block budget; requires explicit fusion. Never HTTP input. */
@@ -83,7 +85,7 @@ export async function retrieve(
     (options.threshold !== undefined || !Number.isInteger(topK) || topK < 1 || topK > 200)
   )
     throw Error("INVALID_RUNTIME_FUSION_OPTIONS");
-  const reranker = prepareRuntimeReranker(db, projectId, options, fusion);
+  const reranker = prepareRuntimeReranker(db, projectId, options, fusion, masterKey);
   const flagsSnapshot = await captureFeatureFlags(db, options, {
     reranker: reranker !== undefined,
   });

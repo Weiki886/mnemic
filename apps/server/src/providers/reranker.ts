@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { uuidv7 } from "uuidv7";
 import { z } from "zod";
@@ -131,13 +131,41 @@ export async function resolveProviderRerankerConfig(db: Db, masterKey: Buffer, i
       .where(eq(providerConfigs.id, identity))
       .limit(1);
     if (!row) throw new ProviderRerankerError("not_found");
-    const current = state(row.config);
-    if (!current.config) return null;
-    const parsed = endpoint(row.baseUrl, current.config);
-    const config = parseRerankConfig({ ...parsed, apiKey: decrypt(row.key, masterKey) });
-    return { providerId: row.id, modelId: QWEN_RERANKER_MODEL, revision: current.revision, config };
+    return resolveRow(row, masterKey);
   } catch (error) {
     if (error instanceof ProviderRerankerError && error.reason === "not_found") throw error;
+    throw Error("RERANKER_CONFIG_UNAVAILABLE");
+  }
+}
+
+function resolveRow(
+  row: { id: string; baseUrl: string; key: string; config: unknown },
+  masterKey: Buffer,
+) {
+  const current = state(row.config);
+  if (!current.config) return null;
+  const config = parseRerankConfig({
+    ...endpoint(row.baseUrl, current.config),
+    apiKey: decrypt(row.key, masterKey),
+  });
+  return { providerId: row.id, modelId: QWEN_RERANKER_MODEL, revision: current.revision, config };
+}
+/** One SQL snapshot, one chosen credential; never skip a corrupt winner or try a later Provider. */
+export async function resolveConfiguredRerankerConfig(db: Db, masterKey: Buffer) {
+  try {
+    const [row] = await db
+      .select({
+        id: providerConfigs.id,
+        baseUrl: providerConfigs.baseUrl,
+        key: providerConfigs.apiKeyEncrypted,
+        config: providerConfigs.rerankerConfig,
+      })
+      .from(providerConfigs)
+      .where(sql`${providerConfigs.rerankerConfig}->'config' is distinct from 'null'::jsonb`)
+      .orderBy(asc(providerConfigs.createdAt), asc(providerConfigs.id))
+      .limit(1);
+    return row ? resolveRow(row, masterKey) : null;
+  } catch {
     throw Error("RERANKER_CONFIG_UNAVAILABLE");
   }
 }
