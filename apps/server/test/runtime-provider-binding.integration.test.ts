@@ -5,6 +5,10 @@ import { createRerankerProvider } from "../src/providers/reranker.js";
 import { createFeatureFlagSnapshot, DEFAULT_FEATURE_FLAGS } from "@mnemic/shared/flags";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { TEST_MASTER_KEY } from "./test-keys.js";
+import * as flagRepository from "../src/flags/repository.js";
+import * as rerankerRepository from "../src/providers/reranker.js";
+import { createProvider } from "../src/providers/repository.js";
+import { durableModels } from "./fixtures/durable-models.js";
 let t: TestDb;
 const p = uuidv7(),
   owned: string[] = [],
@@ -35,6 +39,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   admit.mockClear();
   calls.length = 0;
+  await t.sql`update feature_flags set revision=0,flags=${JSON.stringify(DEFAULT_FEATURE_FLAGS)}::jsonb where scope='server'`;
   await t.sql`delete from retrieval_traces`;
   await t.sql`delete from model_usage`;
   await t.sql`update beliefs set current_version_id=null`;
@@ -198,7 +203,11 @@ it.each([
   { fusion: undefined },
   { rerankerProvider: { providerId: "bad" } },
   { rerankerProvider: { api_key: "secret" } },
-  { flagsSnapshot: undefined },
+  {
+    flagsSnapshot: undefined,
+    rerankerProvider: undefined,
+    reranker: { endpoint: "https://raw.invalid/score" },
+  },
   { admitModelCall: undefined },
 ])("invalid binding rejects before DB %j", async (extra) => {
   const db = new Proxy(t.db, {
@@ -239,3 +248,167 @@ it("provider descriptor is copied before the first asynchronous wait", async () 
   await pending;
   expect(calls[0]?.url).toBe("https://first.invalid/score");
 });
+
+// Persisted Provider bindings may use the same stored snapshot as ordinary retrieval.
+const storedOptions = (extra: Partial<RetrieveOptions> = {}) => {
+  const { flagsSnapshot: _snapshot, ...input } = options(extra);
+  return input;
+};
+async function stored(on: boolean, extra: Partial<typeof DEFAULT_FEATURE_FLAGS> = {}) {
+  const before = await flagRepository.readFeatureFlags(t.db);
+  const result = await flagRepository.updateFeatureFlags(t.db, {
+    expected_revision: before.revision,
+    flags: { ...DEFAULT_FEATURE_FLAGS, retrieval_vector: false, reranker: on, ...extra },
+  });
+  return result.snapshot;
+}
+it.each([false, true])(
+  "stored reranker=%s controls scoring and persists the exact effective snapshot",
+  async (on) => {
+    await provider();
+    await fact();
+    const snapshot = await stored(on);
+    const read = vi.spyOn(flagRepository, "readFeatureFlags");
+    const select = vi.spyOn(rerankerRepository, "resolveConfiguredRerankerConfig");
+    transport();
+    const r = await retrieve(t.db, TEST_MASTER_KEY, p, "needle", storedOptions());
+    const [row] = await t.sql`select flags_snapshot from retrieval_traces where id=${r.traceId}`;
+    expect(row?.flags_snapshot).toEqual(snapshot);
+    expect(read).toHaveBeenCalledOnce();
+    expect(select).toHaveBeenCalledTimes(on ? 1 : 0);
+    expect(calls).toHaveLength(on ? 1 : 0);
+    expect(admit).toHaveBeenCalledTimes(on ? 1 : 0);
+    expect(r.abstained).toBe(false);
+  },
+);
+it.each([false, true])(
+  "an explicit trusted snapshot wins over the opposite stored flag (%s)",
+  async (on) => {
+    await provider();
+    await fact();
+    await stored(!on);
+    const read = vi.spyOn(flagRepository, "readFeatureFlags");
+    transport();
+    const input = flags(on);
+    const r = await retrieve(t.db, TEST_MASTER_KEY, p, "needle", options({ flagsSnapshot: input }));
+    const [row] = await t.sql`select flags_snapshot from retrieval_traces where id=${r.traceId}`;
+    expect(row?.flags_snapshot).toEqual(input);
+    expect(read).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(on ? 1 : 0);
+  },
+);
+it.each([false, true])(
+  "a stored flag changed during embedding affects only the next operation (initial=%s)",
+  async (on) => {
+    await provider();
+    await fact();
+    const embeddingProvider = await createProvider(t.db, TEST_MASTER_KEY, {
+      name: uuidv7(),
+      protocol: "openai-compatible",
+      baseUrl: "https://embedding.invalid",
+      apiKey: "offline-embedding",
+      models: { embedding: "offline-vector" },
+    });
+    owned.push(embeddingProvider.id);
+    const initial = await stored(on, { retrieval_vector: true });
+    const models = durableModels();
+    const embedResult = { embeddings: [[1, ...Array(1023).fill(0)]], usage: { tokens: 3 } };
+    let changed: typeof initial | undefined;
+    models.embedding.mockImplementationOnce(async () => {
+      changed = await stored(!on, { retrieval_vector: true });
+      return embedResult;
+    });
+    transport();
+    const first = await retrieve(
+      t.db,
+      TEST_MASTER_KEY,
+      p,
+      "needle",
+      storedOptions({ factory: models.factory }),
+    );
+    const [a] = await t.sql`select flags_snapshot from retrieval_traces where id=${first.traceId}`;
+    expect(a?.flags_snapshot).toEqual(initial);
+    expect(calls).toHaveLength(on ? 1 : 0);
+    const next = await retrieve(
+      t.db,
+      TEST_MASTER_KEY,
+      p,
+      "needle",
+      storedOptions({ factory: models.factory }),
+    );
+    const [b] = await t.sql`select flags_snapshot from retrieval_traces where id=${next.traceId}`;
+    expect(b?.flags_snapshot).toEqual(changed);
+    expect(calls).toHaveLength(1);
+    expect(models.embedding).toHaveBeenCalledTimes(2);
+  },
+);
+it.each(["decay", "read_time_resolution"] as const)(
+  "stored unsupported %s rejects before any model or Provider lookup",
+  async (key) => {
+    await provider();
+    await fact();
+    await stored(true, { [key]: true });
+    const select = vi.spyOn(rerankerRepository, "resolveConfiguredRerankerConfig");
+    transport();
+    await expect(retrieve(t.db, TEST_MASTER_KEY, p, "needle", storedOptions())).rejects.toThrow(
+      "unsupported feature flag enabled",
+    );
+    expect(select).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+    expect(admit).not.toHaveBeenCalled();
+    expect(await t.sql`select id from retrieval_traces`).toHaveLength(0);
+  },
+);
+it("a missing persisted singleton fails closed before Provider access or paid admission", async () => {
+  await provider();
+  await fact();
+  // Remove and restore only this fixture's private singleton, preserving every column.
+  const [saved] =
+    await t.sql`delete from feature_flags returning id,scope,schema_version,revision,flags,updated_at::text`;
+  const select = vi.spyOn(rerankerRepository, "resolveConfiguredRerankerConfig");
+  transport();
+  try {
+    await expect(retrieve(t.db, TEST_MASTER_KEY, p, "needle", storedOptions())).rejects.toThrow(
+      "invalid feature flag configuration",
+    );
+    expect(select).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+    expect(admit).not.toHaveBeenCalled();
+  } finally {
+    await t.sql`insert into feature_flags(id,scope,schema_version,revision,flags,updated_at) values(${saved!.id},${saved!.scope},${saved!.schema_version},${saved!.revision},${JSON.stringify(saved!.flags)}::jsonb,${saved!.updated_at})`;
+  }
+});
+it("the stored on flag does not grant an unbound retrieval caller a reranker capability", async () => {
+  await stored(true);
+  transport();
+  await expect(retrieve(t.db, TEST_MASTER_KEY, p, "needle")).rejects.toThrow(
+    "unsupported feature flag enabled",
+  );
+  expect(calls).toHaveLength(0);
+});
+it.each([false, true])(
+  "without a configured Provider, stored on=%s keeps the off path usable and the on path closed",
+  async (on) => {
+    await fact();
+    await stored(on);
+    transport();
+    const result = retrieve(t.db, TEST_MASTER_KEY, p, "needle", storedOptions());
+    if (on) await expect(result).rejects.toThrow("RERANKER_PROVIDER_UNCONFIGURED");
+    else expect((await result).abstained).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(admit).not.toHaveBeenCalled();
+  },
+);
+it.each([null, false, 0])(
+  "an explicit malformed snapshot %s never falls back to the stored configuration",
+  async (input) => {
+    const db = new Proxy(t.db, {
+      get() {
+        throw Error("database touched");
+      },
+    });
+    await expect(
+      retrieve(db, TEST_MASTER_KEY, p, "needle", options({ flagsSnapshot: input as never })),
+    ).rejects.toMatchObject({ name: "ZodError" });
+  },
+);

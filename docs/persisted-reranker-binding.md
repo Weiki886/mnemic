@@ -2,7 +2,8 @@
 
 #9/#22 的后续切片：内部 `retrieve` 可传 `rerankerProvider: { providerId }` 使用显式 Provider，
 或 `rerankerProvider: {}` 按 created_at、id 升序选择首个已配置能力。
-这与明文 `reranker` 选项互斥，仍要求显式融合、完整受信快照及准入函数，最大候选200。
+这与明文 `reranker` 选项互斥，仍要求显式融合及准入函数，最大候选200。
+可提供完整受信 `flagsSnapshot`；省略时，在操作入口读取数据库中的开关配置并冻结。
 没有新增公开 HTTP 参数、环境变量或表结构；正式聊天/召回的默认开启和开关管理解锁仍未交付。
 
 仅在开关开启、池非空、融合未拒答且输入满足字节限制后读取 Provider。不因空池、关闭、拒答或
@@ -17,7 +18,16 @@
 
 内部候选轨迹在有已选来源时增加 `reranker.provider={providerId, revision}`，不存名称、地址或Key。
 输入失败/跳过时没有选择来源，故不伪造 provider 字段。融合分数、快照、用量及最终预算语义不变。
-新元数据不扩充公开候选 DTO，OpenAPI 无变化；原明文内部选项仍兼容。
+新元数据不扩充公开候选 DTO，OpenAPI 无变化；原明文内部选项仍兼容，且仍必须显式提供完整快照。
+
+持久开关沿用 `captureFeatureFlags` 单源：每次操作读取一次，快照及其 revision 入轨迹；显式快照
+优先且不读持久配置。入口捕获后，即使查询 embedding 等待期间配置更新，本次仍使用原快照，
+下一次操作才生效。显式畸形快照不降级读库；单例缺失/损坏、decay 或 read_time_resolution
+开启时均在模型调用前失败。绑定提供本次操作的精排能力，不会授权其他未绑定消费者。
+
+开关与 Provider 配置是两个捕获点：开关在操作入口冻结，Provider 在实际精排前才选择；它们不是
+跨表的同一事务快照。开关关闭时即使 Provider 缺失/损坏也不查询精排配置。管理 API 仍拒绝
+`reranker=true`，正式 chat/recall 仍未配置内部绑定，也不因本轮改变默认值或产生新计费请求。
 
 测试需要实例级配置隔离。原生 PG 路径以显式本地 MNEMIC_TEST_ADMIN_URL（指向 mnemic_test）
 创建随机 mnemic_isolated_* 数据库，迁移失败或正常关闭时仅清理自己创建的库；CI 使用独占

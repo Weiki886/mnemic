@@ -48,7 +48,7 @@ export function prepareRuntimeReranker(
   if (
     !fusion ||
     fusion.maxCandidates > MAX_RERANK_DOCUMENTS ||
-    options.flagsSnapshot === undefined ||
+    (!descriptor && options.flagsSnapshot === undefined) ||
     typeof options.admitModelCall !== "function"
   )
     throw Error("INVALID_RUNTIME_RERANK_OPTIONS");
