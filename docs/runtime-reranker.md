@@ -11,10 +11,10 @@
 
 - `fusion`：已有 RRF 或 weighted 配置，含它自己的 threshold，maxCandidates 不超过 200。
 - `reranker`：显式 `{ endpoint, apiKey?, timeoutMs? }`，遵守 [协议适配器](qwen-reranker-adapter.md) 的规则。
-- 完整受信 `flagsSnapshot`；其中 `reranker` 为 true 才运行精排。
+- 明文 `reranker` 要求完整受信 `flagsSnapshot`；[持久 Provider 绑定](persisted-reranker-binding.md) 可省略快照并在操作入口读取持久开关。其中 `reranker` 为 true 才运行精排。
 - `admitModelCall`：生产组装应复用服务级持久准入，不是 no-op。测试可注入离线计数器。
 
-缺 fusion、缺显式快照、缺准入函数或候选上限过大，均在 DB/模型调用前拒绝为
+缺 fusion、明文配置缺显式快照、缺准入函数或候选上限过大，均在 DB/模型调用前拒绝为
 `INVALID_RUNTIME_RERANK_OPTIONS`。显式提供的配置即使开关关闭也先校验；格式错误不是静默忽略。
 配置、准入方法、signal、用量归属在操作入口捕获，快照由现有机制复制冻结。
 等待查询 embedding 期间修改调用者对象，不能更换本次端点、凭据、准入方法或开关状态。
