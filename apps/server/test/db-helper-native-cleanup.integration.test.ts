@@ -22,8 +22,9 @@ it("normal close removes the exact random isolated database from pg_database", a
     vi.resetModules();
     const { setupTestDb: setupPrivateDb } = await import("./db-helper.js");
     fixture = await setupPrivateDb({ isolated: true, migrate: false });
-    name = new URL(fixture.url).pathname.slice(1);
-    expect(name).toMatch(/^mnemic_isolated_[a-f0-9]{32}$/);
+    const createdName = new URL(fixture.url).pathname.slice(1);
+    expect(createdName).toMatch(/^mnemic_isolated_[a-f0-9]{32}$/);
+    name = createdName;
     expect(await control`select datname from pg_database where datname=${name}`).toHaveLength(1);
     await fixture.sql`select 1`;
     await fixture.close();
