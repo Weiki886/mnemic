@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -41,9 +42,40 @@ async function tryLocal(): Promise<string | null> {
 }
 
 /** migrate=false 仅供隔离 schema 的迁移测试，避免先自动应用待测迁移。 */
-export async function setupTestDb(options: { migrate?: boolean } = {}): Promise<TestDb> {
+export async function setupTestDb(
+  options: { migrate?: boolean; isolated?: boolean } = {},
+): Promise<TestDb> {
   let url = await tryLocal();
   let stop: (() => Promise<void>) | undefined;
+
+  // Opt-in private native database for tests that need instance-global configuration isolation.
+  if (url && options.isolated) {
+    const raw = process.env.MNEMIC_TEST_ADMIN_URL;
+    if (!raw) throw Error("isolated tests require MNEMIC_TEST_ADMIN_URL for mnemic_test");
+    const adminUrl = new URL(raw);
+    if (
+      adminUrl.pathname !== "/mnemic_test" ||
+      !["localhost", "127.0.0.1", "[::1]"].includes(adminUrl.hostname)
+    )
+      throw Error("isolated test admin must target local mnemic_test");
+    const admin = postgres(raw, { max: 1 });
+    const name = `mnemic_isolated_${randomUUID().replaceAll("-", "")}`;
+    try {
+      await admin`create database ${admin(name)}`;
+    } catch (error) {
+      await admin.end();
+      throw error;
+    }
+    adminUrl.pathname = `/${name}`;
+    url = adminUrl.toString();
+    stop = async () => {
+      try {
+        await admin`drop database ${admin(name)}`;
+      } finally {
+        await admin.end();
+      }
+    };
+  }
 
   if (!url) {
     const { PostgreSqlContainer } = await import("@testcontainers/postgresql");
@@ -54,33 +86,41 @@ export async function setupTestDb(options: { migrate?: boolean } = {}): Promise<
     };
   }
 
-  // 迁移串行化：vitest 多测试文件并行 worker 会并发 migrate 同一测试库，
-  // CREATE EXTENSION/TYPE 竞态导致 pg_namespace 唯一冲突——advisory lock 互斥。
-  // advisory lock key 727272：任意固定常量即可（取 Mnemic 谐音 7 的重复），
-  // 只需全仓库唯一使用、不与其他锁冲突。
-  if (options.migrate !== false) {
-    const migSql = postgres(url, { max: 1 });
-    await migSql`select pg_advisory_lock(727272)`;
-    try {
-      await migrate(drizzle(migSql), { migrationsFolder: MIGRATIONS_FOLDER });
-    } finally {
-      await migSql`select pg_advisory_unlock(727272)`;
-      await migSql.end();
+  try {
+    // 迁移串行化：vitest 多测试文件并行 worker 会并发 migrate 同一测试库，
+    // CREATE EXTENSION/TYPE 竞态导致 pg_namespace 唯一冲突——advisory lock 互斥。
+    // advisory lock key 727272：任意固定常量即可（取 Mnemic 谐音 7 的重复），
+    // 只需全仓库唯一使用、不与其他锁冲突。
+    if (options.migrate !== false) {
+      const migSql = postgres(url, { max: 1 });
+      try {
+        await migSql`select pg_advisory_lock(727272)`;
+        try {
+          await migrate(drizzle(migSql), { migrationsFolder: MIGRATIONS_FOLDER });
+        } finally {
+          await migSql`select pg_advisory_unlock(727272)`;
+        }
+      } finally {
+        await migSql.end();
+      }
     }
+
+    const sql = postgres(url, { max: 4 });
+    const db = drizzle(sql);
+
+    return {
+      db,
+      sql,
+      url,
+      close: async () => {
+        await sql.end();
+        await stop?.();
+      },
+    };
+  } catch (error) {
+    await stop?.();
+    throw error;
   }
-
-  const sql = postgres(url, { max: 4 });
-  const db = drizzle(sql);
-
-  return {
-    db,
-    sql,
-    url,
-    close: async () => {
-      await sql.end();
-      await stop?.();
-    },
-  };
 }
 
 /** 迁移幂等性：重复执行 migrate 不得报错（drizzle 迁移表记录已应用批次） */
