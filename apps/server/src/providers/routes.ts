@@ -1,3 +1,4 @@
+import { registerProviderRerankerRoutes } from "./reranker-routes.js";
 import type { FastifyInstance } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { CreateProviderSchema as CreateBody } from "../contracts/providers.js";
@@ -15,6 +16,7 @@ export function registerProviderRoutes(
   db: PostgresJsDatabase,
   masterKey: Buffer,
 ): void {
+  registerProviderRerankerRoutes(app, db, masterKey);
   app.post("/providers", async (request, reply) => {
     const parsed = CreateBody.safeParse(request.body);
     if (!parsed.success) {

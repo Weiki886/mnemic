@@ -102,3 +102,52 @@ export const ProjectStatusSchema = z
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 export type ServerConfig = z.infer<typeof ConfigSchema>;
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
+
+/** Optional Provider capability, not an additional chat/extraction/embedding model slot. */
+export const QWEN_RERANKER_MODEL = "Qwen/Qwen3-Reranker-0.6B";
+export const ProviderRerankerConfigSchema = z
+  .object({
+    endpoint_path: z
+      .string()
+      .max(512)
+      .regex(/^\/(?:[A-Za-z0-9_-]+\/)*score$/),
+    timeout_ms: z.number().int().min(1).max(30000),
+  })
+  .strict();
+const rerankerRevision = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+export const ProviderRerankerStateSchema = z
+  .object({
+    revision: rerankerRevision,
+    config: ProviderRerankerConfigSchema.nullable(),
+  })
+  .strict();
+export const ProviderRerankerCreateSchema = z
+  .object({
+    name: text.max(64),
+    base_url: z
+      .string()
+      .max(2048)
+      .regex(/^[^\p{Cc}\p{Cs}]*$/u)
+      .refine((s) => s.trim() === s)
+      .pipe(SafeEndpointSchema),
+    api_key: z
+      .string()
+      .min(8)
+      .max(4096)
+      .regex(/^[\x21-\x7e]+$/),
+    config: ProviderRerankerConfigSchema,
+  })
+  .strict();
+export const ProviderRerankerUpdateSchema = z
+  .object({
+    expected_revision: rerankerRevision,
+    config: ProviderRerankerConfigSchema.nullable(),
+  })
+  .strict();
+export const ProviderRerankerViewSchema = ProviderRerankerStateSchema.extend({
+  provider_id: z.string().uuid(),
+  model_id: z.literal(QWEN_RERANKER_MODEL),
+});
+export const ProviderRerankerUpdateResultSchema = ProviderRerankerViewSchema.extend({
+  kind: z.enum(["updated", "unchanged"]),
+});

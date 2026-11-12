@@ -13,6 +13,34 @@ export const PlatformEventSchema = z
     z
       .object({
         ...base,
+        action: z.literal("provider.reranker.create"),
+        target: uuid,
+        decision: z.literal("created"),
+        meta: z
+          .object({ ...version, revision: z.literal(0), configured: z.literal(true) })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        ...base,
+        action: z.literal("provider.reranker.update"),
+        target: uuid,
+        decision: z.literal("updated"),
+        meta: z
+          .object({
+            ...version,
+            previous_revision: revision,
+            revision,
+            before_configured: z.boolean(),
+            after_configured: z.boolean(),
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        ...base,
         action: z.literal("memory.export"),
         target: uuid,
         decision: z.literal("prepared"),
@@ -144,6 +172,11 @@ export const PlatformEventSchema = z
       .strict(),
   ])
   .superRefine((event, ctx) => {
+    if (
+      event.action === "provider.reranker.update" &&
+      event.meta.revision !== event.meta.previous_revision + 1
+    )
+      ctx.addIssue({ code: "custom", message: "invalid reranker audit revision" });
     if (event.action === "memory.export" && event.target !== event.meta.export_id)
       ctx.addIssue({ code: "custom", message: "invalid memory export identity" });
     if (

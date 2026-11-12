@@ -322,16 +322,48 @@ export const retrievalTraces = pgTable("retrieval_traces", {
  * api_key_encrypted：AES-256-GCM 密文（v1:<iv>:<tag>:<ct>），任何读出方不得回传明文；
  * models：{chat?, extraction?, embedding?} 三槽位模型名，槽位切换不改调用方代码。
  */
-export const providerConfigs = pgTable("provider_configs", {
-  id: id(),
-  name: text("name").notNull().unique(),
-  protocol: providerProtocolEnum("protocol").notNull(),
-  baseUrl: text("base_url").notNull(),
-  apiKeyEncrypted: text("api_key_encrypted").notNull(),
-  models: jsonb("models").notNull(),
-  createdAt: ts("created_at").notNull().defaultNow(),
-  updatedAt: ts("updated_at").notNull().defaultNow(),
-});
+export const providerConfigs = pgTable(
+  "provider_configs",
+  {
+    id: id(),
+    name: text("name").notNull().unique(),
+    protocol: providerProtocolEnum("protocol").notNull(),
+    baseUrl: text("base_url").notNull(),
+    apiKeyEncrypted: text("api_key_encrypted").notNull(),
+    /** Optional Score API capability; provider owner, not a fourth model slot. */
+    rerankerConfig: jsonb("reranker_config")
+      .notNull()
+      .default(sql`'{"revision":0,"config":null}'::jsonb`),
+    models: jsonb("models").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      "provider_reranker_config_check",
+      sql`
+  case when jsonb_typeof(${t.rerankerConfig})='object' then coalesce(
+    ${t.rerankerConfig} ?& array['revision','config']
+    and (${t.rerankerConfig} - array['revision','config'])='{}'::jsonb
+    and case when jsonb_typeof(${t.rerankerConfig}->'revision')='number'
+      and ${t.rerankerConfig}->>'revision' ~ '^(0|[1-9][0-9]{0,15})$'
+      then (${t.rerankerConfig}->>'revision')::numeric between 0 and 9007199254740991 else false end
+    and case when ${t.rerankerConfig}->'config'='null'::jsonb then true
+      when jsonb_typeof(${t.rerankerConfig}->'config')='object' then coalesce(
+        (${t.rerankerConfig}->'config') ?& array['endpoint_path','timeout_ms']
+        and ((${t.rerankerConfig}->'config') - array['endpoint_path','timeout_ms'])='{}'::jsonb
+        and jsonb_typeof(${t.rerankerConfig}->'config'->'endpoint_path')='string'
+        and char_length(${t.rerankerConfig}->'config'->>'endpoint_path')<=512
+        and ${t.rerankerConfig}->'config'->>'endpoint_path' ~ '^/([A-Za-z0-9_-]+/)*score$'
+        and case when jsonb_typeof(${t.rerankerConfig}->'config'->'timeout_ms')='number'
+          and ${t.rerankerConfig}->'config'->>'timeout_ms' ~ '^[0-9]{1,5}$'
+          then (${t.rerankerConfig}->'config'->>'timeout_ms')::numeric between 1 and 30000 else false end
+      ,false) else false end
+  ,false) else false end
+`,
+    ),
+  ],
+);
 
 /**
  * PENDING 候选（#15 自带迁移）：Gate 判 PENDING 的候选落此表，重启不丢。

@@ -789,6 +789,55 @@
           "messages"
         ]
       },
+      "ProviderRerankerView": {
+        "type": "object",
+        "properties": {
+          "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "config": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "endpoint_path": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^\\/(?:[A-Za-z0-9_-]+\\/)*score$"
+              },
+              "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 }
+            },
+            "required": ["endpoint_path", "timeout_ms"],
+            "additionalProperties": false
+          },
+          "provider_id": { "type": "string", "format": "uuid" },
+          "model_id": { "type": "string", "enum": ["Qwen/Qwen3-Reranker-0.6B"] }
+        },
+        "required": ["revision", "config", "provider_id", "model_id"],
+        "additionalProperties": false
+      },
+      "ProviderRerankerUpdateResult": {
+        "type": "object",
+        "properties": {
+          "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "config": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "endpoint_path": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^\\/(?:[A-Za-z0-9_-]+\\/)*score$"
+              },
+              "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 }
+            },
+            "required": ["endpoint_path", "timeout_ms"],
+            "additionalProperties": false
+          },
+          "provider_id": { "type": "string", "format": "uuid" },
+          "model_id": { "type": "string", "enum": ["Qwen/Qwen3-Reranker-0.6B"] },
+          "kind": { "type": "string", "enum": ["updated", "unchanged"] }
+        },
+        "required": ["revision", "config", "provider_id", "model_id", "kind"],
+        "additionalProperties": false
+      },
       "LegacyProvider": {
         "type": "object",
         "properties": {
@@ -2069,6 +2118,88 @@
                     "target",
                     "decision",
                     "meta"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["provider.reranker.create"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["created"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "revision": { "type": "number", "enum": [0] },
+                        "configured": { "type": "boolean", "enum": [true] }
+                      },
+                      "required": ["version", "revision", "configured"],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actor": { "type": "string", "enum": ["server"] },
+                    "action": { "type": "string", "enum": ["provider.reranker.update"] },
+                    "target": { "type": "string", "format": "uuid" },
+                    "decision": { "type": "string", "enum": ["updated"] },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "number", "enum": [1] },
+                        "previous_revision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "before_configured": { "type": "boolean" },
+                        "after_configured": { "type": "boolean" }
+                      },
+                      "required": [
+                        "version",
+                        "previous_revision",
+                        "revision",
+                        "before_configured",
+                        "after_configured"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "id": { "type": "string", "format": "uuid" },
+                    "ts": { "type": "string", "format": "date-time" },
+                    "metadata_omitted": { "type": "boolean", "enum": [false] }
+                  },
+                  "required": [
+                    "actor",
+                    "action",
+                    "target",
+                    "decision",
+                    "meta",
+                    "id",
+                    "ts",
+                    "metadata_omitted"
                   ],
                   "additionalProperties": false
                 },
@@ -4086,6 +4217,496 @@
           "500": {
             "description": "Server/database failure. Internal exception details are not returned.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/providers/reranker": {
+      "post": {
+        "operationId": "createRerankerProvider",
+        "tags": ["Providers"],
+        "summary": "Register a Score-only Provider capability",
+        "description": "Operator-global Provider capability, not project membership or a fourth model slot. No probe, SDK/model call, quota reservation or model_usage write. Does not enable reranker feature flags. Requires DB+master key to register routes. Root-relative endpoint_path replaces pathname of current Provider base_url while retaining origin; only ASCII segments and final score allowed. HTTP allowed only for loopback, HTTPS otherwise; URL credentials/query/fragment/control characters rejected. Shared encrypted Provider key reused by server-only resolver; response contains neither key nor mask nor derived base URL. Handler and transport responses no-store; auth errors use root auth policy. Creates models={} without assigning chat/extraction/embedding. Name is trimmed; API key visible ASCII8..4096 stored AES-GCM. Config and metadata-only audit commit atomically; duplicate name409. All input objects strict.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+                  "base_url": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "pattern": "^[^\\p{Cc}\\p{Cs}]*$"
+                  },
+                  "api_key": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 4096,
+                    "pattern": "^[\\x21-\\x7e]+$",
+                    "writeOnly": true
+                  },
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "endpoint_path": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^\\/(?:[A-Za-z0-9_-]+\\/)*score$"
+                      },
+                      "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 }
+                    },
+                    "required": ["endpoint_path", "timeout_ms"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["name", "base_url", "api_key", "config"],
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "offline-score-example",
+                "base_url": "https://offline.invalid/v1",
+                "api_key": "offline-provider-reranker-key-00000000",
+                "config": { "endpoint_path": "/score", "timeout_ms": 5000 }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New fixed-model capability, revision0.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProviderRerankerView" }
+              }
+            }
+          },
+          "400": {
+            "description": "Strict query/body or unsafe derived endpoint validation failed; structured fields when available.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing/DB access.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider missing, or DB/master key route dependencies absent.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider name already exists.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds Fastify request limit.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Requires application/json, optional charset accepted before parsing.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "Retry-After": { "schema": { "type": "string" }, "required": true }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, audit or corrupt state failure; raw internal errors are not returned.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/providers/{id}/reranker": {
+      "get": {
+        "operationId": "readProviderRerankerConfig",
+        "tags": ["Providers"],
+        "summary": "Read Provider reranker capability metadata",
+        "description": "Operator-global Provider capability, not project membership or a fourth model slot. No probe, SDK/model call, quota reservation or model_usage write. Does not enable reranker feature flags. Requires DB+master key to register routes. Root-relative endpoint_path replaces pathname of current Provider base_url while retaining origin; only ASCII segments and final score allowed. HTTP allowed only for loopback, HTTPS otherwise; URL credentials/query/fragment/control characters rejected. Shared encrypted Provider key reused by server-only resolver; response contains neither key nor mask nor derived base URL. Handler and transport responses no-store; auth errors use root auth policy. Existing Providers default to revision0/config=null. Metadata reads do not decrypt keys. Invalid persisted state fails closed500.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Canonical capability metadata; null config disables it.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProviderRerankerView" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Provider UUID or unknown query fields; no request body is required.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing/DB access.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider missing, or DB/master key route dependencies absent.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "Retry-After": { "schema": { "type": "string" }, "required": true }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, audit or corrupt state failure; raw internal errors are not returned.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateProviderRerankerConfig",
+        "tags": ["Providers"],
+        "summary": "Compare-and-set Provider reranker capability",
+        "description": "Operator-global Provider capability, not project membership or a fourth model slot. No probe, SDK/model call, quota reservation or model_usage write. Does not enable reranker feature flags. Requires DB+master key to register routes. Root-relative endpoint_path replaces pathname of current Provider base_url while retaining origin; only ASCII segments and final score allowed. HTTP allowed only for loopback, HTTPS otherwise; URL credentials/query/fragment/control characters rejected. Shared encrypted Provider key reused by server-only resolver; response contains neither key nor mask nor derived base URL. Handler and transport responses no-store; auth errors use root auth policy. expected_revision required. Locks Provider row before CAS; stale/exhausted409; identical content unchanged without audit/revision increment. Changed config and revision+1 plus audit share a transaction. null disables even if current base_url is unsafe. Credentials/model fields forbidden. Other later Provider edits are revalidated during resolution. Maximum revision9007199254740991.",
+        "parameters": [
+          {
+            "schema": { "type": "string", "format": "uuid" },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "config": {
+                    "type": "object",
+                    "nullable": true,
+                    "properties": {
+                      "endpoint_path": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^\\/(?:[A-Za-z0-9_-]+\\/)*score$"
+                      },
+                      "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 }
+                    },
+                    "required": ["endpoint_path", "timeout_ms"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["expected_revision", "config"],
+                "additionalProperties": false
+              },
+              "example": {
+                "expected_revision": 0,
+                "config": { "endpoint_path": "/v1/score", "timeout_ms": 1000 }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated with incremented revision, or unchanged at existing revision.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProviderRerankerUpdateResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Strict query/body/UUID or current Provider endpoint validation failed; malformed JSON400.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Global operator Bearer required before JSON parsing/DB access.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider missing, or DB/master key route dependencies absent.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision mismatch or exhausted; refresh metadata. Same-content request at maximum remains unchanged.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds Fastify request limit.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "415": {
+            "description": "Requires application/json, optional charset accepted before parsing.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "429": {
+            "description": "HTTP IP or token request budget exhausted.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              },
+              "Retry-After": { "schema": { "type": "string" }, "required": true }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "500": {
+            "description": "Database, audit or corrupt state failure; raw internal errors are not returned.",
+            "headers": {
+              "x-request-id": { "schema": { "type": "string" }, "required": true },
+              "Cache-Control": {
+                "schema": { "type": "string", "enum": ["no-store"] },
+                "required": true
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": { "$ref": "#/components/schemas/ProblemDetails" }
