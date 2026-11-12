@@ -93,11 +93,14 @@ export async function setupTestDb(
     // 只需全仓库唯一使用、不与其他锁冲突。
     if (options.migrate !== false) {
       const migSql = postgres(url, { max: 1 });
-      await migSql`select pg_advisory_lock(727272)`;
       try {
-        await migrate(drizzle(migSql), { migrationsFolder: MIGRATIONS_FOLDER });
+        await migSql`select pg_advisory_lock(727272)`;
+        try {
+          await migrate(drizzle(migSql), { migrationsFolder: MIGRATIONS_FOLDER });
+        } finally {
+          await migSql`select pg_advisory_unlock(727272)`;
+        }
       } finally {
-        await migSql`select pg_advisory_unlock(727272)`;
         await migSql.end();
       }
     }
