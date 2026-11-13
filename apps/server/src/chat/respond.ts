@@ -38,6 +38,7 @@ export type RespondResult =
     };
 
 export interface RespondOptions extends ResolveOptions {
+  signal?: AbortSignal;
   retrievalBinding?: RecallBinding;
   durableExtraction?: boolean;
   onJob: (job: () => Promise<void>) => void;
@@ -137,6 +138,7 @@ export async function prepareAnswer(
   entered: EnteredMessage,
   options: RespondOptions,
 ) {
+  options.signal?.throwIfAborted();
   // 检索（#6）；检索失败降级为无记忆回答，不阻塞对话
   const scoped = {
     ...options,
@@ -163,6 +165,7 @@ export async function prepareAnswer(
     );
   }
 
+  options.signal?.throwIfAborted();
   const { model } = await resolveModel(db, masterKey, "chat", scoped);
   const history = await modelHistory(db, entered.projectId, entered.history);
   return {

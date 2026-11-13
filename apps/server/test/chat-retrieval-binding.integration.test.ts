@@ -1,4 +1,10 @@
-import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import * as providerResolver from "../src/providers/reranker.js";
+import { createChatStream } from "../src/chat/streaming.js";
+import { ChatGenerations } from "../src/chat/generations.js";
+import { enterMessage } from "../src/chat/respond.js";
+import { captureRecallBinding } from "../src/retrieval/recall-binding.js";
+import { retrieve } from "../src/retrieval/search.js";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { FastifyInstance } from "fastify";
@@ -270,3 +276,49 @@ it.each([false, true])(
     expect(answer?.memories).toBeNull();
   },
 );
+
+it("cancellation while Provider selection waits prevents later Score admission and invocation", async () => {
+  await provider();
+  await fact();
+  await store(true);
+  const id = await conversation();
+  const entered = await enterMessage(t.db, id, "needle", project);
+  if (entered.kind !== "ok") throw Error("fixture admission");
+  const generation = new ChatGenerations().start(project, id)!;
+  let ready!: () => void, release!: () => void, done!: () => void;
+  const waiting = new Promise<void>((r) => (ready = r)),
+    gate = new Promise<void>((r) => (release = r)),
+    completed = new Promise<void>((r) => (done = r));
+  const original = providerResolver.resolveConfiguredRerankerConfig;
+  const spy = vi
+    .spyOn(providerResolver, "resolveConfiguredRerankerConfig")
+    .mockImplementation(async (...args) => {
+      ready();
+      await gate;
+      return original(...args);
+    });
+  const admit = vi.fn(async () => {});
+  const output = createChatStream(t.db, TEST_MASTER_KEY, entered, "needle", generation, {
+    factory,
+    admitModelCall: admit,
+    retrievalBinding: captureRecallBinding(binding())!,
+    onJob: () => {},
+    retrieveFn: (...args) => retrieve(...args).finally(done),
+  });
+  output.resume();
+  try {
+    await waiting;
+    generation.controller.abort();
+    release();
+    await completed;
+    await generation.done;
+    expect(seen).toHaveLength(0);
+    expect(admit).not.toHaveBeenCalled();
+    expect(prompts).toHaveLength(0);
+    expect(await t.sql`select id from model_usage`).toHaveLength(0);
+  } finally {
+    release();
+    spy.mockRestore();
+    output.destroy();
+  }
+});

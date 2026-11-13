@@ -92,7 +92,10 @@ export function createChatStream(
         user_message_id: entered.userMessageId,
       });
       active();
-      prepared = await abortable(prepareAnswer(db, masterKey, text, entered, options), signal);
+      prepared = await abortable(
+        prepareAnswer(db, masterKey, text, entered, { ...options, signal }),
+        signal,
+      );
       active();
       // Validate bounded citation metadata before incurring a model call or promising a finish frame.
       encodeChatStreamEvent({
