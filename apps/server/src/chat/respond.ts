@@ -1,3 +1,4 @@
+import type { RecallBinding } from "../retrieval/recall-binding.js";
 import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateText } from "ai";
@@ -37,6 +38,7 @@ export type RespondResult =
     };
 
 export interface RespondOptions extends ResolveOptions {
+  retrievalBinding?: RecallBinding;
   durableExtraction?: boolean;
   onJob: (job: () => Promise<void>) => void;
   /** 测试注入检索替身（阈值放宽/故障注入）；缺省真实两路混合检索 */
@@ -148,13 +150,10 @@ export async function prepareAnswer(
   let candidates: RetrievalCandidate[] = [];
   let abstained = true;
   try {
-    const r = await (options.retrieveFn ?? retrieve)(
-      db,
-      masterKey,
-      entered.projectId,
-      text,
-      scoped,
-    );
+    const r = await (options.retrieveFn ?? retrieve)(db, masterKey, entered.projectId, text, {
+      ...scoped,
+      ...options.retrievalBinding,
+    });
     candidates = r.candidates;
     abstained = r.abstained;
   } catch (err) {

@@ -48,6 +48,8 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 export interface BuildAppOptions {
   /** Trusted library opt-in for recall only; no HTTP/env selection. Requires persistent quota. */
   recallBinding?: unknown;
+  /** Trusted library opt-in shared by JSON/SSE chat retrieval; never HTTP input. */
+  chatRetrievalBinding?: unknown;
   /** Library opt-in; official entry always supplies a validated daily limit. */
   modelDailyCallLimit?: number;
   /** Per-instance token buckets. Official entry uses defaults; no HTTP/env disable switch. */
@@ -83,6 +85,7 @@ const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const recallBinding = captureRecallBinding(options.recallBinding);
+  const chatRetrievalBinding = captureRecallBinding(options.chatRetrievalBinding);
   if (options.debugContent && !options.debugMode)
     throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
   if (options.extractionQueue && (!options.db || !options.masterKey))
@@ -106,6 +109,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       dailyLimit === undefined)
   )
     throw Error("recall binding requires database, master key and daily quota");
+  if (
+    chatRetrievalBinding &&
+    (!options.db ||
+      !Buffer.isBuffer(options.masterKey) ||
+      options.masterKey.length !== 32 ||
+      dailyLimit === undefined)
+  )
+    throw Error("chat retrieval binding requires database, master key and daily quota");
   if (dailyLimit !== undefined && !options.db) throw Error("model daily quota requires database");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const rateLimits = createRequestRateLimits(options.rateLimit, options.corsOrigin);
@@ -263,6 +274,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
   if (options.db && options.masterKey) {
     registerChatRoutes(app, options.db, options.masterKey, {
+      ...(chatRetrievalBinding ? { retrievalBinding: chatRetrievalBinding } : {}),
       ...quotaOptions,
       ...(options.extractionQueue ? { durableExtraction: true } : {}),
       debugTrace,
