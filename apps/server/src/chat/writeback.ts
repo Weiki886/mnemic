@@ -74,7 +74,7 @@ export async function runExtractionWriteback(
   if (!evidence) throw new Error("invalid extraction usage scope");
   const scoped: ResolveOptions = {
     ...options,
-    flagsSnapshot: await captureFeatureFlags(db, options),
+    flagsSnapshot: await captureFeatureFlags(db, options, { operation: "memory_write" }),
     debugEvidenceId: args.evidenceId,
     usageContext: {
       projectId: args.projectId,
@@ -132,7 +132,7 @@ export async function applyExtraction(
   indexEmbedding: (args: IndexEmbeddingArgs) => Promise<void>,
   onPhase?: (phase: "gate" | "ingest") => void,
 ): Promise<WritebackResult> {
-  const flagsSnapshot = await captureFeatureFlags(db, scoped);
+  const flagsSnapshot = await captureFeatureFlags(db, scoped, { operation: "memory_write" });
   const result: WritebackResult = {
     routes: { created: 0, merged: 0, skipped: 0, conflict: 0 },
     pending: 0,

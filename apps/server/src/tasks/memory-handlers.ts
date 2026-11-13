@@ -67,7 +67,7 @@ export function createMemoryTaskHandlers(
         conversationId = message.conversationId;
         const scoped: ResolveOptions = {
           ...opts,
-          flagsSnapshot: await captureFeatureFlags(db, opts),
+          flagsSnapshot: await captureFeatureFlags(db, opts, { operation: "memory_write" }),
           debugEvidenceId: message.id,
           usageContext: {
             projectId: task.projectId,
