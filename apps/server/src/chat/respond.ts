@@ -1,3 +1,4 @@
+import type { RecallBinding } from "../retrieval/recall-binding.js";
 import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateText } from "ai";
@@ -37,6 +38,8 @@ export type RespondResult =
     };
 
 export interface RespondOptions extends ResolveOptions {
+  signal?: AbortSignal;
+  retrievalBinding?: RecallBinding;
   durableExtraction?: boolean;
   onJob: (job: () => Promise<void>) => void;
   /** 测试注入检索替身（阈值放宽/故障注入）；缺省真实两路混合检索 */
@@ -135,6 +138,7 @@ export async function prepareAnswer(
   entered: EnteredMessage,
   options: RespondOptions,
 ) {
+  options.signal?.throwIfAborted();
   // 检索（#6）；检索失败降级为无记忆回答，不阻塞对话
   const scoped = {
     ...options,
@@ -148,13 +152,10 @@ export async function prepareAnswer(
   let candidates: RetrievalCandidate[] = [];
   let abstained = true;
   try {
-    const r = await (options.retrieveFn ?? retrieve)(
-      db,
-      masterKey,
-      entered.projectId,
-      text,
-      scoped,
-    );
+    const r = await (options.retrieveFn ?? retrieve)(db, masterKey, entered.projectId, text, {
+      ...scoped,
+      ...options.retrievalBinding,
+    });
     candidates = r.candidates;
     abstained = r.abstained;
   } catch (err) {
@@ -164,6 +165,7 @@ export async function prepareAnswer(
     );
   }
 
+  options.signal?.throwIfAborted();
   const { model } = await resolveModel(db, masterKey, "chat", scoped);
   const history = await modelHistory(db, entered.projectId, entered.history);
   return {
