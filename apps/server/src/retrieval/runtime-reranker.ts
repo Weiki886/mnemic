@@ -13,6 +13,9 @@ import type { RetrievalCandidate, RetrieveOptions } from "./search.js";
 type Failure =
   "INVALID_RERANK_INPUT" | "RERANK_FAILED" | "RERANK_INVALID_RESPONSE" | "RERANK_TIMEOUT";
 type Source = { providerId: string; revision: number };
+export const RerankerProviderSelectionSchema = z
+  .object({ providerId: z.string().uuid().toLowerCase().optional() })
+  .strict();
 export type RerankerDetail = (
   | { model: string; status: "applied"; score: number; rank: number }
   | { model: string; status: "skipped"; reason: "below_threshold" }
@@ -31,10 +34,7 @@ export function prepareRuntimeReranker(
   const selected =
     options.rerankerProvider === undefined
       ? undefined
-      : z
-          .object({ providerId: z.string().uuid().toLowerCase().optional() })
-          .strict()
-          .safeParse(options.rerankerProvider);
+      : RerankerProviderSelectionSchema.safeParse(options.rerankerProvider);
   if (
     selected &&
     (!selected.success ||

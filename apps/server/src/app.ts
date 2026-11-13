@@ -21,6 +21,7 @@ import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 import { registerDoctorRoutes } from "./doctor/routes.js";
 import { registerRecallRoutes } from "./retrieval/routes.js";
+import { captureRecallBinding } from "./retrieval/recall-binding.js";
 import { registerManagementRoutes } from "./providers/management-routes.js";
 import { registerBearerAuth } from "./auth.js";
 import { resolveAuthToken } from "./config.js";
@@ -45,6 +46,8 @@ const ERROR_CODE_BY_STATUS: Record<number, ErrorCode> = {
 };
 
 export interface BuildAppOptions {
+  /** Trusted library opt-in for recall only; no HTTP/env selection. Requires persistent quota. */
+  recallBinding?: unknown;
   /** Library opt-in; official entry always supplies a validated daily limit. */
   modelDailyCallLimit?: number;
   /** Per-instance token buckets. Official entry uses defaults; no HTTP/env disable switch. */
@@ -79,6 +82,7 @@ export interface BuildAppOptions {
 const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
+  const recallBinding = captureRecallBinding(options.recallBinding);
   if (options.debugContent && !options.debugMode)
     throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
   if (options.extractionQueue && (!options.db || !options.masterKey))
@@ -94,6 +98,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     options.modelDailyCallLimit === undefined
       ? undefined
       : DailyCallLimit.parse(options.modelDailyCallLimit);
+  if (
+    recallBinding &&
+    (!options.db ||
+      !Buffer.isBuffer(options.masterKey) ||
+      options.masterKey.length !== 32 ||
+      dailyLimit === undefined)
+  )
+    throw Error("recall binding requires database, master key and daily quota");
   if (dailyLimit !== undefined && !options.db) throw Error("model daily quota requires database");
   const authToken = options.auth === false ? undefined : resolveAuthToken(options.authToken);
   const rateLimits = createRequestRateLimits(options.rateLimit, options.corsOrigin);
@@ -234,6 +246,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       options.providerFactory,
       debugTrace,
       admitModelCall,
+      recallBinding,
     );
   }
   if (options.db) {
