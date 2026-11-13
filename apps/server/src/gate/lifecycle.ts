@@ -25,7 +25,7 @@ export async function retryPendingGroup(
   debugTrace?: DebugTrace,
   options: FeatureFlagOptions = {},
 ): Promise<PendingRow[]> {
-  const flagsSnapshot = await captureFeatureFlags(db, options);
+  const flagsSnapshot = await captureFeatureFlags(db, options, { operation: "memory_write" });
   const rows = await db
     .select()
     .from(pendingCandidates)
