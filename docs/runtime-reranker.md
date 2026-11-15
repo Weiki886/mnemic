@@ -2,8 +2,9 @@
 
 #9/#22 的部分接线：显式内部 `retrieve` 选项现在可在融合候选上运行
 [已计量的 Qwen Score API](reranker-usage-admission.md)，然后执行 Top-K 和既有 Token 预算。
-正式 chat/recall 没有该配置来源或参数，管理 API 仍拒绝 `reranker=true`；默认值仍 false。
-默认开启、生产配置接入、真实 Qwen 指标与读时消解仍未验收，不关闭 #9/#22。
+正式启动器默认不安装绑定；操作者可通过 [MNEMIC_RETRIEVAL_BINDING_JSON](startup-retrieval-binding.md)
+显式安装 chat/recall 两项绑定，届时管理 API 允许启用 `reranker=true`。HTTP 请求不能选择绑定，
+默认值仍 false。默认开启、真实 Qwen 指标与读时消解仍未验收，不关闭 #9/#22。
 
 ## 调用条件
 
@@ -19,9 +20,11 @@
 配置、准入方法、signal、用量归属在操作入口捕获，快照由现有机制复制冻结。
 等待查询 embedding 期间修改调用者对象，不能更换本次端点、凭据、准入方法或开关状态。
 
-没有新环境变量、Provider 配置槽位、公开请求字段、API 或迁移；需已应用 #133 的 0018 迁移。
+本内部接口切片没有新增环境变量、Provider 配置槽位、公开请求字段、API 或迁移；后续启动器
+的可选环境配置见上文，需已应用 #133 的 0018 迁移。
 这不是一个远端用户可申请的能力授权。`captureFeatureFlags` 仅为持有有效内部绑定的本次
-检索接受 reranker 能力；它不打开配置，不放行 decay/read_time_resolution，不改变管理侧拒绝列表，
+检索接受 reranker 能力；它不打开配置，不放行 decay/read_time_resolution。管理侧仅在两项绑定
+均安装时允许启用 reranker，
 其他消费者的未支持开关检查仍然有效。
 
 ## 排序与拒答顺序
