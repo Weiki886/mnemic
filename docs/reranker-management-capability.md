@@ -1,5 +1,7 @@
 # 精排管理开关的实例能力门控
 
+后续正式启动器已支持[显式安装两项绑定](startup-retrieval-binding.md)，默认仍不安装；下文未接线说明为原切片交付范围。
+
 #22/#9 的部分交付。库调用方同时提供经过校验、复制冻结的 recallBinding 与 chatRetrievalBinding，
 且满足它们既有的 DB、主密钥和持久日配额条件时，当前 buildApp 实例才允许 PUT /v1/config/flags
 将 reranker 设为 true。能力由注册时的布尔值捕获，HTTP body/query 不能申请或覆盖。

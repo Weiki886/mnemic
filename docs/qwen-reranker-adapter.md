@@ -3,9 +3,10 @@
 本轮提供受信内部 `createQwenReranker` API 客户端和排序组件，固定模型为 `Qwen/Qwen3-Reranker-0.6B`。
 只调用操作者显式选择的 API，不下载模型、不安装 Python/GPU 依赖、不部署模型容器，也不增加三槽位之外的公开配置入口。
 
-**尚无生产调用方。** 普通 chat/recall、特性开关、配额、用量表及检索 trace 均未接入此客户端。
-`reranker=true` 仍被管理 API 和运行时拒绝，默认值仍为 false；不能凭这个组件宣称已实现默认开启的精排或指标提升。
-#9/#22 保持 OPEN，后续需一起完成服务端加密配置来源、调用准入/用量记录、评分/拒答/预算顺序、轨迹和关闭时完整可用验收。
+后续已接入服务端加密配置、准入/用量、融合候选和检索轨迹。正式启动器默认不安装绑定；
+操作者可通过 [MNEMIC_RETRIEVAL_BINDING_JSON](startup-retrieval-binding.md) 显式安装两项绑定，
+再通过管理 API 启用 `reranker=true`。安装不自动启用或探测 Provider，默认值仍为 false。
+#9/#22 保持 OPEN；真实 Qwen 指标、默认开启及完整消融仍未验收，不能凭适配组件宣称指标提升。
 
 ## 协议依据与 API 边界
 
@@ -18,7 +19,7 @@
 只接受同名模型回声、object=list、完整 data 中 object=score 且分数为有限的0..1；不把任意 logits 擅自当作概率。
 模型回声只是协议一致性检查，不是远程权重证明。供应商别名、其他模型和其他 Rerank 协议不自动兼容。
 
-内部调用形态（必须由未来可信服务端 owner 取得配置与正文，不能直接开放给 HTTP）：
+内部调用形态（必须由可信服务端 owner 取得配置与正文，不能直接开放给 HTTP）：
 
 ```ts
 const client = createQwenReranker({

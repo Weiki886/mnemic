@@ -1,3 +1,4 @@
+import { resolveStartupRetrievalBindings } from "../src/retrieval/startup-binding.js";
 import * as providerResolver from "../src/providers/reranker.js";
 import { createChatStream } from "../src/chat/streaming.js";
 import { ChatGenerations } from "../src/chat/generations.js";
@@ -342,14 +343,21 @@ async function putFlags(
     }),
   });
 }
-it.each([false, true])(
-  "installed chat and recall bindings allow audited flag toggles without probing (stream=%s)",
-  async (stream) => {
+it.each([false, true].flatMap((stream) => [false, true].map((startup) => ({ stream, startup }))))(
+  "installed chat and recall bindings allow audited flag toggles without probing %j",
+  async ({ stream, startup }) => {
     await provider();
     await fact();
     await store(false);
     const id = await conversation();
-    const app = await start({ recallBinding: binding() });
+    const app = await start(
+      startup
+        ? resolveStartupRetrievalBindings(JSON.stringify(binding()), {
+            databaseConfigured: true,
+            masterKey: TEST_MASTER_KEY,
+          })
+        : { recallBinding: binding() },
+    );
     const change = await putFlags(app, true);
     expect(change.status).toBe(200);
     expect(seen).toHaveLength(0);
