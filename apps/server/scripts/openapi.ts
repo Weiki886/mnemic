@@ -123,7 +123,7 @@ export function createOpenApiDocument(): OpenApiDocument {
     operationId: "replaceFeatureFlags",
     tags: ["Configuration"],
     summary: "Replace all feature flags with revision checking",
-    description: `JSON-only full replacement, no query parameters. Audit and update are atomic; unchanged flags do not increase revision or write an audit. Unsupported true flags (${UNSUPPORTED_FEATURE_FLAGS.join(", ")}) return 400 before database access even though their syntactic type is boolean. Cache-Control: no-store.`,
+    description: `JSON-only full replacement, no query parameters. Audit and update are atomic; unchanged flags do not increase revision or write an audit. Unsupported true flags (${UNSUPPORTED_FEATURE_FLAGS.join(", ")}) return 400 before database access even though their syntactic type is boolean, except reranker may be enabled when this application instance installs both trusted chat and recall bindings with persistent admission. Official startup does not install these bindings. Updating flags never selects or probes a Provider; capability does not guarantee Provider availability or readiness of other processes sharing the database. Cache-Control: no-store.`,
     request: {
       body: {
         required: true,

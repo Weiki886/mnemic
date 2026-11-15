@@ -1,5 +1,7 @@
 # 聊天检索的库层绑定
 
+当前管理边界：同时安装聊天和召回受信绑定的库实例可通过管理 API 启用 reranker；默认实例仍拒绝。见[能力门控](reranker-management-capability.md)。下文其余未解锁说明为原切片交付时范围。
+
 #9/#22 的部分接线：库调用方可显式设置 `buildApp({ chatRetrievalBinding })`，配置格式与
 [手动召回绑定](recall-retrieval-binding.md) 相同：仅包含 fusion 和 rerankerProvider。
 复用同一解析器，启动前复制冻结，要求 DB、32字节主密钥和显式持久日配额。

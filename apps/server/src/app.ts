@@ -263,7 +263,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (options.db) {
     registerMemoryExportRoutes(app, options.db);
     registerAuditRoutes(app, options.db);
-    registerFeatureFlagRoutes(app, options.db);
+    registerFeatureFlagRoutes(app, options.db, {
+      reranker: !!(recallBinding && chatRetrievalBinding),
+    });
     registerUsageRoutes(app, options.db, options.usagePricing);
     registerApprovalAuditRoutes(app, options.db);
     registerManagementRoutes(app, options.db);

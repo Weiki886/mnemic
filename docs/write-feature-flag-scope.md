@@ -1,5 +1,7 @@
 # 写入操作与检索专用开关
 
+当前管理边界：同时安装聊天和召回受信绑定的库实例可通过管理 API 启用 reranker；默认实例仍拒绝。见[能力门控](reranker-management-capability.md)。下文其余未解锁说明为原切片交付时范围。
+
 #22/#9 的部分接线。Gate、PENDING retry、ingest、Resolver、legacy/applyExtraction 和持久 EXTRACT
 在捕获开关时显式指定受信 `operation: "memory_write"`。写入操作接受并完整记录 reranker=true，
 但不执行精排、不选择精排 Provider、不预留 Score 配额、不生成精排用量。
