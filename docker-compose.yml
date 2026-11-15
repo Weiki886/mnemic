@@ -46,6 +46,7 @@ services:
       MNEMIC_DEBUG: ${MNEMIC_DEBUG:-0}
       MNEMIC_MODEL_DAILY_CALL_LIMIT: ${MNEMIC_MODEL_DAILY_CALL_LIMIT:-1000}
       MNEMIC_DEBUG_CONTENT: ${MNEMIC_DEBUG_CONTENT:-0}
+      MNEMIC_RETRIEVAL_BINDING_JSON: ${MNEMIC_RETRIEVAL_BINDING_JSON:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
