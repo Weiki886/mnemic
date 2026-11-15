@@ -31,7 +31,13 @@ function fail(
     );
 }
 /** Operator-wide configuration. Global Bearer authentication runs before this plugin's hooks. */
-export function registerFeatureFlagRoutes(app: FastifyInstance, db: PostgresJsDatabase): void {
+export function registerFeatureFlagRoutes(
+  app: FastifyInstance,
+  db: PostgresJsDatabase,
+  capabilities: { reranker?: boolean } = {},
+): void {
+  // Captured from trusted app assembly, never from an HTTP payload.
+  const supportsReranker = capabilities.reranker === true;
   const readQuery = (query: unknown) => Query.safeParse(query);
   app.get(
     "/v1/config/flags",
@@ -63,7 +69,9 @@ export function registerFeatureFlagRoutes(app: FastifyInstance, db: PostgresJsDa
       const body = FeatureFlagUpdateSchema.safeParse(request.body);
       if (!body.success)
         return fail(reply, request.id, 400, "开关更新参数非法", zodIssues(body.error));
-      const unsupported = UNSUPPORTED_FEATURE_FLAGS.filter((key) => body.data.flags[key]);
+      const unsupported = UNSUPPORTED_FEATURE_FLAGS.filter(
+        (key) => body.data.flags[key] && !(key === "reranker" && supportsReranker),
+      );
       if (unsupported.length)
         return fail(
           reply,

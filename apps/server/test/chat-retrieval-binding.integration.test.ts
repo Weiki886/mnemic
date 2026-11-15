@@ -322,3 +322,97 @@ it("cancellation while Provider selection waits prevents later Score admission a
     output.destroy();
   }
 });
+
+async function putFlags(
+  app: FastifyInstance,
+  on: boolean,
+  over: Record<string, boolean> = {},
+  auth = true,
+) {
+  const before = await readFeatureFlags(t.db);
+  return fetch(`${app.listeningOrigin}/v1/config/flags`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      ...(auth ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      expected_revision: before.revision,
+      flags: { ...before.flags, ...over, reranker: on },
+    }),
+  });
+}
+it.each([false, true])(
+  "installed chat and recall bindings allow audited flag toggles without probing (stream=%s)",
+  async (stream) => {
+    await provider();
+    await fact();
+    await store(false);
+    const id = await conversation();
+    const app = await start({ recallBinding: binding() });
+    const change = await putFlags(app, true);
+    expect(change.status).toBe(200);
+    expect(seen).toHaveLength(0);
+    expect(prompts).toHaveLength(0);
+    expect(await t.sql`select id from model_usage`).toHaveLength(0);
+    await send(app, id, stream);
+    expect(seen).toHaveLength(1);
+    const recall = () =>
+      fetch(`${app.listeningOrigin}/projects/${project}/recall`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ query: "needle" }),
+      });
+    expect((await recall()).status).toBe(200);
+    expect(seen).toHaveLength(2);
+    expect((await putFlags(app, false)).status).toBe(200);
+    await send(app, id, stream);
+    expect((await recall()).status).toBe(200);
+    expect(seen).toHaveLength(2);
+    const rows = await t.sql`select meta from audit_log where action='flags.update' order by ts`;
+    expect(rows.some((r) => r.meta.after.reranker === true)).toBe(true);
+    expect(rows.at(-1)?.meta.after.reranker).toBe(false);
+  },
+);
+it.each(["chat", "recall", "neither"])(
+  "missing %s binding still refuses management enablement",
+  async (missing) => {
+    await store(false);
+    const app = await start({
+      chatRetrievalBinding: missing === "recall" ? binding() : undefined,
+      recallBinding: missing === "chat" ? binding() : undefined,
+    });
+    const before = await readFeatureFlags(t.db),
+      response = await putFlags(app, true);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      errors: expect.arrayContaining([
+        {
+          path: "flags.reranker",
+          message: "当前版本尚不支持启用此开关",
+        },
+      ]),
+    });
+    expect(await readFeatureFlags(t.db)).toEqual(before);
+    expect(seen).toHaveLength(0);
+  },
+);
+it.each(["decay", "read_time_resolution"])(
+  "both bindings do not admit unsupported %s",
+  async (key) => {
+    await store(false);
+    const app = await start({ recallBinding: binding() });
+    const before = await readFeatureFlags(t.db);
+    expect((await putFlags(app, true, { [key]: true })).status).toBe(400);
+    expect(await readFeatureFlags(t.db)).toEqual(before);
+    expect(seen).toHaveLength(0);
+  },
+);
+it("binding capability does not bypass management authentication", async () => {
+  await store(false);
+  const app = await start({ recallBinding: binding() });
+  const before = await readFeatureFlags(t.db);
+  expect((await putFlags(app, true, {}, false)).status).toBe(401);
+  expect(await readFeatureFlags(t.db)).toEqual(before);
+  expect(seen).toHaveLength(0);
+});

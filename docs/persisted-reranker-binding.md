@@ -1,5 +1,7 @@
 # 内部检索绑定已保存的精排能力
 
+当前管理边界：同时安装聊天和召回受信绑定的库实例可通过管理 API 启用 reranker；默认实例仍拒绝。见[能力门控](reranker-management-capability.md)。下文其余未解锁说明为原切片交付时范围。
+
 #9/#22 的后续切片：内部 `retrieve` 可传 `rerankerProvider: { providerId }` 使用显式 Provider，
 或 `rerankerProvider: {}` 按 created_at、id 升序选择首个已配置能力。
 这与明文 `reranker` 选项互斥，仍要求显式融合及准入函数，最大候选200。
