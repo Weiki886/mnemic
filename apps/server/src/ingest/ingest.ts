@@ -52,7 +52,7 @@ export async function ingestCandidate(
   evidenceId: string,
   deps: IngestDeps = {},
 ): Promise<IngestResult> {
-  const flagsSnapshot = await captureFeatureFlags(db, deps);
+  const flagsSnapshot = await captureFeatureFlags(db, deps, { operation: "memory_write" });
   const subject = normalizeTerm(candidate.subject);
   const attribute = normalizeTerm(candidate.attribute);
 

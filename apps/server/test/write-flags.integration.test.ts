@@ -296,7 +296,7 @@ it.each(["legacy", "durable"])(
 
 it("unsupported memory config preserves existing no-memory chat degradation without extraction calls", async () => {
   const f = await seed();
-  await configure({ reranker: true });
+  await configure({ read_time_resolution: true });
   const { buildApp } = await import("../src/app.js");
   const app = buildApp({
     auth: false,

@@ -31,7 +31,7 @@ export async function processCandidate(
   options: FeatureFlagOptions = {},
 ): Promise<ProcessResult> {
   const candidate = { ...input, entities: [...input.entities] };
-  const flagsSnapshot = await captureFeatureFlags(db, options);
+  const flagsSnapshot = await captureFeatureFlags(db, options, { operation: "memory_write" });
   // Secret sanitization and its audit are mandatory even when quality scoring is disabled.
   const scrub = async (text: string, field: (typeof SANITIZE_FIELDS)[number] | "entities") => {
     const result = sanitizeText(text);

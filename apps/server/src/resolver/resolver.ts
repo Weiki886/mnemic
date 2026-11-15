@@ -54,7 +54,7 @@ export async function resolveObservation(
   deps: ResolverDeps = {},
 ): Promise<ResolveResult> {
   const intentPolicy = deps.intentPolicy ?? new AssertionIntentPolicy();
-  const flagsSnapshot = await captureFeatureFlags(db, deps);
+  const flagsSnapshot = await captureFeatureFlags(db, deps, { operation: "memory_write" });
   const sink = deps.traceWriter ?? noopTraceWriter;
   const traceWriter: ResolutionTraceWriter = {
     write: (record) => sink.write({ ...record, flagsSnapshot }),

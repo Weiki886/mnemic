@@ -92,3 +92,41 @@ it.each(["decay", "read_time_resolution"] as const)(
     ).rejects.toThrow("unsupported feature flag enabled");
   },
 );
+
+it.each(
+  [false, true].flatMap((memory_gate) =>
+    [false, true].map((authority_resolution) => ({ memory_gate, authority_resolution })),
+  ),
+)(
+  "write scope preserves full immutable snapshot %j while ignoring retrieval-only reranker",
+  async (flags) => {
+    const input = createFeatureFlagSnapshot({
+      schema_version: 1,
+      revision: 12,
+      flags: { ...DEFAULT_FEATURE_FLAGS, ...flags, reranker: true },
+    });
+    const result = await captureFeatureFlags(
+      db,
+      { flagsSnapshot: input },
+      {
+        operation: "memory_write",
+      },
+    );
+    expect(result).toEqual(input);
+    expect(Object.isFrozen(result.flags)).toBe(true);
+    expect(result.flags.reranker).toBe(true);
+  },
+);
+it.each(["decay", "read_time_resolution"] as const)(
+  "write scope never bypasses unsupported %s",
+  async (key) => {
+    const input = createFeatureFlagSnapshot({
+      schema_version: 1,
+      revision: 0,
+      flags: { ...DEFAULT_FEATURE_FLAGS, reranker: true, [key]: true },
+    });
+    await expect(
+      captureFeatureFlags(db, { flagsSnapshot: input }, { operation: "memory_write" }),
+    ).rejects.toThrow("unsupported feature flag enabled");
+  },
+);
