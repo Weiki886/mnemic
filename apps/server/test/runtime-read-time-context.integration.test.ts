@@ -32,8 +32,8 @@ const opts = (extra = {}) => ({
   flagsSnapshot: snapshot(),
   ...extra,
 });
-async function fixture() {
-  const p = uuidv7(),
+async function fixture(projectId?: string, attribute = "database") {
+  const p = projectId ?? uuidv7(),
     b = uuidv7(),
     v = uuidv7(),
     old = uuidv7(),
@@ -41,13 +41,13 @@ async function fixture() {
     c = uuidv7(),
     e1 = uuidv7(),
     e2 = uuidv7();
-  await t.sql`insert into projects(id,name) values(${p},'runtime replay')`;
+  if (!projectId) await t.sql`insert into projects(id,name) values(${p},'runtime replay')`;
   await t.sql`insert into conversations(id,project_id) values(${c},${p})`;
   await t.sql`insert into messages(id,conversation_id,speaker,raw_text,msg_time) values(${e1},${c},'user','offline',now()),(${e2},${c},'user','offline',now())`;
   await t.sql`insert into observations(id,project_id,type,subject,attribute,value,assertion_intent,source_type,authority,recorded_at,evidence_id)
- values(${old},${p},'fact','app','database','"needle PostgreSQL"','ASSERT','USER_CORRECTION',70,'2025-01-01Z',${e1}),
- (${next},${p},'fact','app','database','"SQLite private-value-sentinel"','UPDATE','PROJECT_FILE',50,'2025-02-01Z',${e2})`;
-  await t.sql`insert into beliefs(id,project_id,subject,attribute,salience) values(${b},${p},'app','database','0.400')`;
+ values(${old},${p},'fact','app',${attribute},'"needle PostgreSQL"','ASSERT','USER_CORRECTION',70,'2025-01-01Z',${e1}),
+ (${next},${p},'fact','app',${attribute},'"SQLite private-value-sentinel"','UPDATE','PROJECT_FILE',50,'2025-02-01Z',${e2})`;
+  await t.sql`insert into beliefs(id,project_id,subject,attribute,salience) values(${b},${p},'app',${attribute},'0.400')`;
   await t.sql`insert into belief_versions(id,belief_id,value,valid_from,recorded_from,source_observation_id) values(${v},${b},'"needle PostgreSQL"','2025-01-01Z','2025-01-01Z',${old})`;
   await t.sql`update beliefs set current_version_id=${v} where id=${b}`;
   return { p, b, v, old, next, e1, e2 };
@@ -142,7 +142,6 @@ it.each([
   { flagsSnapshot: undefined },
   { topK: 33 },
   { fusion: undefined },
-  { memoryBudget: { maxTokens: 100, countTokens: () => 0 } },
   { reinforce: true },
   { flagsSnapshot: snapshot({ read_time_reinforcement: true }) },
 ])("invalid binding or unsupported combination rejects before DB %j", async (extra) => {
@@ -202,4 +201,259 @@ it("observed cancellation refuses the context and creates no partial trace", asy
   await expect(pending).rejects.toThrow(new Error("READ_TIME_CONTEXT_ABORTED"));
   const [row] = await t.sql`select count(*) as n from retrieval_traces where project_id=${f.p}`;
   expect(row?.n).toBe("0");
+});
+
+it("budgets alternative text, retaining discarded source refs without changing ranked anchors", async () => {
+  const f = await fixture();
+  const before = await business(f.p);
+  const counted: string[] = [];
+  const r = await retrieve(
+    t.db,
+    TEST_MASTER_KEY,
+    f.p,
+    "needle",
+    opts({
+      memoryBudget: {
+        maxTokens: 3,
+        countTokens: (text: string) => {
+          counted.push(text);
+          return text.includes("SQLite") ? 100 : 0;
+        },
+      },
+    }),
+  );
+  expect(counted.some((s) => s.includes("SQLite"))).toBe(true);
+  expect(counted.join()).not.toContain("PostgreSQL");
+  expect(r.candidates[0]).toMatchObject({
+    beliefVersionId: f.v,
+    value: "needle PostgreSQL",
+    selected: true,
+  });
+  expect(r.abstained).toBe(false);
+  expect(r.readTimeContext).toMatchObject({
+    text: "（无相关记忆）",
+    memories: [],
+    abstained: true,
+  });
+  const [trace] =
+    await t.sql`select candidates,abstained from retrieval_traces where id=${r.traceId}`;
+  expect(trace?.abstained).toBe(false);
+  expect(trace?.candidates[0]).toMatchObject({
+    selected: true,
+    reason: "top_k",
+    readTimeResolution: {
+      status: "budget_discarded",
+      reason: "token_budget",
+      observationId: f.next,
+      evidenceId: f.e2,
+      memoryBudget: { maxTokens: 3, tokenCount: 0, contextPosition: null },
+    },
+  });
+  expect(trace?.candidates[0]).not.toHaveProperty("memoryBudget");
+  expect(JSON.stringify(trace?.candidates)).not.toMatch(
+    /SQLite|PostgreSQL|private-value-sentinel|database|subject/,
+  );
+  expect(await business(f.p)).toBe(before);
+});
+it("keeps exact context and actual provenance when the complete numbered block fits", async () => {
+  const f = await fixture();
+  const text = '[1] app / database = "SQLite private-value-sentinel"';
+  const r = await retrieve(
+    t.db,
+    TEST_MASTER_KEY,
+    f.p,
+    "needle",
+    opts({ memoryBudget: { maxTokens: text.length, countTokens: (s: string) => s.length } }),
+  );
+  expect(r.readTimeContext?.text).toBe(text);
+  expect(r.readTimeContext?.memories[0]?.provenance).toMatchObject({
+    anchorVersionId: f.v,
+    observationId: f.next,
+    evidenceId: f.e2,
+  });
+  const [trace] = await t.sql`select candidates from retrieval_traces where id=${r.traceId}`;
+  expect(trace?.candidates[0].readTimeResolution.memoryBudget).toEqual({
+    maxTokens: text.length,
+    tokenCount: text.length,
+    contextPosition: 1,
+  });
+});
+it.each(["salience", "recorded_from"])(
+  "orders actual context by anchor %s and counts full numbered prefixes",
+  async (order) => {
+    const a = await fixture();
+    const b = await fixture(a.p, "backend");
+    await t.sql`update beliefs set salience=${order === "salience" ? "0.900" : "0.400"} where id=${b.b}`;
+    await t.sql`update belief_versions set recorded_from=${order === "salience" ? "2025-01-01T00:00:00.000003Z" : "2025-01-01T00:00:00.000001Z"} where id=${a.v}`;
+    await t.sql`update belief_versions set recorded_from='2025-01-01T00:00:00.000002Z' where id=${b.v}`;
+    // Reverse Observation recency; priority must come from the real anchor version, not replay time.
+    await t.sql`update observations set recorded_at='2025-03-01Z' where id=${a.next}`;
+    const texts: string[] = [];
+    const r = await retrieve(
+      t.db,
+      TEST_MASTER_KEY,
+      a.p,
+      "needle",
+      opts({
+        topK: 2,
+        memoryBudget: {
+          maxTokens: 1000,
+          countTokens: (s: string) => {
+            texts.push(s);
+            return s.length;
+          },
+        },
+      }),
+    );
+    expect(r.readTimeContext?.memories.map((m) => m.provenance.anchorVersionId)).toEqual([
+      b.v,
+      a.v,
+    ]);
+    expect(r.readTimeContext?.text).toBe(
+      '[1] app / backend = "SQLite private-value-sentinel"\n[2] app / database = "SQLite private-value-sentinel"',
+    );
+    expect(texts.at(-1)).toBe(r.readTimeContext?.text);
+    const [trace] = await t.sql`select candidates from retrieval_traces where id=${r.traceId}`;
+    expect(
+      trace?.candidates.find((c: { beliefVersionId: string }) => c.beliefVersionId === b.v)
+        .readTimeResolution.memoryBudget.contextPosition,
+    ).toBe(1);
+  },
+);
+it("retains a strict priority prefix instead of skipping an oversized alternative", async () => {
+  const a = await fixture();
+  const b = await fixture(a.p, "backend");
+  await t.sql`update beliefs set salience='0.900' where id=${b.b}`;
+  const counted: string[] = [];
+  const r = await retrieve(
+    t.db,
+    TEST_MASTER_KEY,
+    a.p,
+    "needle",
+    opts({
+      topK: 2,
+      memoryBudget: {
+        maxTokens: 3,
+        countTokens: (s: string) => {
+          counted.push(s);
+          return s.includes("backend") ? 100 : 0;
+        },
+      },
+    }),
+  );
+  expect(r.readTimeContext?.memories).toEqual([]);
+  expect(counted).toHaveLength(2);
+  expect(counted[1]).toContain("backend");
+  const [trace] = await t.sql`select candidates from retrieval_traces where id=${r.traceId}`;
+  expect(
+    trace?.candidates.map(
+      (c: { readTimeResolution: { status: string } }) => c.readTimeResolution.status,
+    ),
+  ).toEqual(["budget_discarded", "budget_discarded"]);
+});
+it("captures the budget and callback identity before asynchronous work", async () => {
+  const f = await fixture();
+  const budget = { maxTokens: 0, countTokens: (s: string) => (s.includes("SQLite") ? 10 : 0) };
+  const pending = retrieve(t.db, TEST_MASTER_KEY, f.p, "needle", opts({ memoryBudget: budget }));
+  budget.maxTokens = 1000;
+  budget.countTokens = () => 0;
+  const r = await pending;
+  expect(r.readTimeContext?.memories).toEqual([]);
+});
+it.each(["counter", "empty", "cancel"])(
+  "budget failure %s creates no trace or business writes",
+  async (mode) => {
+    const f = await fixture();
+    const before = await business(f.p);
+    const controller = new AbortController();
+    const countTokens = () => {
+      if (mode === "counter") throw Error("sk-private-counter-sentinel");
+      if (mode === "cancel") controller.abort("private-abort");
+      return 1;
+    };
+    await expect(
+      retrieve(
+        t.db,
+        TEST_MASTER_KEY,
+        f.p,
+        "needle",
+        opts({
+          signal: controller.signal,
+          memoryBudget: { maxTokens: mode === "empty" ? 0 : 100, countTokens },
+        }),
+      ),
+    ).rejects.toThrow(
+      mode === "counter"
+        ? "MEMORY_TOKEN_COUNT_FAILED"
+        : mode === "empty"
+          ? "MEMORY_BUDGET_TOO_SMALL"
+          : "READ_TIME_CONTEXT_ABORTED",
+    );
+    const [row] = await t.sql`select count(*) as n from retrieval_traces where project_id=${f.p}`;
+    expect(row?.n).toBe("0");
+    expect(await business(f.p)).toBe(before);
+  },
+);
+it("invalid budget rejects before any database access", async () => {
+  const reads = vi.fn(() => {
+    throw Error("DB must not run");
+  });
+  await expect(
+    retrieve(
+      new Proxy(t.db, { get: reads }),
+      TEST_MASTER_KEY,
+      uuidv7(),
+      "needle",
+      opts({ memoryBudget: { maxTokens: -1, countTokens: () => 0 } }),
+    ),
+  ).rejects.toThrow("INVALID_RUNTIME_MEMORY_BUDGET");
+  expect(reads).not.toHaveBeenCalled();
+});
+it("flag-off retains old-value budgeting without replay metadata", async () => {
+  const f = await fixture();
+  const counted: string[] = [];
+  const r = await retrieve(
+    t.db,
+    TEST_MASTER_KEY,
+    f.p,
+    "needle",
+    opts({
+      flagsSnapshot: snapshot({ read_time_resolution: false }),
+      memoryBudget: {
+        maxTokens: 1000,
+        countTokens: (s: string) => {
+          counted.push(s);
+          return s.length;
+        },
+      },
+    }),
+  );
+  expect(r).not.toHaveProperty("readTimeContext");
+  expect(counted.join()).toContain("PostgreSQL");
+  expect(counted.join()).not.toContain("SQLite");
+  const [trace] = await t.sql`select candidates from retrieval_traces where id=${r.traceId}`;
+  expect(trace?.candidates[0]).not.toHaveProperty("readTimeResolution");
+  expect(trace?.candidates[0]).toHaveProperty("memoryBudget");
+});
+it("unselected replay is excluded from budget candidates and has no fake source or discard", async () => {
+  const f = await fixture();
+  await t.sql`update observations set assertion_intent='RETRACT',source_type='USER_EXPLICIT' where id=${f.next}`;
+  const countTokens = vi.fn(() => 0);
+  const r = await retrieve(
+    t.db,
+    TEST_MASTER_KEY,
+    f.p,
+    "needle",
+    opts({ memoryBudget: { maxTokens: 0, countTokens } }),
+  );
+  expect(countTokens).toHaveBeenCalledTimes(1);
+  expect(countTokens).toHaveBeenCalledWith("（无相关记忆）");
+  expect(r.readTimeContext?.abstained).toBe(true);
+  const [trace] = await t.sql`select candidates from retrieval_traces where id=${r.traceId}`;
+  expect(trace?.candidates[0].readTimeResolution).toMatchObject({
+    status: "unselected",
+    observationId: null,
+    evidenceId: null,
+  });
+  expect(trace?.candidates[0].readTimeResolution).not.toHaveProperty("memoryBudget");
 });

@@ -10,7 +10,6 @@ export function captureReadTimeBinding(options: RetrieveOptions, hasFusion: bool
       options.readTimeResolution !== true ||
       !hasFusion ||
       options.flagsSnapshot === undefined ||
-      options.memoryBudget !== undefined ||
       options.reinforce === true ||
       !Number.isInteger(topK) ||
       topK < 1 ||
