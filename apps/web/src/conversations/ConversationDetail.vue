@@ -100,9 +100,11 @@ onMounted(async () => {
               {{ memory.subject }} / {{ memory.attribute }}
             </span>
             <span class="ml-2 text-zinc-600">= {{ formatValue(memory.value) }}</span>
-            <span v-if="memory.belief_version_id === null" class="ml-2 text-xs text-record-700"
-              >Observation 重放</span
-            >
+            <span
+              v-if="memory.belief_version_id === null"
+              class="ml-2 text-xs text-record-700"
+              v-text="'Observation 重放'"
+            />
           </RouterLink>
         </div>
       </li>
