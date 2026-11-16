@@ -11,7 +11,14 @@ const Scope = z
     authorityEnabled: z.boolean(),
   })
   .strict();
+const Anchor = Scope.pick({ beliefId: true, beliefVersionId: true });
+const BatchScope = Scope.omit({ beliefId: true, beliefVersionId: true })
+  .extend({
+    anchors: z.array(Anchor).max(32),
+  })
+  .strict();
 type HistoryRow = {
+  position: number;
   id: string;
   projectId: string;
   subject: string;
@@ -27,56 +34,106 @@ type HistoryRow = {
   valueFits: boolean;
 };
 
-/** Read-only preparation for #9: never substitute this result under the anchor version's ID. */
+/** Read-only preparation; anchor version IDs never identify replacement values. */
 export async function readReadTimeReplay(db: Pick<PostgresJsDatabase, "execute">, value: unknown) {
   const parsed = Scope.safeParse(value);
   if (!parsed.success) throw Error("INVALID_READ_TIME_SCOPE");
-  const scope = parsed.data; // Detached before the first await.
+  const { projectId, beliefId, beliefVersionId, authorityEnabled } = parsed.data;
+  const result = await readReadTimeReplays(db, {
+    projectId,
+    anchors: [{ beliefId, beliefVersionId }],
+    authorityEnabled,
+  });
+  return result[0] ?? null;
+}
+
+/** One MVCC statement for the bounded shortlist; invalid histories reject the entire batch. */
+export async function readReadTimeReplays(db: Pick<PostgresJsDatabase, "execute">, value: unknown) {
+  // Check cardinality before Zod traverses or copies an arbitrary collection.
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !Array.isArray((value as Record<string, unknown>).anchors) ||
+    ((value as Record<string, unknown>).anchors as unknown[]).length > 32
+  )
+    throw Error("INVALID_READ_TIME_SCOPE");
+  const parsed = BatchScope.safeParse(value);
+  if (!parsed.success) throw Error("INVALID_READ_TIME_SCOPE");
+  const scope = parsed.data;
+  if (
+    new Set(scope.anchors.map((a) => a.beliefId)).size !== scope.anchors.length ||
+    new Set(scope.anchors.map((a) => a.beliefVersionId)).size !== scope.anchors.length
+  )
+    throw Error("INVALID_READ_TIME_SCOPE");
+  if (scope.anchors.length === 0) return [];
+  const requested = sql.join(
+    scope.anchors.map(
+      (a, i) => sql`(${i}::integer,${a.beliefId}::uuid,${a.beliefVersionId}::uuid)`,
+    ),
+    sql`, `,
+  );
   let rows;
   try {
-    // A single MVCC statement binds the active/current anchor, source and full group history.
-    // One extra row detects overflow; never replay a truncated event prefix as complete history.
     rows = await db.execute<HistoryRow>(sql`
-      select o.id,o.project_id as "projectId",o.subject,o.attribute,o.evidence_id as "evidenceId",
-        case when octet_length(o.value::text)<=16384 then o.value else null end as value,
-        octet_length(o.value::text)<=16384 as "valueFits",
-        o.authority,o.assertion_intent as "assertionIntent",o.source_type as "sourceType",
-        to_char(o.valid_time at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "validTime",
-        to_char(o.recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "recordedAt",
-        coalesce(c.project_id=b.project_id,false) as "evidenceScopeValid"
-      from beliefs b
-      join belief_versions bv on bv.id=b.current_version_id and bv.belief_id=b.id
-        and bv.recorded_to is null
-      join observations anchor on anchor.id=bv.source_observation_id
-        and anchor.project_id=b.project_id and anchor.subject=b.subject and anchor.attribute=b.attribute
-      join observations o on o.project_id=b.project_id and o.subject=b.subject and o.attribute=b.attribute
-      left join messages m on m.id=o.evidence_id
-      left join conversations c on c.id=m.conversation_id
-      where b.project_id=${scope.projectId}::uuid and b.id=${scope.beliefId}::uuid
-        and bv.id=${scope.beliefVersionId}::uuid and b.status='active'
-      order by o.recorded_at,o.id limit ${MAX_REPLAY_OBSERVATIONS + 1}
+      with requested(position,belief_id,version_id) as (values ${requested}),
+      history as (
+        select requested.position,o.*,
+          sum(o.value_bytes) over (partition by requested.position) as group_bytes
+        from requested
+        join beliefs b on b.id=requested.belief_id and b.project_id=${scope.projectId}::uuid and b.status='active'
+        join belief_versions bv on bv.id=requested.version_id and bv.id=b.current_version_id
+          and bv.belief_id=b.id and bv.recorded_to is null
+        join observations anchor on anchor.id=bv.source_observation_id
+          and anchor.project_id=b.project_id and anchor.subject=b.subject and anchor.attribute=b.attribute
+        cross join lateral (
+          select obs.id,obs.project_id as "projectId",obs.subject,obs.attribute,
+            obs.evidence_id as "evidenceId",obs.value,octet_length(obs.value::text) as value_bytes,
+            obs.authority,obs.assertion_intent as "assertionIntent",obs.source_type as "sourceType",
+            to_char(obs.valid_time at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "validTime",
+            to_char(obs.recorded_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "recordedAt",
+            obs.recorded_at as sort_time,
+            coalesce(c.project_id=b.project_id,false) as "evidenceScopeValid"
+          from observations obs
+          left join messages m on m.id=obs.evidence_id
+          left join conversations c on c.id=m.conversation_id
+          where obs.project_id=b.project_id and obs.subject=b.subject and obs.attribute=b.attribute
+          order by obs.recorded_at,obs.id limit ${MAX_REPLAY_OBSERVATIONS + 1}
+        ) o
+      )
+      select position,id,"projectId",subject,attribute,"evidenceId",authority,"assertionIntent","sourceType",
+        "validTime","recordedAt","evidenceScopeValid",
+        case when value_bytes<=16384 and group_bytes<=131072 then value else null end as value,
+        value_bytes<=16384 and group_bytes<=131072 as "valueFits"
+      from history order by position,sort_time,id
     `);
   } catch {
     throw Error("READ_TIME_HISTORY_FAILED");
   }
-  if (rows.length === 0) return null;
   try {
-    if (
-      rows.length > MAX_REPLAY_OBSERVATIONS ||
-      rows.some((r) => !r.evidenceScopeValid || !r.valueFits)
-    )
-      throw Error();
-    const first = rows[0]!;
-    const result = replayObservationGroup({
-      group: { projectId: scope.projectId, subject: first.subject, attribute: first.attribute },
-      authorityEnabled: scope.authorityEnabled,
-      observations: rows.map(({ evidenceScopeValid: _scope, valueFits: _fits, ...o }) => ({
-        ...o,
-        validTime: o.validTime === null ? null : new Date(o.validTime),
-        recordedAt: new Date(o.recordedAt),
-      })),
+    const groups: HistoryRow[][] = scope.anchors.map(() => []);
+    for (const row of rows) groups[row.position]!.push(row);
+    return groups.map((group, i) => {
+      if (group.length === 0) return null;
+      if (
+        group.length > MAX_REPLAY_OBSERVATIONS ||
+        group.some((r) => !r.evidenceScopeValid || !r.valueFits)
+      )
+        throw Error();
+      const first = group[0]!;
+      const result = replayObservationGroup({
+        group: { projectId: scope.projectId, subject: first.subject, attribute: first.attribute },
+        authorityEnabled: scope.authorityEnabled,
+        observations: group.map(
+          ({ position: _position, evidenceScopeValid: _scope, valueFits: _fits, ...o }) => ({
+            ...o,
+            validTime: o.validTime === null ? null : new Date(o.validTime),
+            recordedAt: new Date(o.recordedAt),
+          }),
+        ),
+      });
+      const anchor = scope.anchors[i]!;
+      return { beliefId: anchor.beliefId, anchorVersionId: anchor.beliefVersionId, ...result };
     });
-    return { beliefId: scope.beliefId, anchorVersionId: scope.beliefVersionId, ...result };
   } catch {
     throw Error("INVALID_READ_TIME_HISTORY");
   }
