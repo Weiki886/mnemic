@@ -1,4 +1,6 @@
 import { prepareRuntimeReranker, type RerankerDetail } from "./runtime-reranker.js";
+import { captureReadTimeBinding } from "./runtime-read-time.js";
+import { buildReadTimeContext } from "./read-time-context.js";
 import { captureFeatureFlags } from "../flags/runtime.js";
 import { captureRecallTime, parseRuntimeFusion, readFusedCandidates } from "./runtime-fusion.js";
 import { buildEntityScoresQuery } from "./entity-scores.js";
@@ -37,6 +39,8 @@ export interface RetrievalCandidate {
 }
 
 export interface RetrieveResult {
+  /** Alternative answer context. Candidates and top-level abstention still describe ranked anchors. */
+  readTimeContext?: Awaited<ReturnType<typeof buildReadTimeContext>>;
   /** 入选候选（selected=true，Top-K）；拒答时为空 */
   candidates: RetrievalCandidate[];
   abstained: boolean;
@@ -44,6 +48,8 @@ export interface RetrieveResult {
 }
 
 export interface RetrieveOptions extends ResolveOptions {
+  /** Trusted isolated experiment; requires fusion + explicit snapshot. Never HTTP input. */
+  readTimeResolution?: unknown;
   /** Trusted internal experiment, requires its own threshold; not accepted from HTTP bodies. */
   fusion?: unknown;
   /** Trusted explicit Score API experiment; requires fusion, snapshot and admission. Never HTTP input. */
@@ -77,6 +83,8 @@ export async function retrieve(
 ): Promise<RetrieveResult> {
   const topK = options.topK ?? DEFAULT_TOP_K;
   const fusion = parseRuntimeFusion(options.fusion);
+  const readTimeSnapshot = captureReadTimeBinding(options, fusion !== undefined, topK);
+  const readTimeSignal = options.signal;
   const capturedTime = captureRecallTime(options.validAt);
   const legacyThreshold = options.threshold ?? ABSTAIN_THRESHOLD;
   const memoryBudget = parseRuntimeMemoryBudget(options.memoryBudget, fusion !== undefined);
@@ -86,9 +94,17 @@ export async function retrieve(
   )
     throw Error("INVALID_RUNTIME_FUSION_OPTIONS");
   const reranker = prepareRuntimeReranker(db, projectId, options, fusion, masterKey);
-  const flagsSnapshot = await captureFeatureFlags(db, options, {
-    reranker: reranker !== undefined,
-  });
+  const flagsSnapshot = await captureFeatureFlags(
+    db,
+    {
+      ...options,
+      ...(readTimeSnapshot ? { flagsSnapshot: readTimeSnapshot } : {}),
+    },
+    {
+      reranker: reranker !== undefined,
+      readTimeResolution: readTimeSnapshot !== undefined,
+    },
+  );
   const queryValidAt = flagsSnapshot.flags.retrieval_time ? capturedTime : null;
   const threshold = fusion?.threshold ?? legacyThreshold;
   const reinforce = flagsSnapshot.flags.read_time_reinforcement;
@@ -260,11 +276,45 @@ export async function retrieve(
     }
     abstained = abstained || selected.length === 0;
   }
+  const readTimeContext = flagsSnapshot.flags.read_time_resolution
+    ? await buildReadTimeContext(
+        db,
+        {
+          projectId,
+          anchors: selected.map((c) => ({
+            beliefId: c.beliefId,
+            beliefVersionId: c.beliefVersionId,
+          })),
+          authorityEnabled: flagsSnapshot.flags.authority_resolution,
+        },
+        readTimeSignal,
+      )
+    : undefined;
+  const readTimeDetails = new Map(
+    selected.map((c, i) => {
+      const outcome = readTimeContext?.outcomes[i];
+      const memory = readTimeContext?.memories.find(
+        (m) => m.provenance.anchorVersionId === c.beliefVersionId,
+      );
+      return [
+        c.beliefVersionId,
+        outcome
+          ? {
+              status: outcome.status,
+              observationId: memory?.provenance.observationId ?? null,
+              evidenceId: memory?.provenance.evidenceId ?? null,
+              decisions: outcome.decisions,
+            }
+          : undefined,
+      ] as const;
+    }),
+  );
   // Trace's selected order matches numbered context; fusion ranks remain in rankFusion metadata.
   const traceOrder = memoryBudget ? [...selected, ...all.filter((c) => !c.selected)] : all;
 
   // 4. trace 落库（只存 ID 与得分，不存内容快照；开关状态入 trace）
   if (flagsSnapshot.flags.reranker) reranker?.check();
+  if (readTimeContext && readTimeSignal?.aborted) throw Error("READ_TIME_CONTEXT_ABORTED");
   const traceId = uuidv7();
   await db.insert(retrievalTraces).values({
     id: traceId,
@@ -278,6 +328,9 @@ export async function retrieve(
       fusedScore: c.fusedScore,
       selected: c.selected,
       reason: budgetDiscarded.has(c.beliefVersionId) ? "token_budget" : c.reason,
+      ...(readTimeDetails.get(c.beliefVersionId)
+        ? { readTimeResolution: readTimeDetails.get(c.beliefVersionId)! }
+        : {}),
       ...(rerankerDetails.has(c.beliefVersionId)
         ? { reranker: rerankerDetails.get(c.beliefVersionId)! }
         : {}),
@@ -321,5 +374,10 @@ export async function retrieve(
       reinforce_enabled: reinforce,
     },
   });
-  return { candidates: selected, abstained, traceId };
+  return {
+    candidates: selected,
+    abstained,
+    traceId,
+    ...(readTimeContext ? { readTimeContext } : {}),
+  };
 }

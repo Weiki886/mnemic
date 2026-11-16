@@ -126,6 +126,38 @@ async function fact(label = "a", project = p, salience = 0.4) {
 const trace = async (id: string) =>
   (await t.sql`select * from retrieval_traces where id=${id}`)[0]!;
 const usage = () => t.sql`select * from model_usage where project_id=${p} and slot='reranker'`;
+it("reranks anchor values before replaying the selected answer context", async () => {
+  await fact("a");
+  const chosen = await fact("b");
+  const alternative = uuidv7();
+  await t.sql`insert into observations(id,project_id,type,subject,attribute,value,evidence_id,assertion_intent,source_type,authority,recorded_at)
+    select ${alternative},project_id,type,subject,attribute,'"SQLite alternative"',evidence_id,'UPDATE','USER_CORRECTION',70,recorded_at+interval '1 second'
+    from observations where id=${chosen.o}`;
+  const result = await retrieve(
+    t.db,
+    TEST_MASTER_KEY,
+    p,
+    "needle",
+    opts({
+      readTimeResolution: true,
+      flagsSnapshot: snapshot({ read_time_resolution: true }),
+    }),
+  );
+  expect(seen).toHaveLength(1);
+  expect(seen[0]!.text_2.join("\n")).not.toContain("SQLite alternative");
+  expect(result.candidates[0]?.beliefVersionId).toBe(chosen.v);
+  expect(result.readTimeContext?.memories[0]).toMatchObject({
+    value: "SQLite alternative",
+    provenance: { observationId: alternative, anchorVersionId: chosen.v },
+  });
+  expect(await usage()).toHaveLength(1);
+  const row = await trace(result.traceId);
+  expect(row.candidates[0]).toMatchObject({
+    reranker: { status: "applied" },
+    readTimeResolution: { status: "selected", observationId: alternative },
+  });
+  expect(JSON.stringify(row.candidates)).not.toContain("SQLite alternative");
+});
 it.each([
   fusion,
   { mode: "weighted", weights: { vector: 0, keyword: 1, entity: 0, time: 0 }, threshold: 0.1 },
