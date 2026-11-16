@@ -1,4 +1,5 @@
 import { prepareRuntimeReranker, type RerankerDetail } from "./runtime-reranker.js";
+import { budgetReadTimeContext } from "./read-time-budget.js";
 import { captureReadTimeBinding } from "./runtime-read-time.js";
 import { buildReadTimeContext } from "./read-time-context.js";
 import { captureFeatureFlags } from "../flags/runtime.js";
@@ -40,7 +41,9 @@ export interface RetrievalCandidate {
 
 export interface RetrieveResult {
   /** Alternative answer context. Candidates and top-level abstention still describe ranked anchors. */
-  readTimeContext?: Awaited<ReturnType<typeof buildReadTimeContext>>;
+  readTimeContext?:
+    | Awaited<ReturnType<typeof buildReadTimeContext>>
+    | ReturnType<typeof budgetReadTimeContext>["context"];
   /** 入选候选（selected=true，Top-K）；拒答时为空 */
   candidates: RetrievalCandidate[];
   abstained: boolean;
@@ -256,7 +259,7 @@ export async function retrieve(
     { maxTokens: number; tokenCount: number; contextPosition: number | null }
   >();
   const budgetDiscarded = new Set<string>();
-  if (memoryBudget) {
+  if (memoryBudget && !flagsSnapshot.flags.read_time_resolution) {
     const before = selected;
     const result = budgetShortlist(before, budgetMetadata, memoryBudget);
     selected = result.selected;
@@ -276,7 +279,7 @@ export async function retrieve(
     }
     abstained = abstained || selected.length === 0;
   }
-  const readTimeContext = flagsSnapshot.flags.read_time_resolution
+  const replayedContext = flagsSnapshot.flags.read_time_resolution
     ? await buildReadTimeContext(
         db,
         {
@@ -290,10 +293,18 @@ export async function retrieve(
         readTimeSignal,
       )
     : undefined;
+  const replayBudget =
+    replayedContext && memoryBudget
+      ? budgetReadTimeContext(replayedContext, budgetMetadata, memoryBudget)
+      : undefined;
+  const readTimeContext = replayBudget?.context ?? replayedContext;
+  const replayPositions = new Map(
+    readTimeContext?.memories.map((m, i) => [m.provenance.anchorVersionId, i + 1]),
+  );
   const readTimeDetails = new Map(
     selected.map((c, i) => {
       const outcome = readTimeContext?.outcomes[i];
-      const memory = readTimeContext?.memories.find(
+      const memory = replayedContext?.memories.find(
         (m) => m.provenance.anchorVersionId === c.beliefVersionId,
       );
       return [
@@ -304,13 +315,24 @@ export async function retrieve(
               observationId: memory?.provenance.observationId ?? null,
               evidenceId: memory?.provenance.evidenceId ?? null,
               decisions: outcome.decisions,
+              ...(outcome.status === "budget_discarded" ? { reason: "token_budget" } : {}),
+              ...(replayBudget && memory && memoryBudget
+                ? {
+                    memoryBudget: {
+                      maxTokens: memoryBudget.maxTokens,
+                      tokenCount: replayBudget.packed.tokenCount,
+                      contextPosition: replayPositions.get(c.beliefVersionId) ?? null,
+                    },
+                  }
+                : {}),
             }
           : undefined,
       ] as const;
     }),
   );
-  // Trace's selected order matches numbered context; fusion ranks remain in rankFusion metadata.
-  const traceOrder = memoryBudget ? [...selected, ...all.filter((c) => !c.selected)] : all;
+  // Legacy budget order follows its context; replay keeps anchor ranks and records separate positions.
+  const traceOrder =
+    memoryBudget && !replayedContext ? [...selected, ...all.filter((c) => !c.selected)] : all;
 
   // 4. trace 落库（只存 ID 与得分，不存内容快照；开关状态入 trace）
   if (flagsSnapshot.flags.reranker) reranker?.check();

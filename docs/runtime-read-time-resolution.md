@@ -10,18 +10,18 @@ The binding does not enable the flag: `read_time_resolution` must also be true i
 An absent/false binding retains the existing unsupported-flag rejection. Malformed bindings
 fail before database or model access. Configuration cannot come from HTTP or model output.
 
-The first experiment deliberately rejects `memoryBudget` and read-time reinforcement, including
-an enabled reinforcement bit in the snapshot. Counting the old value cannot guarantee the size
-of an alternative context; silently reinforcing the old shortlist is also inappropriate.
-These combinations require separate integration. Existing APIs and write paths continue to
-reject `read_time_resolution=true`; `decay` remains unsupported.
+The experiment accepts an optional trusted `memoryBudget` with a synchronous tokenizer.
+Read-time reinforcement is still rejected, including an enabled reinforcement bit in the
+snapshot: silently reinforcing the old shortlist would be inappropriate. Existing APIs and
+write paths continue to reject `read_time_resolution=true`; `decay` remains unsupported.
 
 ## Two distinct result stages
 
 1. Retrieve and score current, active version anchors with existing project/time/source filters.
 2. Apply optional reranking to the anchor values, then select Top-K anchors.
 3. If read-time resolution is enabled, read and replay those histories once and prepare context.
-4. Write the score trace and ID-only replay decisions. No Belief, version, Observation, confidence,
+4. Optionally pack the actual replay text into the memory-block token budget.
+5. Write the score trace and ID-only replay decisions. No Belief, version, Observation, confidence,
    evidence count, or salience is modified by this experiment.
 
 `candidates`, their values/scores, top-level `abstained`, and existing debug counts retain **anchor
@@ -42,6 +42,35 @@ A changed or removed anchor becomes unavailable rather than being revived. Other
 changes can be visible at replay time. This is not an as-of or microsecond valid-time resolver.
 All source cardinality/transport/JSON limits and context byte limits continue to apply.
 
+## Budgeting alternative context
+
+When supplied, `memoryBudget` counts the actual replay `subject / attribute = JSON(value)`
+block, including numbering and separators, with the same renderer and prefix packer as the
+existing anchor budget. It never counts old anchor text as a proxy for alternatives. The
+numeric limit and tokenizer function identity are captured before asynchronous work.
+
+Priority is the anchor Belief's salience descending (null last), then the real anchor version's
+`recorded_from` descending with PostgreSQL microseconds preserved, then anchor UUID ascending.
+These metadata come from scoring, not Observation timestamps or an invented alternative version.
+The first over-budget entry discards the entire remaining priority suffix; smaller lower-priority
+entries do not skip ahead. Returned memories follow that priority order, with their actual
+Observation/Evidence provenance intact. The empty marker must fit, too.
+
+Existing replay entry and complete-block byte limits are checked before token packing. Oversized
+history/context still fails closed rather than being made admissible by truncation. A tokenizer
+exception or invalid count returns a fixed error and creates no partial retrieval trace. There
+is no built-in estimate: the trusted caller must supply the final model's matching synchronous
+tokenizer. This budget covers only the memory block, not a complete model context window.
+
+Anchor `candidates`, scores, reasons and top-level abstention stay unchanged. Alternative context
+has its own memories/text/abstention. A budgeted-out alternative has outcome `budget_discarded`.
+Under its trace candidate's `readTimeResolution`, it retains actual Observation/Evidence IDs,
+adds reason `token_budget`, and records `memoryBudget` with maxTokens, final whole-block
+tokenCount and nullable one-based contextPosition. Selected alternatives have the same budget
+metadata with a position; unselected/unavailable histories have no fake budget metadata or source.
+No alternative value or display label is copied into the trace. With the replay flag off,
+existing old-value budgeting and its original trace fields remain unchanged.
+
 ## Trace and failure behavior
 
 Shortlisted trace candidates gain `readTimeResolution` containing status, selected Observation
@@ -61,7 +90,7 @@ Tests use isolated PostgreSQL, offline models, and a local Score server. They co
 modes, actual alternative provenance with distinct Evidence, read-only business snapshots,
 flag-off SQL counts, empty pools, retraction, strict admission, snapshot mutation, cancellation,
 and score-only trace persistence. No paid models, real credentials, or existing services are
-used. Real quality metrics, byte/token budget composition, production citations, and the complete
+used. Real quality metrics, production citations, and the complete
 flag matrix remain outstanding; #9/#22 remain open.
 
 Rollback removes the internal binding and trace metadata writer while retaining recorded JSONB
