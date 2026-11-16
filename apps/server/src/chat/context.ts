@@ -2,13 +2,19 @@ import { and, asc, eq, inArray, or } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { ModelMessage } from "ai";
 import { z } from "zod";
-import { beliefVersions, beliefs, conversations, messages } from "../db/schema.js";
+import { conversations, messages } from "../db/schema.js";
 import {
   currentUserContent,
   fileMetadata,
   FileEvidenceError,
   validateFileParents,
 } from "./attachments.js";
+
+import {
+  memoryReferences,
+  memoryReferenceKey,
+  resolveMemoryReferences,
+} from "./memory-references.js";
 
 type Reader = Pick<PostgresJsDatabase, "select">;
 type Conversation = typeof conversations.$inferSelect;
@@ -70,34 +76,13 @@ export async function messageViews(
     if (!(error instanceof FileEvidenceError)) throw error;
     throw new ConversationContextError("文件证据引用不可用");
   }
-  const refs = (m: Message): string[] =>
-    Array.isArray(m.memories)
-      ? m.memories.flatMap((id) => {
-          const parsed = UUID.safeParse(id);
-          return parsed.success ? [parsed.data] : [];
-        })
-      : [];
-  const ids = [...new Set(msgs.flatMap(refs))];
-  const cited = ids.length
-    ? await db
-        .select({
-          belief_version_id: beliefVersions.id,
-          belief_id: beliefs.id,
-          subject: beliefs.subject,
-          attribute: beliefs.attribute,
-          value: beliefVersions.value,
-        })
-        .from(beliefVersions)
-        .innerJoin(beliefs, eq(beliefVersions.beliefId, beliefs.id))
-        .where(
-          and(
-            inArray(beliefVersions.id, ids),
-            eq(beliefs.projectId, projectId),
-            activeOnly ? eq(beliefs.status, "active") : undefined,
-          ),
-        )
-    : [];
-  const byId = new Map(cited.map((c) => [c.belief_version_id, c]));
+  const references = new Map(msgs.map((m) => [m.id, memoryReferences(m.memories)]));
+  const cited = await resolveMemoryReferences(
+    db,
+    projectId,
+    [...references.values()].flat(),
+    activeOnly,
+  );
   return msgs.map((m) => ({
     ...(m.attachment ? { attachment: fileMetadata(m)! } : {}),
     id: m.id,
@@ -106,8 +91,8 @@ export async function messageViews(
     ...(m.generationStatus ? { generation_status: m.generationStatus } : {}),
     msg_time: m.msgTime,
     memories: Array.isArray(m.memories)
-      ? refs(m).flatMap((id) => {
-          const c = byId.get(id);
+      ? references.get(m.id)!.flatMap((ref) => {
+          const c = cited.get(memoryReferenceKey(ref));
           return c ? [c] : [];
         })
       : null,

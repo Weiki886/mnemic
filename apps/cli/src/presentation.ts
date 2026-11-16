@@ -30,7 +30,13 @@ export function formatReply(reply: ChatReply, answer = reply.answer, hasFiles = 
     terminalText(answer, true),
   ];
   for (const memory of reply.memories) {
-    lines.push(terminalText(`引用 ${memory.belief_id} / 版本 ${memory.belief_version_id}`));
+    lines.push(
+      terminalText(
+        memory.belief_version_id === null
+          ? `引用 ${memory.belief_id} / Observation ${memory.provenance.observation_id} / Evidence ${memory.provenance.evidence_id}`
+          : `引用 ${memory.belief_id} / 版本 ${memory.belief_version_id}`,
+      ),
+    );
     lines.push(
       terminalText(
         `  ${memory.subject} / ${memory.attribute} = ${valueText(memory.value).slice(0, 240)}`,

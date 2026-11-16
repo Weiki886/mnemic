@@ -724,15 +724,49 @@
             "type": "array",
             "nullable": true,
             "items": {
-              "type": "object",
-              "properties": {
-                "belief_id": { "type": "string", "format": "uuid" },
-                "belief_version_id": { "type": "string", "format": "uuid" },
-                "subject": { "type": "string" },
-                "attribute": { "type": "string" },
-                "value": {}
-              },
-              "required": ["belief_id", "belief_version_id", "subject", "attribute", "value"]
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "belief_id": { "type": "string", "format": "uuid" },
+                    "belief_version_id": { "type": "string", "format": "uuid" },
+                    "subject": { "type": "string" },
+                    "attribute": { "type": "string" },
+                    "value": {}
+                  },
+                  "required": ["belief_id", "belief_version_id", "subject", "attribute", "value"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "belief_id": { "type": "string", "format": "uuid" },
+                    "belief_version_id": {},
+                    "subject": { "type": "string" },
+                    "attribute": { "type": "string" },
+                    "value": {},
+                    "provenance": {
+                      "type": "object",
+                      "properties": {
+                        "kind": { "type": "string", "enum": ["observation_replay"] },
+                        "anchor_version_id": { "type": "string", "format": "uuid" },
+                        "observation_id": { "type": "string", "format": "uuid" },
+                        "evidence_id": { "type": "string", "format": "uuid" }
+                      },
+                      "required": ["kind", "anchor_version_id", "observation_id", "evidence_id"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "belief_id",
+                    "belief_version_id",
+                    "subject",
+                    "attribute",
+                    "value",
+                    "provenance"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           }
         },
@@ -2619,15 +2653,49 @@
           "memories": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "belief_id": { "type": "string", "format": "uuid" },
-                "belief_version_id": { "type": "string", "format": "uuid" },
-                "subject": { "type": "string" },
-                "attribute": { "type": "string" },
-                "value": {}
-              },
-              "required": ["belief_id", "belief_version_id", "subject", "attribute", "value"]
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "belief_id": { "type": "string", "format": "uuid" },
+                    "belief_version_id": { "type": "string", "format": "uuid" },
+                    "subject": { "type": "string" },
+                    "attribute": { "type": "string" },
+                    "value": {}
+                  },
+                  "required": ["belief_id", "belief_version_id", "subject", "attribute", "value"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "belief_id": { "type": "string", "format": "uuid" },
+                    "belief_version_id": {},
+                    "subject": { "type": "string" },
+                    "attribute": { "type": "string" },
+                    "value": {},
+                    "provenance": {
+                      "type": "object",
+                      "properties": {
+                        "kind": { "type": "string", "enum": ["observation_replay"] },
+                        "anchor_version_id": { "type": "string", "format": "uuid" },
+                        "observation_id": { "type": "string", "format": "uuid" },
+                        "evidence_id": { "type": "string", "format": "uuid" }
+                      },
+                      "required": ["kind", "anchor_version_id", "observation_id", "evidence_id"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "belief_id",
+                    "belief_version_id",
+                    "subject",
+                    "attribute",
+                    "value",
+                    "provenance"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           }
         },
@@ -6682,22 +6750,64 @@
                           "memories": {
                             "type": "array",
                             "items": {
-                              "type": "object",
-                              "properties": {
-                                "belief_id": { "type": "string", "format": "uuid" },
-                                "belief_version_id": { "type": "string", "format": "uuid" },
-                                "subject": { "type": "string" },
-                                "attribute": { "type": "string" },
-                                "value": {}
-                              },
-                              "required": [
-                                "belief_id",
-                                "belief_version_id",
-                                "subject",
-                                "attribute",
-                                "value"
-                              ],
-                              "additionalProperties": false
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "belief_id": { "type": "string", "format": "uuid" },
+                                    "belief_version_id": { "type": "string", "format": "uuid" },
+                                    "subject": { "type": "string" },
+                                    "attribute": { "type": "string" },
+                                    "value": {}
+                                  },
+                                  "required": [
+                                    "belief_id",
+                                    "belief_version_id",
+                                    "subject",
+                                    "attribute",
+                                    "value"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "belief_id": { "type": "string", "format": "uuid" },
+                                    "belief_version_id": {},
+                                    "subject": { "type": "string" },
+                                    "attribute": { "type": "string" },
+                                    "value": {},
+                                    "provenance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": ["observation_replay"]
+                                        },
+                                        "anchor_version_id": { "type": "string", "format": "uuid" },
+                                        "observation_id": { "type": "string", "format": "uuid" },
+                                        "evidence_id": { "type": "string", "format": "uuid" }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "anchor_version_id",
+                                        "observation_id",
+                                        "evidence_id"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "required": [
+                                    "belief_id",
+                                    "belief_version_id",
+                                    "subject",
+                                    "attribute",
+                                    "value",
+                                    "provenance"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
                             },
                             "maxItems": 100
                           }

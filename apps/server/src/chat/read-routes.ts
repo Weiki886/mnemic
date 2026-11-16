@@ -17,7 +17,7 @@ import {
 } from "./context.js";
 
 /** 对话只读视图 API（#8）：交互式对话不做，仅会话列表 + 消息时间线 + 引用记忆现查解析。
- *  messages.memories 只存 belief_version_id（决策 8），读出时 join 现查内容。 */
+ *  messages.memories 只存版本或重放来源引用（决策 8），读出时 join 现查内容。 */
 
 function unavailable(reply: FastifyReply, requestId: string) {
   return reply

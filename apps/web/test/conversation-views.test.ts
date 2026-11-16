@@ -206,3 +206,41 @@ describe("ConversationDetail", () => {
     expect(wrapper.text()).not.toContain("引用记忆");
   });
 });
+
+it("labels replay citations as Observation sources and retains belief detail links", async () => {
+  const id = "01920000-0000-7000-8000-000000000001";
+  const getConversation = vi.fn().mockResolvedValue({
+    ...detail,
+    messages: [
+      {
+        id: "replayed",
+        speaker: "assistant",
+        raw_text: "SQLite",
+        msg_time: "2026-09-24T09:00:05Z",
+        memories: [
+          {
+            belief_id: id,
+            belief_version_id: null,
+            subject: "app",
+            attribute: "database",
+            value: "SQLite",
+            provenance: {
+              kind: "observation_replay",
+              anchor_version_id: id,
+              observation_id: id,
+              evidence_id: id,
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const wrapper = mount(ConversationDetailView, {
+    props: { projectId, conversationId, api: { getConversation } as unknown as ApiClient },
+    global: routerStub,
+  });
+  await flushPromises();
+  expect(wrapper.text()).toContain("Observation 重放");
+  expect(wrapper.find(`a[href='/memories/${id}']`).exists()).toBe(true);
+  wrapper.unmount();
+});

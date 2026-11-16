@@ -22,20 +22,40 @@ export type ConversationListItem = z.infer<typeof ConversationListItemSchema>;
 export const ChatCommitSchema = ChatConversationSchema.extend({
   extraction_triggered: z.boolean(),
 });
+/** Stored replay citations carry references only; an anchor is not a version of the replayed value. */
+export const ReplayMemoryReferenceSchema = z
+  .object({
+    kind: z.literal("observation_replay"),
+    belief_id: z.string().uuid().toLowerCase(),
+    anchor_version_id: z.string().uuid().toLowerCase(),
+    observation_id: z.string().uuid().toLowerCase(),
+    evidence_id: z.string().uuid().toLowerCase(),
+  })
+  .strict();
+export type ReplayMemoryReference = z.infer<typeof ReplayMemoryReferenceSchema>;
+export const VersionCitedMemorySchema = z.object({
+  belief_id: z.string().uuid(),
+  belief_version_id: z.string().uuid(),
+  subject: z.string(),
+  attribute: z.string(),
+  value: z.unknown(),
+});
+export const ReplayCitedMemorySchema = VersionCitedMemorySchema.extend({
+  belief_version_id: z.null(),
+  provenance: ReplayMemoryReferenceSchema.omit({ belief_id: true }),
+}).strict();
+export const CitedMemorySchema = z.union([VersionCitedMemorySchema, ReplayCitedMemorySchema]);
+/** SSE has always rejected unknown citation fields, unlike the legacy JSON response parser. */
+export const StrictCitedMemorySchema = z.union([
+  VersionCitedMemorySchema.strict(),
+  ReplayCitedMemorySchema,
+]);
 export const ChatReplySchema = z.object({
   message_id: z.string().uuid(),
   answer: z.string(),
   abstained: z.boolean(),
   history_included: z.boolean().optional(),
-  memories: z.array(
-    z.object({
-      belief_id: z.string().uuid(),
-      belief_version_id: z.string().uuid(),
-      subject: z.string(),
-      attribute: z.string(),
-      value: z.unknown(),
-    }),
-  ),
+  memories: z.array(CitedMemorySchema),
 });
 export const ConversationMessageSchema = z.object({
   attachment: FileEvidenceMetadataSchema.optional(),

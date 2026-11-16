@@ -92,7 +92,7 @@ onMounted(async () => {
           <p class="text-[11px] font-semibold uppercase tracking-wide text-record-700">引用记忆</p>
           <RouterLink
             v-for="memory in message.memories"
-            :key="memory.belief_version_id"
+            :key="memory.belief_version_id ?? memory.provenance.observation_id"
             :to="`/memories/${memory.belief_id}`"
             class="block rounded-lg border border-record-100 bg-white px-3 py-2 text-sm hover:border-record-300"
           >
@@ -100,6 +100,9 @@ onMounted(async () => {
               {{ memory.subject }} / {{ memory.attribute }}
             </span>
             <span class="ml-2 text-zinc-600">= {{ formatValue(memory.value) }}</span>
+            <span v-if="memory.belief_version_id === null" class="ml-2 text-xs text-record-700"
+              >Observation 重放</span
+            >
           </RouterLink>
         </div>
       </li>
