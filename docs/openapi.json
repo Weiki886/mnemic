@@ -740,7 +740,7 @@
                   "type": "object",
                   "properties": {
                     "belief_id": { "type": "string", "format": "uuid" },
-                    "belief_version_id": {},
+                    "belief_version_id": { "type": "object", "nullable": true, "enum": [null] },
                     "subject": { "type": "string" },
                     "attribute": { "type": "string" },
                     "value": {},
@@ -2669,7 +2669,7 @@
                   "type": "object",
                   "properties": {
                     "belief_id": { "type": "string", "format": "uuid" },
-                    "belief_version_id": {},
+                    "belief_version_id": { "type": "object", "nullable": true, "enum": [null] },
                     "subject": { "type": "string" },
                     "attribute": { "type": "string" },
                     "value": {},
@@ -6773,7 +6773,11 @@
                                   "type": "object",
                                   "properties": {
                                     "belief_id": { "type": "string", "format": "uuid" },
-                                    "belief_version_id": {},
+                                    "belief_version_id": {
+                                      "type": "object",
+                                      "nullable": true,
+                                      "enum": [null]
+                                    },
                                     "subject": { "type": "string" },
                                     "attribute": { "type": "string" },
                                     "value": {},

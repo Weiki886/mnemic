@@ -41,7 +41,8 @@ export const VersionCitedMemorySchema = z.object({
   value: z.unknown(),
 });
 export const ReplayCitedMemorySchema = VersionCitedMemorySchema.extend({
-  belief_version_id: z.null(),
+  // literal(null) preserves the null-only enum in zod-to-openapi; z.null() loses that constraint.
+  belief_version_id: z.literal(null),
   provenance: ReplayMemoryReferenceSchema.omit({ belief_id: true }),
 }).strict();
 export const CitedMemorySchema = z.union([VersionCitedMemorySchema, ReplayCitedMemorySchema]);
