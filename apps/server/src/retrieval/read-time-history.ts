@@ -132,7 +132,14 @@ export async function readReadTimeReplays(db: Pick<PostgresJsDatabase, "execute"
         ),
       });
       const anchor = scope.anchors[i]!;
-      return { beliefId: anchor.beliefId, anchorVersionId: anchor.beliefVersionId, ...result };
+      return {
+        projectId: scope.projectId,
+        subject: first.subject,
+        attribute: first.attribute,
+        beliefId: anchor.beliefId,
+        anchorVersionId: anchor.beliefVersionId,
+        ...result,
+      };
     });
   } catch {
     throw Error("INVALID_READ_TIME_HISTORY");
