@@ -33,3 +33,7 @@ No migration, HTTP schema, environment variable, default or production startup c
 consumption, management readiness, real quality metrics and full ablation remain outstanding;
 Refs #9/#22, neither closes. Rollback removes the explicit chat binding extension while keeping
 replay-aware readers until all producer instances have been removed.
+
+Write operations record the read-time-resolution snapshot without executing replay, just as
+they already do for reranker. This keeps legacy/durable extraction and manual writes usable
+while a trusted read experiment is enabled. Unbound reads and unsupported decay remain rejected.
