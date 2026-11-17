@@ -1,3 +1,4 @@
+import { captureChatRetrievalBinding } from "./retrieval/chat-binding.js";
 import { registerMemoryExportRoutes } from "./data-export/routes.js";
 import { HealthResponseSchema } from "./contracts/health.js";
 import { registerDocumentationRoutes } from "./docs/routes.js";
@@ -85,7 +86,7 @@ const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const recallBinding = captureRecallBinding(options.recallBinding);
-  const chatRetrievalBinding = captureRecallBinding(options.chatRetrievalBinding);
+  const chatRetrievalBinding = captureChatRetrievalBinding(options.chatRetrievalBinding);
   if (options.debugContent && !options.debugMode)
     throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");
   if (options.extractionQueue && (!options.db || !options.masterKey))
