@@ -1,3 +1,5 @@
+import { answerMemories, type AnswerMemory } from "./answer-memory.js";
+import { ReplayMemoryReferenceSchema, type CitedMemory } from "@mnemic/shared/chat";
 import type { RecallBinding } from "../retrieval/recall-binding.js";
 import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -16,14 +18,6 @@ import { writeAuditLog } from "../gate/audit.js";
 
 /** 消息应答编排（#7）：存消息 → 检索注入 → 模型回答 → 存回答 → 异步写记忆 */
 
-export interface MemoryRef {
-  belief_id: string;
-  belief_version_id: string;
-  subject: string;
-  attribute: string;
-  value: unknown;
-}
-
 export type RespondResult =
   | { kind: "not_found" }
   | { kind: "ended" }
@@ -32,7 +26,7 @@ export type RespondResult =
       kind: "answered";
       messageId: string;
       answer: string;
-      memories: MemoryRef[];
+      memories: CitedMemory[];
       abstained: boolean;
       historyIncluded: boolean;
     };
@@ -45,16 +39,6 @@ export interface RespondOptions extends ResolveOptions {
   /** 测试注入检索替身（阈值放宽/故障注入）；缺省真实两路混合检索 */
   retrieveFn?: typeof retrieve;
   logger?: { warn: (obj: object, msg: string) => void };
-}
-
-export function toMemoryRef(c: RetrievalCandidate): MemoryRef {
-  return {
-    belief_id: c.beliefId,
-    belief_version_id: c.beliefVersionId,
-    subject: c.subject,
-    attribute: c.attribute,
-    value: c.value,
-  };
 }
 
 export async function enterMessage(
@@ -149,15 +133,16 @@ export async function prepareAnswer(
       purpose: "chat" as const,
     },
   };
-  let candidates: RetrievalCandidate[] = [];
-  let abstained = true;
+  let projection: { memories: AnswerMemory[]; abstained: boolean } = {
+    memories: [],
+    abstained: true,
+  };
   try {
     const r = await (options.retrieveFn ?? retrieve)(db, masterKey, entered.projectId, text, {
       ...scoped,
       ...options.retrievalBinding,
     });
-    candidates = r.candidates;
-    abstained = r.abstained;
+    projection = answerMemories(r, entered.projectId);
   } catch (err) {
     options.logger?.warn(
       { err, conversationId: entered.conversationId },
@@ -170,10 +155,14 @@ export async function prepareAnswer(
   const history = await modelHistory(db, entered.projectId, entered.history);
   return {
     model,
-    candidates,
-    abstained,
+    memories: projection.memories,
+    abstained: projection.abstained,
     history,
-    system: buildChatSystemPrompt(candidates, history.length > 0, entered.files.length > 0),
+    system: buildChatSystemPrompt(
+      projection.memories,
+      history.length > 0,
+      entered.files.length > 0,
+    ),
     userContent: currentUserContent(text, entered.files),
   };
 }
@@ -183,7 +172,7 @@ export async function saveAnswer(
   conversationId: string,
   assistantMessageId: string,
   answer: string,
-  candidates: RetrievalCandidate[],
+  candidates: RetrievalCandidate[] | CitedMemory[],
   generationStatus?: "complete" | "interrupted" | "failed",
 ) {
   const saved = await db.transaction(async (tx) => {
@@ -201,8 +190,15 @@ export async function saveAnswer(
       speaker: "assistant",
       rawText: answer,
       msgTime: new Date(),
-      // 引用留痕（#8）：只存版本 ID，内容读出时现查（决策 8 引用不复制）
-      memories: candidates.length > 0 ? candidates.map((c) => c.beliefVersionId) : null,
+      // Only version UUIDs or replay source IDs; resolve content on read (decision 8).
+      memories:
+        candidates.length > 0
+          ? candidates.map((c) => {
+              if ("beliefVersionId" in c) return c.beliefVersionId;
+              if (c.belief_version_id !== null) return c.belief_version_id;
+              return ReplayMemoryReferenceSchema.parse({ belief_id: c.belief_id, ...c.provenance });
+            })
+          : null,
       generationStatus: generationStatus ?? null,
     });
     return true;
@@ -264,7 +260,7 @@ export async function respondToMessage(
     options.durableExtraction,
   );
   if (entered.kind !== "ok") return { kind: entered.kind };
-  const { model, candidates, abstained, history, system, userContent } = await prepareAnswer(
+  const { model, memories, abstained, history, system, userContent } = await prepareAnswer(
     db,
     masterKey,
     text,
@@ -277,7 +273,7 @@ export async function respondToMessage(
     messages: [...history, { role: "user", content: userContent }],
   });
   const assistantMessageId = uuidv7();
-  if (!(await saveAnswer(db, conversationId, assistantMessageId, answer, candidates)))
+  if (!(await saveAnswer(db, conversationId, assistantMessageId, answer, memories)))
     return { kind: "ended" };
   await scheduleMessageWriteback(db, masterKey, entered, text, options);
 
@@ -285,7 +281,7 @@ export async function respondToMessage(
     kind: "answered",
     messageId: assistantMessageId,
     answer,
-    memories: candidates.map(toMemoryRef),
+    memories,
     abstained,
     historyIncluded: history.length > 0,
   };

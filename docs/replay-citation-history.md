@@ -73,3 +73,6 @@ matrix remain outside this slice. #9/#22 remain open.
 Rollback the reader/schema changes before introducing any replay writer. After a future writer
 exists, older readers would silently omit object references, so deployment order must update
 readers/clients before enabling new writers. No database rollback is needed.
+
+A subsequent [trusted chat consumer](chat-replay-answer.md) can now produce these references
+through an explicitly injected retrieval function; default startup and flags remain unchanged.
