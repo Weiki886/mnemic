@@ -132,7 +132,11 @@ it.each(["legacy", "durable"])(
       fact({ source_type: "USER_CORRECTION", value: "original", valid_time: "2026-10-01" }),
       f.m,
     );
-    const old = await configure({ memory_gate: false, authority_resolution: false });
+    const old = await configure({
+      memory_gate: false,
+      authority_resolution: false,
+      read_time_resolution: true,
+    });
     models.output([
       candidate({
         source_type: "AGENT_INFERENCE",
@@ -175,7 +179,7 @@ it.each(["legacy", "durable"])(
   "%s rejects unsupported flags before any SDK invocation or business effect",
   async (mode) => {
     const f = await seed();
-    await configure({ read_time_resolution: true });
+    await configure({ decay: true });
     if (mode === "legacy")
       await expect(
         runExtractionWriteback(
