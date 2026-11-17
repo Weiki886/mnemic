@@ -1,7 +1,8 @@
 import { z } from "zod";
 import {
   ChatConversationSchema,
-  ChatReplySchema,
+  VersionCitedMemorySchema,
+  ReplayCitedMemorySchema,
   ConversationMessageSchema,
   ChatResumeSchema,
 } from "@mnemic/shared/chat";
@@ -31,9 +32,11 @@ export const ResumeBodySchema = z
   .strict();
 
 // An arbitrary JSON citation may be null, but it is always an explicit field in HTTP output.
-const cited = ChatReplySchema.shape.memories.element.extend({
-  value: z.unknown().refine((value) => value !== undefined, "引用值字段不可缺失"),
-});
+const value = z.unknown().refine((value) => value !== undefined, "引用值字段不可缺失");
+const cited = z.union([
+  VersionCitedMemorySchema.extend({ value }),
+  ReplayCitedMemorySchema.extend({ value }),
+]);
 export const ConversationMessageViewSchema = ConversationMessageSchema.extend({
   memories: z.array(cited).nullable(),
 });

@@ -126,7 +126,7 @@ export const messages = pgTable("messages", {
   /** #21 durable 路径：业务效果与任务 done 同事务提交后才非空。
    *  兼容旧进程内路径曾用它表示已认领，历史非空值不自动重置。 */
   extractedAt: ts("extracted_at"),
-  /** 回答引用的记忆（#8 对话只读视图）：只存 belief_version_id 数组（决策 8 引用不复制），
+  /** 回答引用的记忆（#8 对话只读视图）：只存版本 UUID 或带判别字段的重放来源 ID（决策 8 引用不复制），
    *  内容读出时 join belief_versions/beliefs 现查；null = 无引用（用户消息/无记忆回答） */
   memories: jsonb("memories"),
   /** #33: null for legacy/user messages; partial text remains Evidence, never rewritten as a complete answer. */

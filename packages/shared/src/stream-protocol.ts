@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ChatReplySchema } from "./chat.js";
+import { StrictCitedMemorySchema } from "./chat.js";
 
 export const CHAT_STREAM_LIMITS = Object.freeze({
   eventBytes: 128 * 1024,
@@ -41,7 +41,7 @@ export const ChatStreamEventSchema = z.discriminatedUnion("type", [
       message_id: UUID,
       abstained: z.boolean(),
       history_included: z.boolean(),
-      memories: z.array(ChatReplySchema.shape.memories.element.strict()).max(100),
+      memories: z.array(StrictCitedMemorySchema).max(100),
     })
     .strict(),
   z

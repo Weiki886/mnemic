@@ -10,15 +10,15 @@ export const CancelGenerationParamsSchema = ChatStreamParamsSchema.extend({
 // The route keeps its existing request.body ?? {} normalization separately.
 export const CancelGenerationBodySchema = z.object({}).strict();
 
+const [versionCitation, replayCitation] =
+  ConversationMessageViewSchema.shape.memories.unwrap().element.options;
 const [start, delta, finish, error] = ChatStreamEventSchema.options;
 /** Data inside SSE frames, never a JSON response serializer or wire-stream schema. */
 export const StreamEventContractSchema = z.discriminatedUnion("type", [
   start,
   delta,
   finish.extend({
-    memories: z
-      .array(ConversationMessageViewSchema.shape.memories.unwrap().element.strict())
-      .max(100),
+    memories: z.array(z.union([versionCitation.strict(), replayCitation])).max(100),
   }),
   error,
 ]);
