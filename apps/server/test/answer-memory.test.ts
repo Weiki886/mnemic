@@ -73,3 +73,42 @@ it("empty replay stays empty even when ranked anchors exist", () => {
   };
   expect(answerMemories(r, id(1))).toEqual({ memories: [], abstained: true });
 });
+
+it.each(["count", "entry", "block"])(
+  "enforces exact %s boundary and rejects one more",
+  (boundary) => {
+    function make(extra: number) {
+      const r = fixture();
+      const template = r.readTimeContext!.memories[0]!;
+      const n = boundary === "count" ? 32 + extra : boundary === "block" ? 5 : 1;
+      const memories = Array.from({ length: n }, (_, i) => ({
+        ...template,
+        value: boundary === "block" ? "x".repeat(13000) : "x",
+        provenance: { ...template.provenance, anchorVersionId: id(i + 10) },
+      }));
+      if (boundary === "entry")
+        memories[0]!.value = "x".repeat(
+          16384 + extra - Buffer.byteLength(memoryContent({ ...template, value: "" }), "utf8"),
+        );
+      if (boundary === "block") {
+        const size = Buffer.byteLength(renderMemoryContext(memories.map(memoryContent)), "utf8");
+        memories[n - 1]!.value = String(memories[n - 1]!.value) + "x".repeat(65536 + extra - size);
+      }
+      r.candidates = memories.map((m) => ({
+        ...r.candidates[0]!,
+        beliefVersionId: m.provenance.anchorVersionId,
+      }));
+      r.readTimeContext = {
+        memories,
+        text: renderMemoryContext(memories.map(memoryContent)),
+        outcomes: [],
+        abstained: false,
+      };
+      return r;
+    }
+    expect(() => answerMemories(make(0), id(1))).not.toThrow();
+    expect(() => answerMemories(make(1), id(1))).toThrow(
+      new Error("INVALID_REPLAY_ANSWER_CONTEXT"),
+    );
+  },
+);

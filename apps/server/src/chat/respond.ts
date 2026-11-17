@@ -18,14 +18,6 @@ import { writeAuditLog } from "../gate/audit.js";
 
 /** 消息应答编排（#7）：存消息 → 检索注入 → 模型回答 → 存回答 → 异步写记忆 */
 
-export interface MemoryRef {
-  belief_id: string;
-  belief_version_id: string;
-  subject: string;
-  attribute: string;
-  value: unknown;
-}
-
 export type RespondResult =
   | { kind: "not_found" }
   | { kind: "ended" }
@@ -47,16 +39,6 @@ export interface RespondOptions extends ResolveOptions {
   /** 测试注入检索替身（阈值放宽/故障注入）；缺省真实两路混合检索 */
   retrieveFn?: typeof retrieve;
   logger?: { warn: (obj: object, msg: string) => void };
-}
-
-export function toMemoryRef(c: RetrievalCandidate): MemoryRef {
-  return {
-    belief_id: c.beliefId,
-    belief_version_id: c.beliefVersionId,
-    subject: c.subject,
-    attribute: c.attribute,
-    value: c.value,
-  };
 }
 
 export async function enterMessage(
