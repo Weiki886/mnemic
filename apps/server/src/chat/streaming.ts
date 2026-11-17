@@ -12,7 +12,6 @@ import {
   prepareAnswer,
   saveAnswer,
   scheduleMessageWriteback,
-  toMemoryRef,
   type EnteredMessage,
   type RespondOptions,
 } from "./respond.js";
@@ -105,7 +104,7 @@ export function createChatStream(
         status: "complete",
         abstained: prepared.abstained,
         history_included: prepared.history.length > 0,
-        memories: prepared.candidates.map(toMemoryRef),
+        memories: prepared.memories,
       });
       const result = streamText({
         model: prepared.model,
@@ -166,7 +165,7 @@ export function createChatStream(
         entered.conversationId,
         generation.id,
         answer,
-        prepared?.candidates ?? [],
+        prepared?.memories ?? [],
         status,
       );
     } catch {
@@ -197,7 +196,7 @@ export function createChatStream(
               status,
               abstained: prepared?.abstained ?? true,
               history_included: (prepared?.history.length ?? entered.history.length) > 0,
-              memories: prepared?.candidates.map(toMemoryRef) ?? [],
+              memories: prepared?.memories ?? [],
             };
       output.end(encodeChatStreamEvent(event));
     }

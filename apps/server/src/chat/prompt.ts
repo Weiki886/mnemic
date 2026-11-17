@@ -6,7 +6,7 @@ import { memoryContent, renderMemoryContext } from "../retrieval/context-budget.
  * 无相关记忆时明确允许回答「不知道」，不诱导编造。
  */
 export function buildChatSystemPrompt(
-  memories: RetrievalCandidate[],
+  memories: Pick<RetrievalCandidate, "subject" | "attribute" | "value">[],
   hasHistory = false,
   hasFiles = false,
 ): string {
