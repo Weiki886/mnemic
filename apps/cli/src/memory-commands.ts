@@ -26,13 +26,22 @@ export async function runRecallCommand(
     if (result.project_id !== project || result.query !== request.query)
       throw new Error("recall scope mismatch");
     const lines = [
-      `项目 ${project} · ${result.abstained ? "拒答：证据不足" : "手动召回（非模型回答）"}`,
+      `项目 ${project} · ${(result.read_time_context?.abstained ?? result.abstained) ? "拒答：证据不足" : "手动召回（非模型回答）"}`,
     ];
-    for (const c of result.candidates)
-      lines.push(
-        `${c.beliefId} / ${c.beliefVersionId}`,
-        `  ${c.subject} / ${c.attribute} = ${valueText(c.value).slice(0, 240)}`,
-      );
+    if (result.read_time_context) {
+      lines.push("重放上下文（实际证据来源）");
+      for (const m of result.read_time_context.memories)
+        lines.push(
+          `${m.belief_id} / Observation ${m.provenance.observation_id} / Evidence ${m.provenance.evidence_id}`,
+          `  ${m.subject} / ${m.attribute} = ${valueText(m.value).slice(0, 240)}`,
+        );
+      lines.push("锚点评分（不表示替代值已重新评分）");
+    } else
+      for (const c of result.candidates)
+        lines.push(
+          `${c.beliefId} / ${c.beliefVersionId}`,
+          `  ${c.subject} / ${c.attribute} = ${valueText(c.value).slice(0, 240)}`,
+        );
     lines.push(
       `trace ${result.trace.id} · 强化关闭 · 候选 ${result.trace.candidates.length}/${result.trace.candidate_count}${result.trace.truncated ? "（已截断）" : ""}`,
     );

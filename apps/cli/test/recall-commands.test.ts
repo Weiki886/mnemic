@@ -106,3 +106,55 @@ describe("manual recall CLI runner", () => {
     expect(recallBeliefs).toHaveBeenCalledOnce();
   });
 });
+
+it.each([false, true])(
+  "renders replay sources/abstention without presenting anchor values as facts %j",
+  async (empty) => {
+    const flags = {
+      retrieval_vector: false,
+      retrieval_keyword: true,
+      retrieval_entity: false,
+      retrieval_time: false,
+      memory_gate: true,
+      decay: false,
+      reranker: false,
+      authority_resolution: true,
+      read_time_resolution: true,
+      read_time_reinforcement: false,
+    };
+    const body = {
+      ...result,
+      candidates: [{ ...result.candidates[0], value: "OLD_ANCHOR_VALUE" }],
+      trace: { ...result.trace, flags_snapshot: { schema_version: 1, revision: 0, flags } },
+      read_time_context: {
+        abstained: empty,
+        memories: empty
+          ? []
+          : [
+              {
+                belief_id: id,
+                belief_version_id: null,
+                subject: "project",
+                attribute: "db",
+                value: "SQLite",
+                provenance: {
+                  kind: "observation_replay",
+                  anchor_version_id: id,
+                  observation_id: id,
+                  evidence_id: id,
+                },
+              },
+            ],
+      },
+    };
+    const text = await run({ recallBeliefs: async () => body });
+    expect(text).not.toContain("OLD_ANCHOR_VALUE");
+    expect(text).toContain("锚点评分");
+    if (empty) expect(text).toContain("拒答");
+    else {
+      expect(text).toContain("SQLite");
+      expect(text).toContain(`Observation ${id}`);
+      expect(text).toContain(`Evidence ${id}`);
+    }
+  },
+);

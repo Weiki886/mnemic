@@ -96,7 +96,7 @@ export function registerDiagnosticPaths(registry: OpenAPIRegistry) {
       404: error("Project does not exist, or route unavailable without DB/master key."),
       200: {
         description:
-          "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace.",
+          "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; the current production handler does not populate this extension.",
         headers,
         content: { "application/json": { schema: recall } },
       },
