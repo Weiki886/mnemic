@@ -19,8 +19,9 @@ admission/accounting. Unsupported flag combinations, including reinforcement wit
 binding, follow the existing retrieval-failure/no-memory chat degradation; a chat model call
 may still occur. There is no old-anchor fallback for invalid replay context.
 
-Recall binding and official startup retain their current stricter parser. The environment JSON
-cannot install this chat-only extension. The flags management API still rejects enabling
+Recall binding retains its stricter parser. [Official startup](startup-retrieval-binding.md) can
+explicitly install this chat-only extension with chatReadTimeResolution:true in the existing
+environment JSON. The flags management API still rejects enabling
 read_time_resolution; this slice does not open it or silently rewrite configuration. A trusted
 experiment must arrange its complete persisted configuration separately. Shared-database
 instances must still have consistent capabilities; this is not cluster readiness.

@@ -1,3 +1,4 @@
+import { resolveStartupRetrievalBindings } from "../src/retrieval/startup-binding.js";
 import { beforeAll, afterAll, expect, it } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { MockLanguageModelV2 } from "ai/test";
@@ -87,7 +88,7 @@ async function fixture(projectId?: string, attribute = "database") {
   await t.sql`update beliefs set current_version_id=${v} where id=${b}`;
   return { p, b, v, old, next, e1, e2, c };
 }
-it.each(["json", "sse", "off"])(
+it.each(["json", "sse", "off", "startup"])(
   "trusted managed %s binding loads persisted flags and real replay without retrieveFn",
   async (mode) => {
     const f = await fixture();
@@ -105,7 +106,16 @@ it.each(["json", "sse", "off"])(
       masterKey: TEST_MASTER_KEY,
       providerFactory: factory,
       modelDailyCallLimit: 100,
-      chatRetrievalBinding: binding,
+      ...(mode === "startup"
+        ? resolveStartupRetrievalBindings(
+            JSON.stringify({
+              fusion: binding.fusion,
+              rerankerProvider: binding.rerankerProvider,
+              chatReadTimeResolution: true,
+            }),
+            { databaseConfigured: true, masterKey: TEST_MASTER_KEY },
+          )
+        : { chatRetrievalBinding: binding }),
     });
     try {
       const response = await app.inject({
