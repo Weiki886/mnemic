@@ -1,6 +1,7 @@
 import { answerMemories, type AnswerMemory } from "./answer-memory.js";
 import { ReplayMemoryReferenceSchema, type CitedMemory } from "@mnemic/shared/chat";
-import type { RecallBinding } from "../retrieval/recall-binding.js";
+import type { ChatRetrievalBinding } from "../retrieval/chat-binding.js";
+import { captureFeatureFlags } from "../flags/runtime.js";
 import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateText } from "ai";
@@ -33,7 +34,7 @@ export type RespondResult =
 
 export interface RespondOptions extends ResolveOptions {
   signal?: AbortSignal;
-  retrievalBinding?: RecallBinding;
+  retrievalBinding?: ChatRetrievalBinding;
   durableExtraction?: boolean;
   onJob: (job: () => Promise<void>) => void;
   /** 测试注入检索替身（阈值放宽/故障注入）；缺省真实两路混合检索 */
@@ -138,10 +139,20 @@ export async function prepareAnswer(
     abstained: true,
   };
   try {
-    const r = await (options.retrieveFn ?? retrieve)(db, masterKey, entered.projectId, text, {
-      ...scoped,
-      ...options.retrievalBinding,
-    });
+    const retrievalOptions = { ...scoped, ...options.retrievalBinding };
+    if (retrievalOptions.readTimeResolution) {
+      retrievalOptions.flagsSnapshot = await captureFeatureFlags(db, scoped, {
+        readTimeResolution: true,
+        reranker: true,
+      });
+    }
+    const r = await (options.retrieveFn ?? retrieve)(
+      db,
+      masterKey,
+      entered.projectId,
+      text,
+      retrievalOptions,
+    );
     projection = answerMemories(r, entered.projectId);
   } catch (err) {
     options.logger?.warn(

@@ -46,7 +46,10 @@ export async function captureFeatureFlags(
       (key) =>
         snapshot.flags[key] &&
         !(key === "reranker" && acceptsRerankerFlag) &&
-        !(key === "read_time_resolution" && capabilities.readTimeResolution === true),
+        !(
+          key === "read_time_resolution" &&
+          (capabilities.readTimeResolution === true || capabilities.operation === "memory_write")
+        ),
     )
   )
     throw Error("unsupported feature flag enabled");

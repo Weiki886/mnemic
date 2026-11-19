@@ -117,16 +117,27 @@ it.each(
     expect(result.flags.reranker).toBe(true);
   },
 );
-it.each(["decay", "read_time_resolution"] as const)(
-  "write scope never bypasses unsupported %s",
-  async (key) => {
-    const input = createFeatureFlagSnapshot({
-      schema_version: 1,
-      revision: 0,
-      flags: { ...DEFAULT_FEATURE_FLAGS, reranker: true, [key]: true },
-    });
-    await expect(
-      captureFeatureFlags(db, { flagsSnapshot: input }, { operation: "memory_write" }),
-    ).rejects.toThrow("unsupported feature flag enabled");
-  },
-);
+it.each(["decay"] as const)("write scope never bypasses unsupported %s", async (key) => {
+  const input = createFeatureFlagSnapshot({
+    schema_version: 1,
+    revision: 0,
+    flags: { ...DEFAULT_FEATURE_FLAGS, reranker: true, [key]: true },
+  });
+  await expect(
+    captureFeatureFlags(db, { flagsSnapshot: input }, { operation: "memory_write" }),
+  ).rejects.toThrow("unsupported feature flag enabled");
+});
+
+it("write scope records read-time resolution without requiring or executing a read capability", async () => {
+  const input = createFeatureFlagSnapshot({
+    schema_version: 1,
+    revision: 9,
+    flags: { ...DEFAULT_FEATURE_FLAGS, read_time_resolution: true },
+  });
+  await expect(
+    captureFeatureFlags(db, { flagsSnapshot: input }, { operation: "memory_write" }),
+  ).resolves.toEqual(input);
+  await expect(captureFeatureFlags(db, { flagsSnapshot: input })).rejects.toThrow(
+    "unsupported feature flag enabled",
+  );
+});
