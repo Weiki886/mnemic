@@ -49,3 +49,35 @@ it.each([
   expect(Object.isFrozen(result.recallBinding?.fusion)).toBe(true);
   expect(result).not.toHaveProperty("flagsSnapshot");
 });
+it("explicit chat replay installs a separate frozen chat capability without altering recall", () => {
+  const result = resolveStartupRetrievalBindings(
+    JSON.stringify({ ...profile, chatReadTimeResolution: true }),
+    ready,
+  );
+  expect(result.chatRetrievalBinding).toMatchObject({
+    readTimeResolution: true,
+    fusion: profile.fusion,
+  });
+  expect(result.recallBinding).not.toHaveProperty("readTimeResolution");
+  expect(result.chatRetrievalBinding).not.toBe(result.recallBinding);
+  expect(Object.isFrozen(result.chatRetrievalBinding)).toBe(true);
+  expect(Object.isFrozen(result.chatRetrievalBinding?.rerankerProvider)).toBe(true);
+});
+it.each([false, null, 0, "true"])(
+  "rejects malformed chat replay startup option %j",
+  (chatReadTimeResolution) => {
+    expect(() =>
+      resolveStartupRetrievalBindings(
+        JSON.stringify({ ...profile, chatReadTimeResolution }),
+        ready,
+      ),
+    ).toThrow("MNEMIC_RETRIEVAL_BINDING_JSON invalid");
+  },
+);
+it("chat replay still requires startup dependencies", () => {
+  expect(() =>
+    resolveStartupRetrievalBindings(JSON.stringify({ ...profile, chatReadTimeResolution: true }), {
+      databaseConfigured: false,
+    }),
+  ).toThrow("retrieval startup requires database and master key");
+});
