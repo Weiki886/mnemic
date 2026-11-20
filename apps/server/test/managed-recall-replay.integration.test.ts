@@ -50,7 +50,7 @@ async function business(p: string) {
   return JSON.stringify(r);
 }
 
-it.each(["enabled", "off", "retract", "corrupt", "strict", "unbound"])(
+it.each(["enabled", "off", "retract", "corrupt", "strict", "unbound", "uppercase"])(
   "real HTTP managed recall %s preserves provenance and read-only behavior",
   async (mode) => {
     const f = await fixture();
@@ -106,7 +106,10 @@ it.each(["enabled", "off", "retract", "corrupt", "strict", "unbound"])(
       } else if (mode === "corrupt" || mode === "unbound") {
         await expect(api.recallBeliefs(f.p, "needle")).rejects.toMatchObject({ status: 500 });
       } else {
-        const raw = await api.recallBeliefs(f.p, "needle");
+        const raw = await api.recallBeliefs(
+          mode === "uppercase" ? f.p.toUpperCase() : f.p,
+          "needle",
+        );
         expect(validate(raw), JSON.stringify(validate.errors)).toBe(true);
         const r = RecallResultSchema.parse(raw);
         expect(r.candidates[0]?.value).toBe("needle PostgreSQL");

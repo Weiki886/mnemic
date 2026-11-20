@@ -121,7 +121,7 @@ export function registerRecallRoutes(
           abstained: result.abstained,
           candidates: result.candidates,
           ...(result.readTimeContext !== undefined
-            ? { read_time_context: projectRetrievalContext(result, projectId) }
+            ? { read_time_context: projectRetrievalContext(result, project.id) }
             : {}),
           trace: {
             id: trace.id,
