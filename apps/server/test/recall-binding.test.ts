@@ -47,3 +47,22 @@ it.each([
     await app?.close();
   }
 });
+it.each([false, null, 0, "true"])(
+  "invalid managed recall replay %j rejects before DB",
+  async (readTimeResolution) => {
+    let app: FastifyInstance | undefined;
+    try {
+      expect(() => {
+        app = buildApp({
+          auth: false,
+          db,
+          masterKey: TEST_MASTER_KEY,
+          modelDailyCallLimit: 10,
+          recallBinding: { ...valid, readTimeResolution },
+        } as never);
+      }).toThrow("INVALID_RECALL_BINDING");
+    } finally {
+      await app?.close();
+    }
+  },
+);

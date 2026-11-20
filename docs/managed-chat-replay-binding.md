@@ -19,7 +19,8 @@ admission/accounting. Unsupported flag combinations, including reinforcement wit
 binding, follow the existing retrieval-failure/no-memory chat degradation; a chat model call
 may still occur. There is no old-anchor fallback for invalid replay context.
 
-Recall binding retains its stricter parser. [Official startup](startup-retrieval-binding.md) can
+Startup-created recall binding retains its stricter base parser; library recall can now
+explicitly install the [managed replay capability](managed-recall-replay.md). [Official startup](startup-retrieval-binding.md) can
 explicitly install this chat-only extension with chatReadTimeResolution:true in the existing
 environment JSON. The flags management API still rejects enabling
 read_time_resolution; this slice does not open it or silently rewrite configuration. A trusted

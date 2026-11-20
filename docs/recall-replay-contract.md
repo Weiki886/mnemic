@@ -32,3 +32,7 @@ OpenAPI use offline fixtures only. No real Provider or paid request is used.
 
 Formal recall binding/route consumption, startup selection, management capability readiness,
 default-on reranking, quality metrics and complete ablation remain future work. #9/#22 stay open.
+
+The subsequent [managed recall producer](managed-recall-replay.md) now emits this extension
+only for explicitly assembled library instances with the persisted replay flag enabled.
+Default and startup-created recall bindings retain the original output.
