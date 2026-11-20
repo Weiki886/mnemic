@@ -75,3 +75,77 @@ describe("manual recall contracts (#32)", () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 });
+
+const replayMemory = {
+  belief_id: id,
+  belief_version_id: null,
+  subject: "project",
+  attribute: "db",
+  value: "SQLite",
+  provenance: {
+    kind: "observation_replay",
+    anchor_version_id: id,
+    observation_id: id,
+    evidence_id: id,
+  },
+};
+const replayResponse = () =>
+  structuredClone({
+    ...response,
+    trace: {
+      ...response.trace,
+      flags_snapshot: {
+        schema_version: 1,
+        revision: 0,
+        flags: {
+          retrieval_vector: false,
+          retrieval_keyword: true,
+          retrieval_entity: false,
+          retrieval_time: false,
+          memory_gate: true,
+          decay: false,
+          reranker: false,
+          authority_resolution: true,
+          read_time_resolution: true,
+          read_time_reinforcement: false,
+        },
+      },
+    },
+    read_time_context: { abstained: false, memories: [replayMemory] },
+  });
+it("keeps ranked anchors separate from actual replay citations", () => {
+  const r = replayResponse();
+  expect(memory.RecallResultSchema.parse(r)).toEqual(r);
+  expect(
+    memory.RecallResultSchema.parse({ ...r, read_time_context: { abstained: true, memories: [] } })
+      .abstained,
+  ).toBe(false);
+});
+it.each(["flag", "snapshot", "anchor", "belief", "duplicate", "state", "version", "missing_value"])(
+  "rejects incoherent recall replay %s",
+  (kind) => {
+    const r = replayResponse();
+    if (kind === "flag") r.trace.flags_snapshot.flags.read_time_resolution = false;
+    if (kind === "snapshot") delete (r.trace as { flags_snapshot?: unknown }).flags_snapshot;
+    if (kind === "anchor")
+      r.read_time_context.memories[0] = {
+        ...replayMemory,
+        provenance: {
+          ...replayMemory.provenance,
+          anchor_version_id: "01920000-0000-7000-8000-000000000099",
+        },
+      };
+    if (kind === "belief")
+      r.read_time_context.memories[0] = {
+        ...replayMemory,
+        belief_id: "01920000-0000-7000-8000-000000000099",
+      };
+    if (kind === "duplicate") r.read_time_context.memories.push(replayMemory);
+    if (kind === "state") r.read_time_context.abstained = true;
+    if (kind === "version")
+      (r.read_time_context.memories[0] as { belief_version_id: unknown }).belief_version_id = 123;
+    if (kind === "missing_value")
+      delete (r.read_time_context.memories[0] as { value?: unknown }).value;
+    expect(memory.RecallResultSchema.safeParse(r).success).toBe(false);
+  },
+);

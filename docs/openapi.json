@@ -1232,6 +1232,48 @@
           "project_id": { "type": "string", "format": "uuid" },
           "query": { "type": "string", "minLength": 1, "maxLength": 1000 },
           "abstained": { "type": "boolean" },
+          "read_time_context": {
+            "type": "object",
+            "properties": {
+              "abstained": { "type": "boolean" },
+              "memories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "belief_id": { "type": "string", "format": "uuid" },
+                    "belief_version_id": { "type": "object", "nullable": true, "enum": [null] },
+                    "subject": { "type": "string" },
+                    "attribute": { "type": "string" },
+                    "value": {},
+                    "provenance": {
+                      "type": "object",
+                      "properties": {
+                        "kind": { "type": "string", "enum": ["observation_replay"] },
+                        "anchor_version_id": { "type": "string", "format": "uuid" },
+                        "observation_id": { "type": "string", "format": "uuid" },
+                        "evidence_id": { "type": "string", "format": "uuid" }
+                      },
+                      "required": ["kind", "anchor_version_id", "observation_id", "evidence_id"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "belief_id",
+                    "belief_version_id",
+                    "subject",
+                    "attribute",
+                    "value",
+                    "provenance"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 5
+              }
+            },
+            "required": ["abstained", "memories"],
+            "additionalProperties": false
+          },
           "candidates": {
             "type": "array",
             "items": {
@@ -5445,7 +5487,7 @@
         },
         "responses": {
           "200": {
-            "description": "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace.",
+            "description": "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; the current production handler does not populate this extension.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/RecallResult" } }

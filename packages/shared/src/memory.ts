@@ -1,3 +1,4 @@
+import { ReplayCitedMemorySchema } from "./chat.js";
 import { FeatureFlagSnapshotSchema } from "./flags.js";
 import { z } from "zod";
 
@@ -69,6 +70,19 @@ export const RecallResultSchema = z
     project_id: z.string().uuid(),
     query: z.string().min(1).max(1000),
     abstained: z.boolean(),
+    read_time_context: z
+      .object({
+        abstained: z.boolean(),
+        memories: z
+          .array(
+            ReplayCitedMemorySchema.extend({
+              value: z.unknown().refine((v) => v !== undefined, "值不可缺失"),
+            }),
+          )
+          .max(5),
+      })
+      .strict()
+      .optional(),
     candidates: z
       .array(
         traceCandidate.extend({
@@ -97,6 +111,26 @@ export const RecallResultSchema = z
         code: z.ZodIssueCode.custom,
         path: ["trace", "flags_snapshot"],
         message: "手动召回快照必须关闭读时强化",
+      });
+    const replay = r.read_time_context;
+    if (
+      replay &&
+      (r.trace.flags_snapshot?.flags.read_time_resolution !== true ||
+        replay.abstained !== (replay.memories.length === 0) ||
+        new Set(replay.memories.map((m) => m.provenance.anchor_version_id)).size !==
+          replay.memories.length ||
+        replay.memories.some(
+          (m) =>
+            !r.candidates.some(
+              (c) =>
+                c.beliefId === m.belief_id && c.beliefVersionId === m.provenance.anchor_version_id,
+            ),
+        ))
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["read_time_context"],
+        message: "重放来源与召回锚点不一致",
       });
     const shown = r.trace.candidates;
     const selected = shown.filter((c) => c.selected);
