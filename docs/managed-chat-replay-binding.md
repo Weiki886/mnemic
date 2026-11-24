@@ -19,22 +19,18 @@ admission/accounting. Unsupported flag combinations, including reinforcement wit
 binding, follow the existing retrieval-failure/no-memory chat degradation; a chat model call
 may still occur. There is no old-anchor fallback for invalid replay context.
 
-Startup-created recall binding retains its stricter base parser; library recall can now
-explicitly install the [managed replay capability](managed-recall-replay.md). [Official startup](startup-retrieval-binding.md) can
-explicitly install this chat-only extension with chatReadTimeResolution:true in the existing
-environment JSON. The flags management API still rejects enabling
-read_time_resolution; this slice does not open it or silently rewrite configuration. A trusted
-experiment must arrange its complete persisted configuration separately. Shared-database
-instances must still have consistent capabilities; this is not cluster readiness.
+[Official startup](startup-retrieval-binding.md) installs chat replay when the retrieval profile
+sets `chatReadTimeResolution: true`. The separate `recallReadTimeResolution` option installs
+[managed recall replay](managed-recall-replay.md). The management API still rejects enabling
+`read_time_resolution`. A trusted experiment must arrange its persisted configuration separately,
+and instances sharing the database need consistent capabilities.
 
 Tests use isolated PG and offline SDK models: real JSON/SSE routes, no retrieveFn substitution,
 persisted flag-on replay and flag-off old behavior, immutable binding capture, strict malformed
 options and legacy compatibility. No real Provider credentials or paid network calls are used.
 
-No migration, HTTP schema, environment variable, default or production startup change. Recall
-consumption, management readiness, real quality metrics and full ablation remain outstanding;
-Refs #9/#22, neither closes. Rollback removes the explicit chat binding extension while keeping
-replay-aware readers until all producer instances have been removed.
+Management readiness, real quality metrics and full ablation remain outstanding under #9/#22.
+Keep replay-aware readers until rollback has removed all producer instances.
 
 Write operations record the read-time-resolution snapshot without executing replay, just as
 they already do for reranker. This keeps legacy/durable extraction and manual writes usable

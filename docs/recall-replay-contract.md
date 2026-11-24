@@ -1,10 +1,10 @@
-# Replay-aware recall response preparation
+# Replay-aware recall response
 
-Recall returns optional `read_time_context` when a trusted library binding and the persisted
-read-time resolution flag are both enabled. Official startup does not yet install recall replay;
-default and unbound recall retain the original response. Configuration management is not opened
-by this capability, and installing a binding does not activate a persisted flag. HTTP request
-fields and default behavior are unchanged.
+Recall returns optional `read_time_context` when a trusted recall binding and the persisted
+read-time resolution flag are both enabled. Library instances can install this capability
+through [managed recall](managed-recall-replay.md). Official startup can install it through
+`recallReadTimeResolution: true` in the [retrieval profile](startup-retrieval-binding.md).
+The flag is off by default.
 
 Root `candidates`, `abstained` and score-only `trace` continue to describe ranked current-version
 anchors. They must not be relabeled as alternative Observation values. Optional read_time_context
@@ -31,9 +31,5 @@ Disable persisted replay and drain requests before removing producer capability;
 producers before reverting clients. Shared schema/client tests and independent Ajv validation of the committed
 OpenAPI use offline fixtures only. No real Provider or paid request is used.
 
-Official startup selection, management capability readiness,
-default-on reranking, quality metrics and complete ablation remain future work. #9/#22 stay open.
-
-The subsequent [managed recall producer](managed-recall-replay.md) now emits this extension
-only for explicitly assembled library instances with the persisted replay flag enabled.
-Default and startup-created recall bindings retain the original output.
+Management capability readiness, default-on reranking, quality metrics and complete ablation
+remain future work. #9/#22 stay open.

@@ -24,11 +24,10 @@ body, project scope, timeout, no-store, quota and usage rules are unchanged. Emb
 may already have incurred cost before a later failure; cancellation does not prove stopped billing.
 No Belief/Observation/version/salience/evidence-count writes are introduced.
 
-Official startup still installs the base recall binding; its chatReadTimeResolution option is
-chat-only. The management API still rejects enabling read_time_resolution. No new request field,
-environment setting, schema migration or default change. Shared-database deployments need
-consistent capabilities; this is not cluster readiness. #9/#22 remain open for startup recall,
-management enablement, real quality metrics and full ablation.
+[Official startup](startup-retrieval-binding.md) can install recall replay explicitly through
+`recallReadTimeResolution: true`, independently of the chat option. The management API still
+rejects enabling `read_time_resolution`. Instances sharing a database need consistent
+capabilities. #9/#22 remain open for management enablement, real quality metrics and full ablation.
 
 Tests exercise real TCP HTTP with the shared client, isolated PostgreSQL and the committed OpenAPI.
 They cover on/off, retraction, corrupt Evidence, strict input, authentication and unbound failure;

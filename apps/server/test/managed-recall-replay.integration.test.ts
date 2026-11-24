@@ -5,6 +5,7 @@ import { Ajv } from "ajv";
 import { createApiClient } from "@mnemic/shared";
 import { RecallResultSchema } from "@mnemic/shared/memory";
 import { DEFAULT_FEATURE_FLAGS } from "@mnemic/shared/flags";
+import { resolveStartupRetrievalBindings } from "../src/retrieval/startup-binding.js";
 import { buildApp } from "../src/app.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { TEST_MASTER_KEY } from "./test-keys.js";
@@ -50,15 +51,28 @@ async function business(p: string) {
   return JSON.stringify(r);
 }
 
-it.each(["enabled", "off", "retract", "corrupt", "strict", "unbound", "uppercase"])(
+const modes = [
+  "enabled",
+  "off",
+  "retract",
+  "corrupt",
+  "strict",
+  "unbound",
+  "uppercase",
+  "startup-on",
+  "startup-off",
+];
+
+it.each(modes)(
   "real HTTP managed recall %s preserves provenance and read-only behavior",
   async (mode) => {
     const f = await fixture();
+    const flagOn = mode !== "off" && mode !== "startup-off";
     const flags = {
       ...DEFAULT_FEATURE_FLAGS,
       retrieval_vector: false,
       authority_resolution: false,
-      read_time_resolution: mode !== "off",
+      read_time_resolution: flagOn,
       read_time_reinforcement: true,
     };
     await t.sql`update feature_flags set flags=${JSON.stringify(flags)}::jsonb`;
@@ -83,7 +97,16 @@ it.each(["enabled", "off", "retract", "corrupt", "strict", "unbound", "uppercase
       masterKey: TEST_MASTER_KEY,
       modelDailyCallLimit: 100,
       providerFactory: { languageModel: model, embeddingModel: model },
-      recallBinding: binding,
+      ...(mode === "startup-on" || mode === "startup-off"
+        ? resolveStartupRetrievalBindings(
+            JSON.stringify({
+              fusion: binding.fusion,
+              rerankerProvider: binding.rerankerProvider,
+              recallReadTimeResolution: true,
+            }),
+            { databaseConfigured: true, masterKey: TEST_MASTER_KEY },
+          )
+        : { recallBinding: binding }),
     });
     binding.fusion.threshold = 1;
     if (binding.readTimeResolution !== undefined) binding.readTimeResolution = false;
@@ -115,7 +138,7 @@ it.each(["enabled", "off", "retract", "corrupt", "strict", "unbound", "uppercase
         expect(r.candidates[0]?.value).toBe("needle PostgreSQL");
         expect(r.abstained).toBe(false);
         expect(r.trace.flags_snapshot?.flags.read_time_reinforcement).toBe(false);
-        if (mode === "off") expect(r).not.toHaveProperty("read_time_context");
+        if (!flagOn) expect(r).not.toHaveProperty("read_time_context");
         else if (mode === "retract")
           expect(r.read_time_context).toEqual({ abstained: true, memories: [] });
         else
