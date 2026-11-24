@@ -9,7 +9,9 @@ import { projects, retrievalTraces } from "../db/schema.js";
 import type { ProviderFactory } from "../providers/factory.js";
 import { retrieve } from "./search.js";
 import type { DebugTrace } from "../debug/trace.js";
-import type { RecallBinding } from "./recall-binding.js";
+import type { ReplayRetrievalBinding } from "./replay-binding.js";
+import { captureFeatureFlags } from "../flags/runtime.js";
+import { projectRetrievalContext } from "./context-projection.js";
 
 function fail(
   reply: FastifyReply,
@@ -33,7 +35,7 @@ export function registerRecallRoutes(
   factory?: ProviderFactory,
   debugTrace?: DebugTrace,
   admitModelCall?: ModelAdmission,
-  binding?: RecallBinding,
+  binding?: ReplayRetrievalBinding,
 ): void {
   app.post(
     "/projects/:projectId/recall",
@@ -87,8 +89,16 @@ export function registerRecallRoutes(
         .limit(1);
       if (!project) return fail(reply, request.id, 404, ErrorCode.NOT_FOUND, "项目不存在");
       try {
+        const flagsSnapshot = binding?.readTimeResolution
+          ? await captureFeatureFlags(
+              db,
+              { reinforce: false },
+              { readTimeResolution: true, reranker: true },
+            )
+          : undefined;
         const result = await retrieve(db, masterKey, projectId, body.data.query, {
           ...binding,
+          ...(flagsSnapshot ? { flagsSnapshot } : {}),
           ...(debugTrace ? { debugTrace } : {}),
           usageLogger: app.log,
           ...(admitModelCall ? { admitModelCall } : {}),
@@ -110,6 +120,9 @@ export function registerRecallRoutes(
           query: body.data.query,
           abstained: result.abstained,
           candidates: result.candidates,
+          ...(result.readTimeContext !== undefined
+            ? { read_time_context: projectRetrievalContext(result, project.id) }
+            : {}),
           trace: {
             id: trace.id,
             reinforce_enabled: false,
