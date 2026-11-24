@@ -5487,7 +5487,7 @@
         },
         "responses": {
           "200": {
-            "description": "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; it is populated only when a trusted library recall binding declares readTimeResolution and the captured persisted flag is enabled.",
+            "description": "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; it is populated only when a trusted recall binding declares readTimeResolution and the captured persisted flag is enabled. Official startup can install this capability via recallReadTimeResolution: true in MNEMIC_RETRIEVAL_BINDING_JSON.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/RecallResult" } }

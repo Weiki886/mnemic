@@ -1,7 +1,7 @@
 # 显式安装启动检索绑定
 
 正式启动器可从 MNEMIC_RETRIEVAL_BINDING_JSON 同时安装聊天和手动召回绑定。未配置或空字符串
-保持原路径，空白字符串不等于关闭。接受现有 fusion + rerankerProvider 契约，以及可选的 chatReadTimeResolution:true，最多8192个UTF-8
+保持原路径，空白字符串不等于关闭。接受现有 fusion + rerankerProvider 契约，以及可选的聊天和召回回放能力，最多8192个UTF-8
 字节；Key、端点、模型名、flagsSnapshot 和其他字段均不允许。Provider 密钥、模型及端点仍只
 存服务端数据库，环境中只有算法参数和可选的 Provider ID 引用，不增加模型槽位。
 
@@ -25,43 +25,40 @@ readiness，不能用这个选项证明共享数据库的其他进程已就绪�
 服务或调用付费模型。验证覆盖非法配置子进程、解析边界及组装后的真实 HTTP，不代表真实
 供应商兼容性或质量指标验收。#9/#22 保持打开，默认开启和完整消融仍未完成。
 
-回滚前先关闭持久 reranker 并排空请求，再移除变量、切换旧版本；旧版不安装绑定但会读取全局
-配置，直接回滚可能降级。无数据库迁移可回滚。
+## Explicit replay capabilities
 
-## Explicit chat replay capability
-
-Add `"chatReadTimeResolution": true` to the same JSON profile to install the trusted chat-only
-read-time-resolution capability. This property is absent by default; false, null, numbers and
-strings are rejected with the fixed startup error. The 8192-byte limit, strict unknown-field
-rejection and DB/master-key prerequisites still apply before connection or listening.
+Set `chatReadTimeResolution` and `recallReadTimeResolution` independently in the same JSON
+profile. Each property accepts literal `true` when present. This example installs recall replay
+while leaving chat on its base binding.
 
 ```json
 {
   "fusion": { "mode": "rrf", "threshold": 0.001 },
   "rerankerProvider": {},
-  "chatReadTimeResolution": true
+  "recallReadTimeResolution": true
 }
 ```
 
-The startup resolver projects this option only into `chatRetrievalBinding.readTimeResolution`;
-`recallBinding` receives the original fusion/Provider fields and cannot consume replay. Both
-bindings are copied/frozen. Parsing does not read or update persisted flags, reserve quota,
-decrypt a Provider or probe a model. Existing Compose forwarding already carries this profile;
-no additional environment variable is introduced.
+Startup validates the 8192-byte limit, allowed fields and database/master-key prerequisites
+before connecting or listening. It installs frozen bindings. Compose forwards the same variable.
 
-This installs capability only. Each chat operation still captures its persisted flag snapshot;
-flag-off uses legacy context. The management API continues rejecting read_time_resolution=true,
-so this is an explicitly assembled experiment, not a complete deployment activation path or
-quality/ablation acceptance. A pre-existing true state may affect chat after restart, while
-recall without replay support can fail; shared-database instances must have consistent assembly.
-Do not treat chat-only capability as cluster readiness. Write paths record this retrieval-only
-flag without executing replay, as documented in the managed chat binding.
+Each request still needs the persisted `read_time_resolution` flag enabled to run replay.
+The management API currently rejects enabling the flag. For an experiment that exercises both
+chat and recall with a shared database, install both capabilities on every serving instance.
+Chat without its capability can degrade to no memory, and recall without its capability can
+fail when the shared flag is on. Write paths record the flag in their snapshot without replaying.
 
-Before removing the option or rolling back, disable persisted read-time resolution through the
-trusted experiment setup and drain requests; otherwise older/unbound consumers may degrade or
-fail. Retain replay-aware clients/readers for existing source references. #9/#22 remain open.
+Upgrade strict clients before enabling recall replay. Keep replay-aware readers for existing
+source references.
 
-Tests cover strict parsing, absent/legacy behavior, immutable distinct bindings, dependency
-failure and a real entry subprocess rejecting malformed chat options before unreachable DB
-access. Startup-resolved bindings also exercise real JSON chat routing with isolated PG and
-offline models, without a retrieveFn substitute. No real credentials or paid models are used.
+## Rollback
+
+Before removing the profile or rolling back to a version that lacks these bindings, disable
+any enabled persisted `reranker` and `read_time_resolution` flags. Use the flags management API
+for reranker and the trusted experiment setup for read-time resolution. Drain in-flight requests
+before removing the variable or switching versions. Apply the same order when removing a single
+capability, disabling its corresponding flag before draining and removing it.
+
+Parser tests cover independent options and prerequisites. A subprocess verifies malformed
+configuration is rejected before database access. Startup-resolved bindings are exercised
+through the real recall route with isolated PostgreSQL and offline model fixtures.

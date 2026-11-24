@@ -81,3 +81,43 @@ it("chat replay still requires startup dependencies", () => {
     }),
   ).toThrow("retrieval startup requires database and master key");
 });
+
+it.each([false, true])("startup recall replay is independent of chat replay (%s)", (chatReplay) => {
+  const result = resolveStartupRetrievalBindings(
+    JSON.stringify({
+      ...profile,
+      recallReadTimeResolution: true,
+      ...(chatReplay ? { chatReadTimeResolution: true } : {}),
+    }),
+    ready,
+  );
+  expect(result.recallBinding).toMatchObject({
+    ...profile,
+    readTimeResolution: true,
+  });
+  expect(Object.isFrozen(result.recallBinding)).toBe(true);
+  expect(Object.isFrozen(result.recallBinding?.fusion)).toBe(true);
+  expect(Object.isFrozen(result.recallBinding?.rerankerProvider)).toBe(true);
+  if (chatReplay) expect(result.chatRetrievalBinding).toMatchObject({ readTimeResolution: true });
+  else expect(result.chatRetrievalBinding).not.toHaveProperty("readTimeResolution");
+});
+
+it.each([false, null, 0, "true"])("rejects malformed recall replay startup option %j", (option) => {
+  expect(() =>
+    resolveStartupRetrievalBindings(
+      JSON.stringify({ ...profile, recallReadTimeResolution: option }),
+      ready,
+    ),
+  ).toThrow("MNEMIC_RETRIEVAL_BINDING_JSON invalid");
+});
+
+it("recall replay still requires startup dependencies", () => {
+  expect(() =>
+    resolveStartupRetrievalBindings(
+      JSON.stringify({ ...profile, recallReadTimeResolution: true }),
+      {
+        databaseConfigured: false,
+      },
+    ),
+  ).toThrow("retrieval startup requires database and master key");
+});
