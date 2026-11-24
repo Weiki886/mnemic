@@ -5,7 +5,7 @@
 #22/#9 的部分交付。库调用方同时提供经过校验、复制冻结的 recallBinding 与 chatRetrievalBinding，
 且满足它们既有的 DB、主密钥和持久日配额条件时，当前 buildApp 实例才允许 PUT /v1/config/flags
 将 reranker 设为 true。能力由注册时的布尔值捕获，HTTP body/query 不能申请或覆盖。
-任一绑定缺失时仍400；decay/read_time_resolution 一直400。默认 index.ts 未安装绑定，行为不变。
+任一绑定缺失时仍返回 400，decay 仍不可启用。读时消解另有[回放能力门控](feature-flags.md#read-time-resolution)。
 
 管理更新沿用鉴权、严格输入、CAS、同事务审计和 no-store。不会读 Provider、解密 Key、探测端点、
 预留模型配额或发起模型调用；能力可用不等于 Provider 配置齐备或端点健康。选择/校验仍在实际

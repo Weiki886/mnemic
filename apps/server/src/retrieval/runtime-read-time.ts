@@ -17,7 +17,8 @@ export function captureReadTimeBinding(options: RetrieveOptions, hasFusion: bool
     )
       throw Error();
     const snapshot = createFeatureFlagSnapshot(options.flagsSnapshot);
-    if (snapshot.flags.read_time_reinforcement) throw Error();
+    if (snapshot.flags.read_time_resolution && snapshot.flags.read_time_reinforcement)
+      throw Error();
     return snapshot;
   } catch {
     throw Error("INVALID_READ_TIME_RETRIEVAL_OPTIONS");

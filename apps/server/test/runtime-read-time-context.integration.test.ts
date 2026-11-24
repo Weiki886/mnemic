@@ -457,3 +457,19 @@ it("unselected replay is excluded from budget candidates and has no fake source 
   });
   expect(trace?.candidates[0].readTimeResolution).not.toHaveProperty("memoryBudget");
 });
+
+it("an installed replay binding preserves reinforcement while replay is off", async () => {
+  const f = await fixture();
+  const result = await retrieve(
+    t.db,
+    TEST_MASTER_KEY,
+    f.p,
+    "needle",
+    opts({
+      flagsSnapshot: snapshot({ read_time_resolution: false, read_time_reinforcement: true }),
+    }),
+  );
+  expect(result.readTimeContext).toBeUndefined();
+  const [r] = await t.sql`select salience from beliefs where id=${f.b}`;
+  expect(Number(r?.salience)).toBeGreaterThan(0.4);
+});

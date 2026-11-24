@@ -1,5 +1,5 @@
 import { resolveStartupRetrievalBindings } from "../src/retrieval/startup-binding.js";
-import { beforeAll, afterAll, expect, it } from "vitest";
+import { beforeAll, afterAll, expect, it, vi } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { MockLanguageModelV2 } from "ai/test";
 import { createFeatureFlagSnapshot, DEFAULT_FEATURE_FLAGS } from "@mnemic/shared/flags";
@@ -155,3 +155,90 @@ it.each(["json", "sse", "off", "startup"])(
     }
   },
 );
+
+it("an authorized PUT enables both startup replay paths and can turn them off again", async () => {
+  const f = await fixture();
+  const saved = flags(false);
+  await t.sql`update feature_flags set flags=${JSON.stringify(saved.flags)}::jsonb,revision=0`;
+  const token = "offline-replay-management-token-0000000";
+  const headers = { authorization: `Bearer ${token}` };
+  const app = buildApp({
+    authToken: token,
+    db: t.db,
+    masterKey: TEST_MASTER_KEY,
+    modelDailyCallLimit: 100,
+    providerFactory: factory,
+    ...resolveStartupRetrievalBindings(
+      JSON.stringify({
+        fusion: { mode: "rrf", threshold: 0.001 },
+        rerankerProvider: {},
+        chatReadTimeResolution: true,
+        recallReadTimeResolution: true,
+      }),
+      { databaseConfigured: true, masterKey: TEST_MASTER_KEY },
+    ),
+  });
+  vi.stubEnv("MNEMIC_READ_REINFORCE", undefined);
+  prompts.length = 0;
+  const put = (revision: number, enabled: boolean) =>
+    app.inject({
+      method: "PUT",
+      url: "/v1/config/flags",
+      headers,
+      payload: {
+        expected_revision: revision,
+        flags: { ...saved.flags, read_time_resolution: enabled },
+      },
+    });
+  const recall = () =>
+    app.inject({
+      method: "POST",
+      url: `/projects/${f.p}/recall`,
+      headers,
+      payload: { query: "needle" },
+    });
+  try {
+    const enabled = await put(0, true);
+    expect(enabled.statusCode).toBe(200);
+    expect(enabled.json()).toMatchObject({
+      kind: "updated",
+      snapshot: { revision: 1, flags: { read_time_resolution: true } },
+    });
+    expect(prompts).toHaveLength(0);
+    const audit =
+      await t.sql`select meta from audit_log where action='flags.update' and target='server'`;
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.meta).toMatchObject({
+      before: { read_time_resolution: false },
+      after: { read_time_resolution: true },
+    });
+    const recalled = await recall();
+    expect(recalled.statusCode).toBe(200);
+    expect(recalled.json()).toMatchObject({
+      read_time_context: {
+        memories: [{ provenance: { observation_id: f.next, evidence_id: f.e2 } }],
+      },
+      trace: { flags_snapshot: { revision: 1, flags: { read_time_resolution: true } } },
+    });
+    const chat = await app.inject({
+      method: "POST",
+      url: `/projects/${f.p}/conversations/${f.c}/messages`,
+      headers,
+      payload: { text: "needle" },
+    });
+    expect(chat.statusCode).toBe(200);
+    expect(chat.json().memories[0]).toMatchObject({
+      belief_version_id: null,
+      provenance: { observation_id: f.next, evidence_id: f.e2 },
+    });
+    expect((await put(0, false)).statusCode).toBe(409);
+    expect((await put(1, false)).statusCode).toBe(200);
+    const legacy = await recall();
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.json()).not.toHaveProperty("read_time_context");
+    expect(legacy.json().candidates[0].value).toBe("needle PostgreSQL");
+  } finally {
+    vi.unstubAllEnvs();
+    await app.close();
+  }
+});

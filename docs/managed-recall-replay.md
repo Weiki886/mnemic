@@ -25,9 +25,10 @@ may already have incurred cost before a later failure; cancellation does not pro
 No Belief/Observation/version/salience/evidence-count writes are introduced.
 
 [Official startup](startup-retrieval-binding.md) can install recall replay explicitly through
-`recallReadTimeResolution: true`, independently of the chat option. The management API still
-rejects enabling `read_time_resolution`. Instances sharing a database need consistent
-capabilities. #9/#22 remain open for management enablement, real quality metrics and full ablation.
+`recallReadTimeResolution: true`, independently of the chat option. The [management API](feature-flags.md#read-time-resolution)
+requires replay capability for both chat and recall before enabling `read_time_resolution`.
+Instances sharing a database need consistent capabilities. #9/#22 remain open for real quality
+metrics and full ablation.
 
 Tests exercise real TCP HTTP with the shared client, isolated PostgreSQL and the committed OpenAPI.
 They cover on/off, retraction, corrupt Evidence, strict input, authentication and unbound failure;

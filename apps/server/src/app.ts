@@ -266,6 +266,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     registerAuditRoutes(app, options.db);
     registerFeatureFlagRoutes(app, options.db, {
       reranker: !!(recallBinding && chatRetrievalBinding),
+      readTimeResolution:
+        recallBinding?.readTimeResolution === true &&
+        chatRetrievalBinding?.readTimeResolution === true,
     });
     registerUsageRoutes(app, options.db, options.usagePricing);
     registerApprovalAuditRoutes(app, options.db);

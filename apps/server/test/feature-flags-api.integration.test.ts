@@ -113,21 +113,24 @@ it.each(["decay", "reranker", "read_time_resolution"] as const)(
     expect(models).not.toHaveBeenCalled();
   },
 );
-it("GET can diagnose internal unsupported state and PUT can repair it without invoking runtime consumers", async () => {
-  const state = (
-    await updateFeatureFlags(t.db, {
-      expected_revision: 0,
-      flags: { ...DEFAULT_FEATURE_FLAGS, reranker: true },
-    })
-  ).snapshot;
-  const get = await app.inject({ url: "/v1/config/flags", headers });
-  expect(get.statusCode).toBe(200);
-  expect(get.json()).toEqual(state);
-  const r = await put({ ...DEFAULT_FEATURE_FLAGS }, state.revision);
-  expect(r.statusCode).toBe(200);
-  expect(r.json().snapshot.flags.reranker).toBe(false);
-  expect(models).not.toHaveBeenCalled();
-});
+it.each(["reranker", "read_time_resolution"] as const)(
+  "an unbound instance can read and disable persisted %s without invoking models",
+  async (key) => {
+    const state = (
+      await updateFeatureFlags(t.db, {
+        expected_revision: 0,
+        flags: { ...DEFAULT_FEATURE_FLAGS, [key]: true },
+      })
+    ).snapshot;
+    const get = await app.inject({ url: "/v1/config/flags", headers });
+    expect(get.statusCode).toBe(200);
+    expect(get.json()).toEqual(state);
+    const r = await put({ ...DEFAULT_FEATURE_FLAGS }, state.revision);
+    expect(r.statusCode).toBe(200);
+    expect(r.json().snapshot.flags[key]).toBe(false);
+    expect(models).not.toHaveBeenCalled();
+  },
+);
 it("database audit failure rolls HTTP update back and returns safe problem 500", async () => {
   const before = (await audits()).length;
   await t.sql`alter table audit_log add constraint flags_api_test_reject check (action <> 'flags.update') not valid`;
