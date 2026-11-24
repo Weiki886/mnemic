@@ -25,9 +25,6 @@ readiness，不能用这个选项证明共享数据库的其他进程已就绪�
 服务或调用付费模型。验证覆盖非法配置子进程、解析边界及组装后的真实 HTTP，不代表真实
 供应商兼容性或质量指标验收。#9/#22 保持打开，默认开启和完整消融仍未完成。
 
-回滚前先关闭持久 reranker 并排空请求，再移除变量、切换旧版本；旧版不安装绑定但会读取全局
-配置，直接回滚可能降级。无数据库迁移可回滚。
-
 ## Explicit replay capabilities
 
 Set `chatReadTimeResolution` and `recallReadTimeResolution` independently in the same JSON
@@ -51,9 +48,16 @@ chat and recall with a shared database, install both capabilities on every servi
 Chat without its capability can degrade to no memory, and recall without its capability can
 fail when the shared flag is on. Write paths record the flag in their snapshot without replaying.
 
-Upgrade strict clients before enabling recall replay. Before removing a replay capability or
-rolling back, disable persisted read-time resolution through the trusted experiment setup and
-drain requests. Keep replay-aware readers for existing source references.
+Upgrade strict clients before enabling recall replay. Keep replay-aware readers for existing
+source references.
+
+## Rollback
+
+Before removing the profile or rolling back to a version that lacks these bindings, disable
+any enabled persisted `reranker` and `read_time_resolution` flags. Use the flags management API
+for reranker and the trusted experiment setup for read-time resolution. Drain in-flight requests
+before removing the variable or switching versions. Apply the same order when removing a single
+capability, disabling its corresponding flag before draining and removing it.
 
 Parser tests cover independent options and prerequisites. A subprocess verifies malformed
 configuration is rejected before database access. Startup-resolved bindings are exercised
