@@ -131,8 +131,10 @@ HTTP 或模型输出不能设置 flagsSnapshot；现有输入契约仍拒绝额�
 - 手动 recall 固定 reinforce:false；即使全局开启也不强化。响应的 trace.flags_snapshot 提供实际快照，
   shared schema 拒绝与该只读约定矛盾的快照。消解历史 API 以 camelCase flagsSnapshot 返回，兼容旧服务器字段缺失。
 
-默认实例不支持启用 decay/reranker/read_time_resolution；同时安装受信聊天和召回绑定的库实例可启用 reranker。内部配置可以表达这些字段，
-decay/read_time_resolution 在操作入口检测到 true 仍固定拒绝；reranker 在未绑定检索中拒绝，在声明 memory_write 的写入操作中仅记录而不执行。不能把无能力的路径当成已运行。
+`decay` 仍不可启用。管理 API 允许同时安装受信 Chat 和 Recall 检索绑定的实例启用 `reranker`。
+两项绑定都具备回放能力、持久化读时强化关闭且未设置 `MNEMIC_READ_REINFORCE=1` 时，管理 API 也允许启用
+[`read_time_resolution`](#read-time-resolution)。检索入口检查本次操作所需的能力，缺少对应能力时拒绝执行已启用的行为。
+声明 `memory_write` 的写入只在快照中记录这两个检索开关。
 聊天仍沿用既有“检索失败→无记忆回答”降级：可能继续调用聊天模型、保存聊天消息，这不是整个聊天请求的计费关闭开关。
 这可能让待提取任务退避、最终进入死信；修正配置不会自动重置既有死信。管理 API 已拒绝不受支持的启用；GET 仍可读取这种内部状态，便于修复。
 既有未配置的路径没有降级到默认值：缺失/损坏配置同样拒绝执行。
@@ -155,7 +157,7 @@ Resolver 新增受控 authority-off 分支，算法版本升为 0.2.0。
 回滚应用代码可保留新增列，不能通过默认回填或清空配置来伪造历史。
 配置管理 API 已完成；未实现模块与完整消融矩阵的验收仍依赖 #9/#10，#22 保持 OPEN。
 
-3/3 测试额外覆盖鉴权/无效输入先于 DB、剩余三项未支持字段拒绝及已实现时间过滤的启用、GET 诊断与修复、HTTP 并发 CAS、
+3/3 测试额外覆盖鉴权/无效输入先于 DB、无绑定时三项受限开关的拒绝及已实现时间过滤的启用、GET 诊断与修复、HTTP 并发 CAS、
 审计失败回滚、no-op/409/耗尽、PUT 预检与实际鉴权、500 日志不含原始异常；
 真实 TCP HTTP GET→PUT→recall 的响应/trace 闭环使用两路关闭和禁止模型调用的替身。
 
