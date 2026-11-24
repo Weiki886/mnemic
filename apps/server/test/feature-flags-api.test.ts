@@ -1,7 +1,8 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { buildApp } from "../src/app.js";
 import { DEFAULT_FEATURE_FLAGS } from "@mnemic/shared/flags";
+import { TEST_MASTER_KEY } from "./test-keys.js";
 const token = "flags-api-offline-token-0000000000";
 const tripwire = () => {
   let reads = 0;
@@ -179,3 +180,49 @@ it.each(["GET", "PUT"] as const)("%s query overrides fail before DB access", asy
     await app.close();
   }
 });
+
+it.each([
+  ["neither replay capability", false, false, false, undefined, "flags.read_time_resolution"],
+  ["chat replay only", true, false, false, undefined, "flags.read_time_resolution"],
+  ["recall replay only", false, true, false, undefined, "flags.read_time_resolution"],
+  ["persisted reinforcement", true, true, true, undefined, "flags.read_time_reinforcement"],
+  ["environment reinforcement", true, true, false, "1", "flags.read_time_reinforcement"],
+] as const)(
+  "rejects replay with %s before DB access",
+  async (_label, chat, recall, reinforce, env, path) => {
+    const db = tripwire();
+    const binding = { fusion: { mode: "rrf", threshold: 0.001 }, rerankerProvider: {} };
+    const app = buildApp({
+      db: db.db,
+      authToken: token,
+      masterKey: TEST_MASTER_KEY,
+      modelDailyCallLimit: 100,
+      chatRetrievalBinding: chat ? { ...binding, readTimeResolution: true } : binding,
+      recallBinding: recall ? { ...binding, readTimeResolution: true } : binding,
+      logStream: { write: () => {} },
+    });
+    vi.stubEnv("MNEMIC_READ_REINFORCE", env);
+    try {
+      const r = await app.inject({
+        method: "PUT",
+        url: "/v1/config/flags",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          expected_revision: 0,
+          flags: {
+            ...DEFAULT_FEATURE_FLAGS,
+            read_time_resolution: true,
+            read_time_reinforcement: reinforce,
+          },
+        },
+      });
+      expect(r.statusCode).toBe(400);
+      expect(r.headers["cache-control"]).toBe("no-store");
+      expect(r.json().errors).toEqual([expect.objectContaining({ path })]);
+      expect(db.count()).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  },
+);

@@ -34,10 +34,11 @@ function fail(
 export function registerFeatureFlagRoutes(
   app: FastifyInstance,
   db: PostgresJsDatabase,
-  capabilities: { reranker?: boolean } = {},
+  capabilities: { reranker?: boolean; readTimeResolution?: boolean } = {},
 ): void {
   // Captured from trusted app assembly, never from an HTTP payload.
   const supportsReranker = capabilities.reranker === true;
+  const supportsReplay = capabilities.readTimeResolution === true;
   const readQuery = (query: unknown) => Query.safeParse(query);
   app.get(
     "/v1/config/flags",
@@ -69,8 +70,12 @@ export function registerFeatureFlagRoutes(
       const body = FeatureFlagUpdateSchema.safeParse(request.body);
       if (!body.success)
         return fail(reply, request.id, 400, "开关更新参数非法", zodIssues(body.error));
+      const { flags } = body.data;
       const unsupported = UNSUPPORTED_FEATURE_FLAGS.filter(
-        (key) => body.data.flags[key] && !(key === "reranker" && supportsReranker),
+        (key) =>
+          flags[key] &&
+          !(key === "reranker" && supportsReranker) &&
+          !(key === "read_time_resolution" && supportsReplay),
       );
       if (unsupported.length)
         return fail(
@@ -83,6 +88,16 @@ export function registerFeatureFlagRoutes(
             message: "当前版本尚不支持启用此开关",
           })),
         );
+      if (
+        flags.read_time_resolution &&
+        (flags.read_time_reinforcement || process.env.MNEMIC_READ_REINFORCE === "1")
+      )
+        return fail(reply, request.id, 400, "读时消解要求关闭读时强化", [
+          {
+            path: "flags.read_time_reinforcement",
+            message: "关闭持久化读时强化与 MNEMIC_READ_REINFORCE=1 后再启用读时消解",
+          },
+        ]);
       try {
         const result = await updateFeatureFlags(db, body.data);
         if (result.kind === "conflict")

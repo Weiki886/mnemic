@@ -31,5 +31,4 @@ Disable persisted replay and drain requests before removing producer capability;
 producers before reverting clients. Shared schema/client tests and independent Ajv validation of the committed
 OpenAPI use offline fixtures only. No real Provider or paid request is used.
 
-Management capability readiness, default-on reranking, quality metrics and complete ablation
-remain future work. #9/#22 stay open.
+Default-on reranking, quality metrics and complete ablation remain future work. #9/#22 stay open.

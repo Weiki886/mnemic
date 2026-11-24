@@ -21,15 +21,15 @@ may still occur. There is no old-anchor fallback for invalid replay context.
 
 [Official startup](startup-retrieval-binding.md) installs chat replay when the retrieval profile
 sets `chatReadTimeResolution: true`. The separate `recallReadTimeResolution` option installs
-[managed recall replay](managed-recall-replay.md). The management API still rejects enabling
-`read_time_resolution`. A trusted experiment must arrange its persisted configuration separately,
-and instances sharing the database need consistent capabilities.
+[managed recall replay](managed-recall-replay.md). The [management API](feature-flags.md#read-time-resolution)
+requires both replay capabilities before enabling `read_time_resolution`. Instances sharing the
+database need consistent capabilities.
 
 Tests use isolated PG and offline SDK models: real JSON/SSE routes, no retrieveFn substitution,
 persisted flag-on replay and flag-off old behavior, immutable binding capture, strict malformed
 options and legacy compatibility. No real Provider credentials or paid network calls are used.
 
-Management readiness, real quality metrics and full ablation remain outstanding under #9/#22.
+Real quality metrics and full ablation remain outstanding under #9/#22.
 Keep replay-aware readers until rollback has removed all producer instances.
 
 Write operations record the read-time-resolution snapshot without executing replay, just as

@@ -163,3 +163,22 @@ Resolver 新增受控 authority-off 分支，算法版本升为 0.2.0。
 
 受信内部检索现在可持有显式精排绑定并提供本次快照，见 [运行时精排](runtime-reranker.md)。
 默认实例仍拒绝管理 API 启用 reranker。后续[管理能力门控](reranker-management-capability.md)只为同时安装两项绑定的库实例放行，不改变默认值。
+
+## Read-time resolution
+
+Install replay capability on both the chat and manual recall bindings before enabling
+`read_time_resolution`. For official startup, set both `chatReadTimeResolution` and
+`recallReadTimeResolution` to `true` in the [retrieval profile](startup-retrieval-binding.md).
+Apply the same configuration to every server sharing the database. The API can check
+the instance handling the request.
+
+Read the current snapshot via `GET /v1/config/flags`. Submit the full flags object and its
+current revision via `PUT /v1/config/flags`, with `read_time_resolution: true` and
+`read_time_reinforcement: false`. If the server environment sets `MNEMIC_READ_REINFORCE=1`,
+remove that override from every serving instance first. Missing replay capabilities or
+incompatible reinforcement return a field-level 400 before any database access. Successful
+updates use the existing revision check and transactional audit.
+
+Turn the flag off via the same API before draining requests and removing either capability.
+Instances without replay bindings can disable the flag. With replay off, chat can use the
+existing reinforcement path and manual recall continues to suppress reinforcement.

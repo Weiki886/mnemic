@@ -43,8 +43,9 @@ Startup validates the 8192-byte limit, allowed fields and database/master-key pr
 before connecting or listening. It installs frozen bindings. Compose forwards the same variable.
 
 Each request still needs the persisted `read_time_resolution` flag enabled to run replay.
-The management API currently rejects enabling the flag. For an experiment that exercises both
-chat and recall with a shared database, install both capabilities on every serving instance.
+To enable this flag through the management API, set both replay options on every serving
+instance, then follow the [read-time resolution configuration steps](feature-flags.md#read-time-resolution).
+The instance handling the update checks its own bindings.
 Chat without its capability can degrade to no memory, and recall without its capability can
 fail when the shared flag is on. Write paths record the flag in their snapshot without replaying.
 
@@ -55,7 +56,7 @@ source references.
 
 Before removing the profile or rolling back to a version that lacks these bindings, disable
 any enabled persisted `reranker` and `read_time_resolution` flags. Use the flags management API
-for reranker and the trusted experiment setup for read-time resolution. Drain in-flight requests
+with the current revision to disable the flags. Drain in-flight requests
 before removing the variable or switching versions. Apply the same order when removing a single
 capability, disabling its corresponding flag before draining and removing it.
 
