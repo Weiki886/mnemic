@@ -35,6 +35,7 @@ export interface ResolveOptions extends FeatureFlagOptions {
 export interface ResolvedModel<M = LanguageModel | EmbeddingModel> {
   model: M;
   modelId: string;
+  providerId: string;
   providerName: string;
   slot: Slot;
 }
@@ -134,5 +135,5 @@ export async function resolveModel(
           debug,
           options.admitModelCall,
         );
-  return { model, modelId, providerName: row.name, slot };
+  return { model, modelId, providerId: row.id, providerName: row.name, slot };
 }
