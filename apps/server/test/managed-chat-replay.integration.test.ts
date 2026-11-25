@@ -242,3 +242,109 @@ it("an authorized PUT enables both startup replay paths and can turn them off ag
     await app.close();
   }
 });
+
+it.each(["json", "sse"] as const)(
+  "trusted chat %s applies the configured budget to the rendered memory and references",
+  async (transport) => {
+    const replay = transport === "sse";
+    const first = await fixture();
+    const second = await fixture(first.p, "secondary");
+    await t.sql`update beliefs set salience='0.800' where id=${first.b}`;
+    await t.sql`update observations set value='"secondary replay value"' where id=${second.next}`;
+    const saved = flags(replay);
+    await t.sql`update feature_flags set flags=${JSON.stringify(saved.flags)}::jsonb`;
+
+    const expectedValue = replay ? "SQLite private-value-sentinel" : "needle PostgreSQL";
+    const expectedBlock = `[1] app / database = "${expectedValue}"`;
+    // Deterministic offline fixture: the counter must receive the exact numbered block.
+    const countTokens = vi.fn((text: string) => text.length);
+    const memoryBudget = { maxTokens: expectedBlock.length, countTokens };
+    const app = buildApp({
+      auth: false,
+      db: t.db,
+      masterKey: TEST_MASTER_KEY,
+      modelDailyCallLimit: 100,
+      providerFactory: factory,
+      chatRetrievalBinding: {
+        fusion: { mode: "rrf", threshold: 0.001 },
+        rerankerProvider: {},
+        ...(replay ? { readTimeResolution: true } : {}),
+        memoryBudget,
+      },
+    });
+    memoryBudget.maxTokens = 0;
+    const replacementCounter = vi.fn((_text: string) => 0);
+    memoryBudget.countTokens = replacementCounter;
+
+    prompts.length = 0;
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/projects/${first.p}/conversations/${first.c}/messages${replay ? "/stream" : ""}`,
+        payload: { text: "needle" },
+      });
+      expect(response.statusCode).toBe(200);
+      const reply = replay
+        ? response.body
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => JSON.parse(line.slice(5)))
+            .find((event) => event.type === "finish")
+        : response.json();
+      expect(reply.abstained).toBe(false);
+      expect(reply.memories).toEqual([
+        expect.objectContaining({
+          belief_id: first.b,
+          belief_version_id: replay ? null : first.v,
+          value: expectedValue,
+          ...(replay
+            ? {
+                provenance: expect.objectContaining({
+                  observation_id: first.next,
+                  evidence_id: first.e2,
+                }),
+              }
+            : {}),
+        }),
+      ]);
+      expect(countTokens).toHaveBeenCalledWith(expectedBlock);
+      expect(replacementCounter).not.toHaveBeenCalled();
+      expect(prompts[0]).toContain(JSON.stringify(expectedBlock).slice(1, -1));
+      expect(prompts[0]).not.toContain("secondary");
+      const [answer] =
+        await t.sql`select memories from messages where conversation_id=${first.c} and speaker='assistant'`;
+      expect(answer?.memories).toEqual(
+        replay
+          ? [
+              {
+                kind: "observation_replay",
+                belief_id: first.b,
+                anchor_version_id: first.v,
+                observation_id: first.next,
+                evidence_id: first.e2,
+              },
+            ]
+          : [first.v],
+      );
+      const [trace] =
+        await t.sql`select candidates from retrieval_traces where project_id=${first.p}`;
+      expect(trace?.candidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining(
+            replay
+              ? {
+                  beliefVersionId: second.v,
+                  readTimeResolution: expect.objectContaining({
+                    status: "budget_discarded",
+                    reason: "token_budget",
+                  }),
+                }
+              : { beliefVersionId: second.v, selected: false, reason: "token_budget" },
+          ),
+        ]),
+      );
+    } finally {
+      await app.close();
+    }
+  },
+);

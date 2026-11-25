@@ -47,3 +47,14 @@ it.each([
     await app?.close();
   }
 });
+
+it.each([
+  null,
+  { maxTokens: -1, countTokens: () => 1 },
+  { maxTokens: 10, countTokens: "not a function" },
+  { maxTokens: 10, countTokens: () => 1, model: "extra" },
+])("invalid trusted chat memory budget %j fails before app startup", (memoryBudget) => {
+  expect(() => buildApp({ auth: false, chatRetrievalBinding: { ...valid, memoryBudget } })).toThrow(
+    "INVALID_RUNTIME_MEMORY_BUDGET",
+  );
+});
