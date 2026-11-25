@@ -32,9 +32,14 @@ await retrieve(db, masterKey, projectId, "PostgreSQL", {
 Pass `memoryBudget: { maxTokens, countTokens }` inside `buildApp({ chatRetrievalBinding })`,
 alongside the binding's fusion and provider selection. App assembly validates the option,
 copies the limit, and captures the synchronous counter function. Supply the counter for
-the configured Chat model. If the Chat slot changes to a model with a different tokenizer,
-update the binding before using that model. Binding capture fixes the function reference.
-The library caller is responsible for keeping the function's behavior stable.
+the configured Chat model. To guard against a live model change, add
+`memoryBudgetModel: { providerId, modelId }` alongside `memoryBudget` in the Chat binding.
+Each pinned turn resolves the Chat slot once. It uses that same model to generate the answer,
+even if the configured slot changes during retrieval. If the selected provider or model ID
+differs from the pin, Chat skips retrieval and can answer without newly retrieved memories.
+Update the tokenizer and pin together when changing Chat models. The identity check compares
+the stored Provider UUID and exact model ID. The caller still supplies the matching tokenizer
+and keeps its behavior stable.
 
 JSON and SSE chat use the same budget. With replay disabled, the budget applies to the
 selected BeliefVersions. With replay enabled, it applies to the rendered Observation values

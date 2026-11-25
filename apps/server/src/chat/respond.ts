@@ -134,12 +134,24 @@ export async function prepareAnswer(
       purpose: "chat" as const,
     },
   };
+  const { memoryBudgetModel, ...binding } = options.retrievalBinding ?? {};
+  // Keep the budget check and generation on the same selected model across awaits.
+  const pinnedChat = memoryBudgetModel
+    ? await resolveModel(db, masterKey, "chat", scoped)
+    : undefined;
   let projection: { memories: AnswerMemory[]; abstained: boolean } = {
     memories: [],
     abstained: true,
   };
   try {
-    const retrievalOptions = { ...scoped, ...options.retrievalBinding };
+    options.signal?.throwIfAborted();
+    if (
+      memoryBudgetModel &&
+      (pinnedChat?.providerId !== memoryBudgetModel.providerId ||
+        pinnedChat.modelId !== memoryBudgetModel.modelId)
+    )
+      throw Error("CHAT_MEMORY_BUDGET_MODEL_MISMATCH");
+    const retrievalOptions = { ...scoped, ...binding };
     if (retrievalOptions.readTimeResolution) {
       retrievalOptions.flagsSnapshot = await captureFeatureFlags(db, scoped, {
         readTimeResolution: true,
@@ -162,7 +174,7 @@ export async function prepareAnswer(
   }
 
   options.signal?.throwIfAborted();
-  const { model } = await resolveModel(db, masterKey, "chat", scoped);
+  const { model } = pinnedChat ?? (await resolveModel(db, masterKey, "chat", scoped));
   const history = await modelHistory(db, entered.projectId, entered.history);
   return {
     model,

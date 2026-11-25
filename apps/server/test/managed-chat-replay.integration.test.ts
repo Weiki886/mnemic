@@ -5,6 +5,7 @@ import { MockLanguageModelV2 } from "ai/test";
 import { createFeatureFlagSnapshot, DEFAULT_FEATURE_FLAGS } from "@mnemic/shared/flags";
 import { createProvider } from "../src/providers/repository.js";
 import { buildApp } from "../src/app.js";
+import { retrieve } from "../src/retrieval/search.js";
 import { setupTestDb, type TestDb } from "./db-helper.js";
 import { TEST_MASTER_KEY } from "./test-keys.js";
 let t: TestDb;
@@ -345,6 +346,83 @@ it.each(["json", "sse"] as const)(
       );
     } finally {
       await app.close();
+    }
+  },
+);
+
+it.each(["json", "sse"] as const)(
+  "a pinned %s budget follows the model identity actually used by Chat",
+  async (transport) => {
+    const f = await fixture();
+    const [provider] = await t.sql`select id from provider_configs where name='offline'`;
+    const saved = flags(false);
+    await t.sql`update feature_flags set flags=${JSON.stringify(saved.flags)}::jsonb`;
+    const budgetModel = {
+      providerId: transport === "json" ? provider!.id : uuidv7(),
+      modelId: "offline",
+    };
+    const countTokens = vi.fn((text: string) => text.length);
+    const languageModel = vi.fn(factory.languageModel);
+    const retrieveFn = vi.fn<typeof retrieve>(async (...args) => {
+      // Simulate an operator changing the slot after this request resolves its model.
+      await t.sql`update provider_configs set models='{"chat":"offline-next"}' where id=${provider!.id}`;
+      return retrieve(...args);
+    });
+    const app = buildApp({
+      auth: false,
+      db: t.db,
+      masterKey: TEST_MASTER_KEY,
+      modelDailyCallLimit: 100,
+      providerFactory: { ...factory, languageModel },
+      chatDeps: { retrieveFn },
+      chatRetrievalBinding: {
+        fusion: { mode: "rrf", threshold: 0.001 },
+        rerankerProvider: {},
+        memoryBudget: { maxTokens: 100, countTokens },
+        memoryBudgetModel: budgetModel,
+      },
+    });
+    const send = () =>
+      app.inject({
+        method: "POST",
+        url: `/projects/${f.p}/conversations/${f.c}/messages${transport === "sse" ? "/stream" : ""}`,
+        payload: { text: "needle" },
+      });
+    const usedChatModels = () =>
+      t.sql`select model_id from model_usage where project_id=${f.p} and slot='chat' order by started_at,id`;
+    try {
+      if (transport === "json") {
+        const admitted = await send();
+        expect(admitted.statusCode).toBe(200);
+        expect(admitted.json().memories[0]).toMatchObject({ belief_version_id: f.v });
+        expect(countTokens).toHaveBeenCalledWith('[1] app / database = "needle PostgreSQL"');
+        expect(await usedChatModels()).toEqual([{ model_id: "offline" }]);
+        countTokens.mockClear();
+      }
+      const skipped = await send();
+      expect(skipped.statusCode).toBe(200);
+      const reply =
+        transport === "sse"
+          ? skipped.body
+              .split("\n")
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => JSON.parse(line.slice(5)))
+              .find((item) => item.type === "finish")
+          : skipped.json();
+      expect(reply).toMatchObject({ memories: [], abstained: true });
+      expect(retrieveFn).toHaveBeenCalledTimes(transport === "json" ? 1 : 0);
+      expect(countTokens).not.toHaveBeenCalled();
+      expect(await usedChatModels()).toEqual(
+        transport === "json"
+          ? [{ model_id: "offline" }, { model_id: "offline-next" }]
+          : [{ model_id: "offline" }],
+      );
+      expect(languageModel).toHaveBeenCalledTimes(transport === "json" ? 2 : 1);
+      const traces = await t.sql`select id from retrieval_traces where project_id=${f.p}`;
+      expect(traces).toHaveLength(transport === "json" ? 1 : 0);
+    } finally {
+      await app.close();
+      await t.sql`update provider_configs set models='{"chat":"offline"}' where id=${provider!.id}`;
     }
   },
 );
