@@ -17,7 +17,7 @@ await retrieve(db, masterKey, projectId, "PostgreSQL", {
 `countTokens(text): number` 必须由可信调用方提供，且与**最终聊天模型的同步分词器**一致。
 示例不提供伪造的字符/字节计数；本轮没有模型对应的 tokenizer 适配器或自动解析聊天模型的功能。
 该选项用于受信服务端编排和实验，不能经 HTTP 请求、模型输出或文件选择回调。
-普通 chat/recall 尚未自动启用预算，#9/#22 不关闭。
+默认的 Chat 和 Recall 路径不启用预算。受信库调用方可按下文为 Chat 安装预算。
 
 - memoryBudget 只可搭配显式 fusion，不能偷偷切换原 A0 算法。
 - maxTokens 为 0–1,000,000 的整数，countTokens 必须为函数；严格拒绝未知字段、null 等畸形配置。
@@ -26,6 +26,24 @@ await retrieve(db, masterKey, projectId, "PostgreSQL", {
 - 计数必须同步；错误、非整数、负数或异步返回均拒绝，不估算、不接受部分结果。
   对意外返回的 Promise/thenable 处理其拒绝，防止操作已失败后再触发未处理拒绝；不会等待或接受异步计数。
   计数器必须是可信本地函数，此处理不能取消其自行启动的外部副作用。
+
+## Trusted Chat assembly
+
+Pass `memoryBudget: { maxTokens, countTokens }` inside `buildApp({ chatRetrievalBinding })`,
+alongside the binding's fusion and provider selection. App assembly validates the option,
+copies the limit, and captures the synchronous counter function. Supply the counter for
+the configured Chat model. If the Chat slot changes to a model with a different tokenizer,
+update the binding before using that model. Binding capture fixes the function reference.
+The library caller is responsible for keeping the function's behavior stable.
+
+JSON and SSE chat use the same budget. With replay disabled, the budget applies to the
+selected BeliefVersions. With replay enabled, it applies to the rendered Observation values
+and their citations. The prompt and saved references use the packed order and contents.
+Discarded entries keep score and decision metadata in the retrieval trace.
+
+The binding is available to trusted library callers. The startup JSON and HTTP inputs
+continue to accept their existing fields. A failing counter uses Chat's existing retrieval
+failure behavior, which can continue the answer without retrieved memories.
 
 ## 处理顺序
 
@@ -77,5 +95,5 @@ rankFusion.components 中仍能查看各路排名，数组次序不能再解释�
 意外异步回调的进程级回归验证固定错误后不会使 Node 因未处理拒绝崩溃。
 这些测试验证算法和接线，不冒充某个模型的分词或账单验证。
 
-回滚本 PR 即可，不需要迁移/重置配置。实体生产输入、Reranker、真实 tokenizer 适配、
-读时消解的替代候选来源、完整消融矩阵与 #12 指标仍待后续；时间过滤见 [运行时文档](runtime-time-filter.md)，#9/#22 保持打开。
+回滚前移除库调用方的预算选项。真实 tokenizer 适配、完整消融矩阵与 #12 指标仍待后续；
+时间过滤见 [运行时文档](runtime-time-filter.md)，#9/#22 保持打开。

@@ -1,4 +1,4 @@
-import type { RecallBinding } from "../retrieval/recall-binding.js";
+import type { ChatRetrievalBinding } from "../retrieval/chat-binding.js";
 import type { ModelAdmission } from "../quota/repository.js";
 import type { FastifyInstance } from "fastify";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -28,7 +28,7 @@ import type { DebugTrace } from "../debug/trace.js";
 /** 对话闭环 API（#7）：会话创建/提交/消息应答 */
 
 export interface ChatRouteDeps {
-  retrievalBinding?: RecallBinding;
+  retrievalBinding?: ChatRetrievalBinding;
   admitModelCall?: ModelAdmission;
   durableExtraction?: boolean;
   debugTrace?: DebugTrace;
