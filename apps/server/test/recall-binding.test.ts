@@ -66,3 +66,12 @@ it.each([false, null, 0, "true"])(
     }
   },
 );
+
+it("rejects a malformed managed Recall budget at app assembly", () => {
+  expect(() =>
+    buildApp({
+      auth: false,
+      recallBinding: { ...valid, memoryBudget: { maxTokens: 100, countTokens: "invalid" } },
+    }),
+  ).toThrow("INVALID_RUNTIME_MEMORY_BUDGET");
+});

@@ -1363,7 +1363,7 @@
                     "selected": { "type": "boolean" },
                     "reason": {
                       "type": "string",
-                      "enum": ["top_k", "below_topk", "below_threshold"]
+                      "enum": ["top_k", "below_topk", "below_threshold", "token_budget"]
                     }
                   },
                   "required": [
@@ -5487,7 +5487,7 @@
         },
         "responses": {
           "200": {
-            "description": "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; it is populated only when a trusted recall binding declares readTimeResolution and the captured persisted flag is enabled. Official startup can install this capability via recallReadTimeResolution: true in MNEMIC_RETRIEVAL_BINDING_JSON.",
+            "description": "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; it is populated only when a trusted recall binding declares readTimeResolution and the captured persisted flag is enabled. Official startup can install this capability via recallReadTimeResolution: true in MNEMIC_RETRIEVAL_BINDING_JSON. A trusted library binding can set a memory budget. For ordinary recall, discarded entries have token_budget as their trace reason. For replay, the budget filters read_time_context while the root candidates and trace continue to describe the anchors.",
             "headers": { "x-request-id": { "schema": { "type": "string" }, "required": true } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/RecallResult" } }

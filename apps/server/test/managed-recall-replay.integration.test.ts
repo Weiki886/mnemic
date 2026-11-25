@@ -162,3 +162,101 @@ it.each(modes)(
     }
   },
 );
+
+it.each(["partial", "empty", "replay-empty"] as const)(
+  "trusted Recall %s returns budgeted memories and a valid score-only trace",
+  async (mode) => {
+    const replay = mode === "replay-empty";
+    const first = await fixture();
+    const second = await fixture(first.p, "secondary");
+    await t.sql`update beliefs set salience='0.800' where id=${first.b}`;
+    const flags = {
+      ...DEFAULT_FEATURE_FLAGS,
+      retrieval_vector: false,
+      authority_resolution: false,
+      read_time_resolution: replay,
+      read_time_reinforcement: true,
+    };
+    await t.sql`update feature_flags set flags=${JSON.stringify(flags)}::jsonb`;
+    const before = await business(first.p);
+    const model = vi.fn(() => {
+      throw Error("no model allowed");
+    });
+    const limit = mode === "partial" ? '[1] app / database = "needle PostgreSQL"'.length : 12;
+    const countTokens = vi.fn((text: string) => text.length);
+    const memoryBudget = { maxTokens: limit, countTokens };
+    const app = buildApp({
+      authToken: token,
+      db: t.db,
+      masterKey: TEST_MASTER_KEY,
+      modelDailyCallLimit: 100,
+      providerFactory: { languageModel: model, embeddingModel: model },
+      recallBinding: {
+        fusion: { mode: "rrf", threshold: 0.001 },
+        rerankerProvider: {},
+        ...(replay ? { readTimeResolution: true } : {}),
+        memoryBudget,
+      },
+    });
+    memoryBudget.maxTokens = 0;
+    const mutatedCounter = vi.fn((_text: string) => 0);
+    memoryBudget.countTokens = mutatedCounter;
+
+    try {
+      const base = await app.listen({ host: "127.0.0.1", port: 0 });
+      const api = createApiClient({ baseUrl: base, token });
+      const result = await api.recallBeliefs(first.p, "needle");
+      expect(validate(result), JSON.stringify(validate.errors)).toBe(true);
+      expect(result.trace.flags_snapshot?.flags.read_time_reinforcement).toBe(false);
+      if (replay) {
+        expect(result.abstained).toBe(false);
+        expect(result.candidates).toHaveLength(2);
+        expect(result.read_time_context).toEqual({ memories: [], abstained: true });
+        expect(result.trace.candidates.every((c) => c.selected && c.reason === "top_k")).toBe(true);
+        expect(countTokens).toHaveBeenCalledWith(
+          '[1] app / database = "SQLite private-value-sentinel"',
+        );
+      } else {
+        expect(result).not.toHaveProperty("read_time_context");
+        expect(result.abstained).toBe(mode === "empty");
+        expect(result.candidates.map((c) => c.beliefVersionId)).toEqual(
+          mode === "partial" ? [first.v] : [],
+        );
+        expect(result.trace.candidates).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              beliefVersionId: second.v,
+              selected: false,
+              reason: "token_budget",
+            }),
+          ]),
+        );
+      }
+      expect(result.trace.candidates.every((c) => !("memoryBudget" in c) && !("value" in c))).toBe(
+        true,
+      );
+      const [stored] =
+        await t.sql`select candidates from retrieval_traces where id=${result.trace.id}`;
+      const secondTrace = stored?.candidates.find(
+        (c: { beliefVersionId: string }) => c.beliefVersionId === second.v,
+      );
+      if (replay) {
+        expect(secondTrace.readTimeResolution).toMatchObject({
+          status: "budget_discarded",
+          reason: "token_budget",
+          memoryBudget: { maxTokens: limit, contextPosition: null },
+        });
+      } else {
+        expect(secondTrace).toMatchObject({
+          reason: "token_budget",
+          memoryBudget: { maxTokens: limit, contextPosition: null },
+        });
+      }
+      expect(mutatedCounter).not.toHaveBeenCalled();
+      expect(model).not.toHaveBeenCalled();
+      expect(await business(first.p)).toBe(before);
+    } finally {
+      await app.close();
+    }
+  },
+);

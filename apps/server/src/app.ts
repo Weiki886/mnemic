@@ -22,7 +22,7 @@ import type { ProviderFactory } from "./providers/factory.js";
 import type { retrieve } from "./retrieval/search.js";
 import { registerDoctorRoutes } from "./doctor/routes.js";
 import { registerRecallRoutes } from "./retrieval/routes.js";
-import { captureReplayRetrievalBinding } from "./retrieval/replay-binding.js";
+import { captureManagedRetrievalBinding } from "./retrieval/managed-binding.js";
 import { registerManagementRoutes } from "./providers/management-routes.js";
 import { registerBearerAuth } from "./auth.js";
 import { resolveAuthToken } from "./config.js";
@@ -85,7 +85,7 @@ export interface BuildAppOptions {
 const DEFAULT_SHUTDOWN_DRAIN_MS = 10_000;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const recallBinding = captureReplayRetrievalBinding(options.recallBinding);
+  const recallBinding = captureManagedRetrievalBinding(options.recallBinding);
   const chatRetrievalBinding = captureChatRetrievalBinding(options.chatRetrievalBinding);
   if (options.debugContent && !options.debugMode)
     throw new Error("MNEMIC_DEBUG_CONTENT requires MNEMIC_DEBUG=1");

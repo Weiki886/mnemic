@@ -149,3 +149,22 @@ it.each(["flag", "snapshot", "anchor", "belief", "duplicate", "state", "version"
     expect(memory.RecallResultSchema.safeParse(r).success).toBe(false);
   },
 );
+
+it("accepts token_budget only for an unselected trace entry", () => {
+  const budget = {
+    ...response,
+    abstained: true,
+    candidates: [],
+    trace: {
+      ...response.trace,
+      candidates: [{ ...score, selected: false, reason: "token_budget" }],
+    },
+  };
+  expect(memory.RecallResultSchema.parse(budget)).toEqual(budget);
+  expect(
+    memory.RecallResultSchema.safeParse({
+      ...response,
+      trace: { ...response.trace, candidates: [{ ...score, reason: "token_budget" }] },
+    }).success,
+  ).toBe(false);
+});

@@ -96,7 +96,7 @@ export function registerDiagnosticPaths(registry: OpenAPIRegistry) {
       404: error("Project does not exist, or route unavailable without DB/master key."),
       200: {
         description:
-          "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; it is populated only when a trusted recall binding declares readTimeResolution and the captured persisted flag is enabled. Official startup can install this capability via recallReadTimeResolution: true in MNEMIC_RETRIEVAL_BINDING_JSON.",
+          "Project-local recalled values or explicit abstention, with persisted non-reinforcing trace. The optional read_time_context contract separates replay sources from ranked anchors; it is populated only when a trusted recall binding declares readTimeResolution and the captured persisted flag is enabled. Official startup can install this capability via recallReadTimeResolution: true in MNEMIC_RETRIEVAL_BINDING_JSON. A trusted library binding can set a memory budget. For ordinary recall, discarded entries have token_budget as their trace reason. For replay, the budget filters read_time_context while the root candidates and trace continue to describe the anchors.",
         headers,
         content: { "application/json": { schema: recall } },
       },

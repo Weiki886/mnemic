@@ -100,7 +100,13 @@ export const RecallResultSchema = z
         flags_snapshot: FeatureFlagSnapshotSchema.nullable().optional(),
         candidate_count: z.number().int().nonnegative(),
         truncated: z.boolean(),
-        candidates: z.array(traceCandidate).max(200),
+        candidates: z
+          .array(
+            traceCandidate.extend({
+              reason: z.enum([...traceCandidate.shape.reason.options, "token_budget"]),
+            }),
+          )
+          .max(200),
       })
       .strict(),
   })
