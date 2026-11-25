@@ -17,7 +17,7 @@ await retrieve(db, masterKey, projectId, "PostgreSQL", {
 `countTokens(text): number` 必须由可信调用方提供，且与**最终聊天模型的同步分词器**一致。
 示例不提供伪造的字符/字节计数；本轮没有模型对应的 tokenizer 适配器或自动解析聊天模型的功能。
 该选项用于受信服务端编排和实验，不能经 HTTP 请求、模型输出或文件选择回调。
-默认的 Chat 和 Recall 路径不启用预算。受信库调用方可按下文为 Chat 安装预算。
+默认的 Chat 和 Recall 路径不启用预算。受信库调用方可分别安装预算。
 
 - memoryBudget 只可搭配显式 fusion，不能偷偷切换原 A0 算法。
 - maxTokens 为 0–1,000,000 的整数，countTokens 必须为函数；严格拒绝未知字段、null 等畸形配置。
@@ -44,6 +44,20 @@ Discarded entries keep score and decision metadata in the retrieval trace.
 The binding is available to trusted library callers. The startup JSON and HTTP inputs
 continue to accept their existing fields. A failing counter uses Chat's existing retrieval
 failure behavior, which can continue the answer without retrieved memories.
+
+## Trusted Recall assembly
+
+Pass the same `memoryBudget` shape inside `buildApp({ recallBinding })`. A library caller
+supplies the synchronous tokenizer for the downstream model that will consume the
+returned context. For ordinary Recall, the API returns only the packed candidates, and
+its score-only trace uses `token_budget` for budget exclusions. If none fit, the response
+abstains. With replay enabled, the budget filters `read_time_context.memories`, while
+root candidates, scores and abstention still describe the anchors. The stored replay
+trace retains each discard decision. Recall keeps reinforcement disabled.
+
+Upgrade strict Recall clients before enabling an ordinary Recall budget because older
+clients reject `token_budget` in the trace. Keep the request body and startup JSON limited
+to their existing fields. Remove the library budget before rolling back to an older server.
 
 ## 处理顺序
 
@@ -83,8 +97,8 @@ contextPosition 从 1 开始，舍弃项为 null；tokenCount 是最终整个记
 原始查询阈值拒答仍是 below_threshold。trace 先排列最终入选项，再保留其他项的融合顺序；
 rankFusion.components 中仍能查看各路排名，数组次序不能再解释为纯融合分次序。
 
-不保存正文、完整 prompt、计数回调、凭据或原始异常。公开 HTTP recall 仍没有该实验参数，
-提交的 OpenAPI 和默认响应保持不变；将来公开预算实验轨迹时须扩展契约，不能直接套旧 reason 枚举。
+不保存正文、完整 prompt、计数回调、凭据或原始异常。公开 HTTP Recall 仍没有预算请求参数。
+公开轨迹只展示普通 Recall 的预算舍弃原因，完整预算细节留在存储的检索轨迹中。
 当没有候选或查询阈值已拒答、未形成 topK 清单时，没有逐候选预算元数据；
 实验消费方仍需用 traceId 关联提交配置，沿用 #128 的空池边界。
 

@@ -9,7 +9,7 @@ import { projects, retrievalTraces } from "../db/schema.js";
 import type { ProviderFactory } from "../providers/factory.js";
 import { retrieve } from "./search.js";
 import type { DebugTrace } from "../debug/trace.js";
-import type { ReplayRetrievalBinding } from "./replay-binding.js";
+import type { ManagedRetrievalBinding } from "./managed-binding.js";
 import { captureFeatureFlags } from "../flags/runtime.js";
 import { projectRetrievalContext } from "./context-projection.js";
 
@@ -35,7 +35,7 @@ export function registerRecallRoutes(
   factory?: ProviderFactory,
   debugTrace?: DebugTrace,
   admitModelCall?: ModelAdmission,
-  binding?: ReplayRetrievalBinding,
+  binding?: ManagedRetrievalBinding,
 ): void {
   app.post(
     "/projects/:projectId/recall",
@@ -129,7 +129,7 @@ export function registerRecallRoutes(
             flags_snapshot: trace.flagsSnapshot,
             candidate_count: trace.candidates.length,
             truncated: trace.candidates.length > 200,
-            // Internal fusion/reranker metadata is not part of the strict public DTO.
+            // Internal fusion, reranker, replay and budget metadata stays out of the public DTO.
             candidates: trace.candidates.slice(0, 200).map((value) => {
               if (!value || typeof value !== "object" || Array.isArray(value))
                 throw new Error("invalid trace candidate");
