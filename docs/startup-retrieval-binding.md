@@ -1,9 +1,9 @@
 # 显式安装启动检索绑定
 
 正式启动器可从 MNEMIC_RETRIEVAL_BINDING_JSON 同时安装聊天和手动召回绑定。未配置或空字符串
-保持原路径，空白字符串不等于关闭。接受现有 fusion + rerankerProvider 契约，以及可选的聊天和召回回放能力，最多8192个UTF-8
+保持原路径，空白字符串不等于关闭。接受现有 fusion + rerankerProvider 契约，以及可选的聊天和召回回放能力和 [Chat 记忆预算](#local-chat-tokenizer-budget)，最多8192个UTF-8
 字节；Key、端点、模型名、flagsSnapshot 和其他字段均不允许。Provider 密钥、模型及端点仍只
-存服务端数据库，环境中只有算法参数和可选的 Provider ID 引用，不增加模型槽位。
+存服务端数据库。启动配置可引用现有 Provider、模型 ID 和本地分词器文件。
 
 ```sh
 export MNEMIC_RETRIEVAL_BINDING_JSON='{"fusion":{"mode":"rrf","threshold":0.001},"rerankerProvider":{}}'
@@ -51,6 +51,39 @@ fail when the shared flag is on. Write paths record the flag in their snapshot w
 
 Upgrade strict clients before enabling recall replay. Keep replay-aware readers for existing
 source references.
+
+## Local Chat tokenizer budget
+
+Add `chatMemoryBudget` to the retrieval profile to enforce a token limit on the memory
+block injected into Chat. Use local assets that match the configured Chat model.
+The adapter uses [Hugging Face Tokenizers.js](https://github.com/huggingface/tokenizers.js)
+for synchronous tokenization. Check parity with the serving model's tokenizer before
+using other tokenizer formats or relying on the count in an experiment.
+
+```json
+{
+  "fusion": { "mode": "rrf", "threshold": 0.001 },
+  "rerankerProvider": {},
+  "chatMemoryBudget": {
+    "maxTokens": 512,
+    "providerId": "01920000-0000-7000-8000-00000000000a",
+    "modelId": "your-configured-chat-model",
+    "tokenizerFile": "/tokenizers/tokenizer.json",
+    "tokenizerConfigFile": "/tokenizers/tokenizer_config.json"
+  }
+}
+```
+
+Supply UTF-8 JSON objects as readable regular files at absolute paths. The tokenizer file
+limit is 32 MiB and the tokenizer config limit is 1 MiB. With Docker Compose, mount the
+files read-only into the `server` service through a Compose override and use container
+paths in the profile. Startup reads the assets once and rejects invalid configuration
+before database connection. It performs no download.
+
+The UUID and exact model ID pin the budget to the selected Chat slot. If the selected
+identity changes, Chat skips retrieval until the budget pin and assets match the new
+model. The count covers the rendered memory block without sequence framing. To roll
+back the budget, remove `chatMemoryBudget` from the profile and restart.
 
 ## Rollback
 

@@ -15,7 +15,7 @@ await retrieve(db, masterKey, projectId, "PostgreSQL", {
 ```
 
 `countTokens(text): number` 必须由可信调用方提供，且与**最终聊天模型的同步分词器**一致。
-示例不提供伪造的字符/字节计数；本轮没有模型对应的 tokenizer 适配器或自动解析聊天模型的功能。
+正式启动器可显式装载 [Chat 分词器与预算](startup-retrieval-binding.md#local-chat-tokenizer-budget)。
 该选项用于受信服务端编排和实验，不能经 HTTP 请求、模型输出或文件选择回调。
 默认的 Chat 和 Recall 路径不启用预算。受信库调用方可分别安装预算。
 
@@ -46,8 +46,7 @@ selected BeliefVersions. With replay enabled, it applies to the rendered Observa
 and their citations. The prompt and saved references use the packed order and contents.
 Discarded entries keep score and decision metadata in the retrieval trace.
 
-The binding is available to trusted library callers. The startup JSON and HTTP inputs
-continue to accept their existing fields. A failing counter uses Chat's existing retrieval
+The library can supply its own counter. The startup profile also supports a [local tokenizer budget](startup-retrieval-binding.md#local-chat-tokenizer-budget). A failing counter uses Chat's existing retrieval
 failure behavior, which can continue the answer without retrieved memories.
 
 ## Trusted Recall assembly
@@ -114,5 +113,5 @@ rankFusion.components 中仍能查看各路排名，数组次序不能再解释�
 意外异步回调的进程级回归验证固定错误后不会使 Node 因未处理拒绝崩溃。
 这些测试验证算法和接线，不冒充某个模型的分词或账单验证。
 
-回滚前移除库调用方的预算选项。真实 tokenizer 适配、完整消融矩阵与 #12 指标仍待后续；
+回滚前移除库调用方的预算选项，或从启动配置移除 `chatMemoryBudget`。完整消融矩阵与 #12 指标仍待后续；
 时间过滤见 [运行时文档](runtime-time-filter.md)，#9/#22 保持打开。
