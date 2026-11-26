@@ -33,6 +33,9 @@ answerability label follows the answerable/unanswerable distinction in
 
 ## Annotation protocol
 
+The [synthetic project memory benchmark](memory-benchmark.md) supplies a
+versioned set of histories and gold question labels for this protocol.
+
 1. Freeze the conversation order, question IDs, visible evidence, expected
    answers, acceptable paraphrases and time boundaries before collecting system
    outputs. Mark each question `general`, `conflict` or `temporal` using its
