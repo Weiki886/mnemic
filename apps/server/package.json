@@ -12,6 +12,7 @@
     "verify:providers": "tsx --env-file-if-exists=../../.env scripts/verify-providers.ts",
     "eval:retrieval": "node --import tsx scripts/evaluate-retrieval.ts",
     "eval:memory": "node --import tsx scripts/evaluate-memory.ts",
+    "eval:dataset": "node --import tsx scripts/export-memory-benchmark.ts",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
