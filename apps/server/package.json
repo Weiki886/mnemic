@@ -10,6 +10,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "verify:providers": "tsx --env-file-if-exists=../../.env scripts/verify-providers.ts",
+    "eval:retrieval": "node --import tsx scripts/evaluate-retrieval.ts",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",

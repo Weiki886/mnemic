@@ -10,6 +10,7 @@ import { durableModels } from "./fixtures/durable-models.js";
 import { createProvider } from "../src/providers/repository.js";
 import { ModelQuotaError } from "../src/quota/repository.js";
 import { buildApp } from "../src/app.js";
+import { scoreRetrievalComparison } from "../scripts/retrieval-comparison.js";
 
 let t: TestDb, endpoint: string;
 const p = uuidv7(),
@@ -210,6 +211,47 @@ it("disabled reranker preserves original DTO/trace candidates with zero extra qu
   expect(seen).toHaveLength(0);
   expect(admit).not.toHaveBeenCalled();
   expect(await usage()).toHaveLength(0);
+});
+it("compares paired rankings from the same corpus with reranking off and on", async () => {
+  const baselineChoice = await fact("a");
+  const relevant = await fact("b");
+  async function ranked(query: string, reranker: boolean) {
+    const result = await retrieve(
+      t.db,
+      TEST_MASTER_KEY,
+      p,
+      query,
+      opts({ flagsSnapshot: snapshot({ reranker }) }),
+    );
+    const ids = result.candidates.map((candidate) => candidate.beliefVersionId);
+    expect(result.abstained).toBe(ids.length === 0);
+    expect((await trace(result.traceId)).flags_snapshot).toEqual(snapshot({ reranker }));
+    return { traceId: result.traceId, rankedVersionIds: ids };
+  }
+
+  const baseline = await ranked("needle", false);
+  const variant = await ranked("needle", true);
+  expect(baseline.rankedVersionIds).toEqual([baselineChoice.v]);
+  expect(variant.rankedVersionIds).toEqual([relevant.v]);
+  const report = scoreRetrievalComparison({
+    k: 1,
+    cases: [
+      { id: "answerable", relevantVersionIds: [relevant.v], baseline, variant },
+      {
+        id: "unanswerable",
+        relevantVersionIds: [],
+        baseline: await ranked("nonmatching", false),
+        variant: await ranked("nonmatching", true),
+      },
+    ],
+  });
+
+  expect(report.counts).toEqual({ cases: 2, answerable: 1, unanswerable: 1 });
+  expect(report.baseline).toEqual({ hitAtK: 0, recallAtK: 0, mrrAtK: 0, abstentionAccuracy: 1 });
+  expect(report.variant).toEqual({ hitAtK: 1, recallAtK: 1, mrrAtK: 1, abstentionAccuracy: 1 });
+  expect(report.delta).toEqual({ hitAtK: 1, recallAtK: 1, mrrAtK: 1, abstentionAccuracy: 0 });
+  expect(seen).toHaveLength(1);
+  expect(await usage()).toHaveLength(1);
 });
 it.each(["empty", "threshold"])("%s refusal never calls or reserves reranking", async (kind) => {
   if (kind === "threshold") await fact();
