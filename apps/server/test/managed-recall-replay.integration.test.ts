@@ -1,6 +1,9 @@
 import { beforeAll, afterAll, expect, it, vi } from "vitest";
 import { uuidv7 } from "uuidv7";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { writeBudgetTokenizerFixture } from "./fixtures/budget-tokenizer.js";
 import { Ajv } from "ajv";
 import { createApiClient } from "@mnemic/shared";
 import { RecallResultSchema } from "@mnemic/shared/memory";
@@ -257,6 +260,75 @@ it.each(["partial", "empty", "replay-empty"] as const)(
       expect(await business(first.p)).toBe(before);
     } finally {
       await app.close();
+    }
+  },
+);
+
+it.each([false, true])(
+  "startup Recall applies the local tokenizer budget over HTTP (replay %s)",
+  async (replay) => {
+    const f = await fixture();
+    await t.sql`update feature_flags set flags=${JSON.stringify({
+      ...DEFAULT_FEATURE_FLAGS,
+      retrieval_vector: false,
+      authority_resolution: false,
+      read_time_resolution: replay,
+      read_time_reinforcement: true,
+    })}::jsonb`;
+    const before = await business(f.p);
+    const model = vi.fn(() => {
+      throw Error("no model allowed");
+    });
+    const dir = mkdtempSync(join(tmpdir(), "mnemic-startup-recall-"));
+    try {
+      const paths = writeBudgetTokenizerFixture(dir);
+      const bindings = resolveStartupRetrievalBindings(
+        JSON.stringify({
+          fusion: { mode: "rrf", threshold: 0.001 },
+          rerankerProvider: {},
+          ...(replay ? { recallReadTimeResolution: true } : {}),
+          recallMemoryBudget: { maxTokens: 1, ...paths },
+        }),
+        { databaseConfigured: true, masterKey: TEST_MASTER_KEY },
+      );
+      const app = buildApp({
+        ...bindings,
+        authToken: token,
+        db: t.db,
+        masterKey: TEST_MASTER_KEY,
+        modelDailyCallLimit: 100,
+        providerFactory: { languageModel: model, embeddingModel: model },
+      });
+      try {
+        const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
+        const result = await createApiClient({ baseUrl, token }).recallBeliefs(f.p, "needle");
+        expect(validate(result), JSON.stringify(validate.errors)).toBe(true);
+        expect(result.trace.flags_snapshot?.flags.read_time_reinforcement).toBe(false);
+        expect(result.trace.candidates).toMatchObject([
+          { beliefVersionId: f.v, selected: replay, reason: replay ? "top_k" : "token_budget" },
+        ]);
+        expect(result.abstained).toBe(!replay);
+        if (replay) {
+          expect(result.candidates[0]?.value).toBe("needle PostgreSQL");
+          expect(result.read_time_context).toEqual({ abstained: true, memories: [] });
+        } else {
+          expect(result.candidates).toEqual([]);
+          expect(result).not.toHaveProperty("read_time_context");
+        }
+        const [stored] =
+          await t.sql`select candidates from retrieval_traces where id=${result.trace.id}`;
+        const decision = replay ? stored?.candidates[0].readTimeResolution : stored?.candidates[0];
+        expect(decision).toMatchObject({
+          reason: "token_budget",
+          memoryBudget: { maxTokens: 1, tokenCount: 1, contextPosition: null },
+        });
+        expect(model).not.toHaveBeenCalled();
+        expect(await business(f.p)).toBe(before);
+      } finally {
+        await app.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   },
 );
