@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { writeBudgetTokenizerFixture } from "./fixtures/budget-tokenizer.js";
 import { resolveStartupRetrievalBindings } from "../src/retrieval/startup-binding.js";
 import { beforeAll, afterAll, expect, it, vi } from "vitest";
 import { uuidv7 } from "uuidv7";
@@ -426,3 +430,59 @@ it.each(["json", "sse"] as const)(
     }
   },
 );
+
+it("applies the startup tokenizer budget to a real Chat turn and persists the discard", async () => {
+  const f = await fixture();
+  const [provider] = await t.sql`select id from provider_configs where name='offline'`;
+  await t.sql`update feature_flags set flags=${JSON.stringify(flags(false).flags)}::jsonb`;
+  const dir = mkdtempSync(join(tmpdir(), "mnemic-chat-budget-"));
+  try {
+    const paths = writeBudgetTokenizerFixture(dir);
+    const bindings = resolveStartupRetrievalBindings(
+      JSON.stringify({
+        fusion: { mode: "rrf", threshold: 0.001 },
+        rerankerProvider: {},
+        chatMemoryBudget: {
+          providerId: provider!.id,
+          modelId: "offline",
+          maxTokens: 1,
+          ...paths,
+        },
+      }),
+      { databaseConfigured: true, masterKey: TEST_MASTER_KEY },
+    );
+    const app = buildApp({
+      ...bindings,
+      auth: false,
+      db: t.db,
+      masterKey: TEST_MASTER_KEY,
+      modelDailyCallLimit: 100,
+      providerFactory: factory,
+    });
+    prompts.length = 0;
+    try {
+      const result = await app.inject({
+        method: "POST",
+        url: `/projects/${f.p}/conversations/${f.c}/messages`,
+        payload: { text: "needle" },
+      });
+      expect(result.statusCode).toBe(200);
+      expect(result.json()).toMatchObject({ abstained: true, memories: [] });
+      expect(prompts[0]).toContain("（无相关记忆）");
+      expect(prompts[0]).not.toContain("needle PostgreSQL");
+      const [trace] = await t.sql`select candidates from retrieval_traces where project_id=${f.p}`;
+      expect(trace?.candidates).toMatchObject([
+        {
+          beliefVersionId: f.v,
+          selected: false,
+          reason: "token_budget",
+          memoryBudget: { maxTokens: 1, tokenCount: 1, contextPosition: null },
+        },
+      ]);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

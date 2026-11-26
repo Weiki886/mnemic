@@ -15,6 +15,17 @@ it.each([
     rerankerProvider: {},
     recallReadTimeResolution: "private-sentinel",
   }),
+  JSON.stringify({
+    fusion: { mode: "rrf", threshold: 0.001 },
+    rerankerProvider: {},
+    chatMemoryBudget: {
+      maxTokens: 16,
+      providerId: "01920000-0000-7000-8000-00000000000a",
+      modelId: "offline",
+      tokenizerFile: "/missing/private-sentinel",
+      tokenizerConfigFile: "/missing/private-sentinel",
+    },
+  }),
 ])("entry rejects invalid binding before connecting to unreachable DB", (raw) => {
   const child = spawnSync(process.execPath, ["--import", "tsx", "src/index.ts"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),
