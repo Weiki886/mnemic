@@ -1,7 +1,7 @@
 # 显式安装启动检索绑定
 
 正式启动器可从 MNEMIC_RETRIEVAL_BINDING_JSON 同时安装聊天和手动召回绑定。未配置或空字符串
-保持原路径，空白字符串不等于关闭。接受现有 fusion + rerankerProvider 契约，以及可选的聊天和召回回放能力和 [Chat 记忆预算](#local-chat-tokenizer-budget)，最多8192个UTF-8
+保持原路径，空白字符串不等于关闭。接受现有 fusion + rerankerProvider 契约，以及可选的聊天和召回回放能力及 [Chat](#local-chat-tokenizer-budget) / [Recall](#local-recall-tokenizer-budget) 记忆预算，最多8192个UTF-8
 字节；Key、端点、模型名、flagsSnapshot 和其他字段均不允许。Provider 密钥、模型及端点仍只
 存服务端数据库。启动配置可引用现有 Provider、模型 ID 和本地分词器文件。
 
@@ -84,6 +84,31 @@ The UUID and exact model ID pin the budget to the selected Chat slot. If the sel
 identity changes, Chat skips retrieval until the budget pin and assets match the new
 model. The count covers the rendered memory block without sequence framing. To roll
 back the budget, remove `chatMemoryBudget` from the profile and restart.
+
+## Local Recall tokenizer budget
+
+Add `recallMemoryBudget` to apply the same local tokenizer loader to manual Recall.
+Choose files that match the downstream model that will consume the returned context.
+The API serves that context directly, so this option is independent of the Chat slot
+and can be used alongside `chatMemoryBudget` with a separate limit and assets.
+
+```json
+{
+  "fusion": { "mode": "rrf", "threshold": 0.001 },
+  "rerankerProvider": {},
+  "recallMemoryBudget": {
+    "maxTokens": 512,
+    "tokenizerFile": "/tokenizers/tokenizer.json",
+    "tokenizerConfigFile": "/tokenizers/tokenizer_config.json"
+  }
+}
+```
+
+The same local file limits and read-only mount guidance apply. Ordinary Recall returns
+the candidates that fit and labels budget exclusions `token_budget` in the public trace.
+When read-time replay is active, the budget trims `read_time_context` and the root
+candidates and scores still describe the retrieval anchors. Upgrade strict Recall clients
+before enabling this option. To roll back, remove `recallMemoryBudget` and restart.
 
 ## Rollback
 

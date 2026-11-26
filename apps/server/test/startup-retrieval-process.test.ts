@@ -26,6 +26,15 @@ it.each([
       tokenizerConfigFile: "/missing/private-sentinel",
     },
   }),
+  JSON.stringify({
+    fusion: { mode: "rrf", threshold: 0.001 },
+    rerankerProvider: {},
+    recallMemoryBudget: {
+      maxTokens: 16,
+      tokenizerFile: "/missing/private-sentinel",
+      tokenizerConfigFile: "/missing/private-sentinel",
+    },
+  }),
 ])("entry rejects invalid binding before connecting to unreachable DB", (raw) => {
   const child = spawnSync(process.execPath, ["--import", "tsx", "src/index.ts"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),

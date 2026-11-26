@@ -15,7 +15,8 @@ await retrieve(db, masterKey, projectId, "PostgreSQL", {
 ```
 
 `countTokens(text): number` 必须由可信调用方提供，且与**最终聊天模型的同步分词器**一致。
-正式启动器可显式装载 [Chat 分词器与预算](startup-retrieval-binding.md#local-chat-tokenizer-budget)。
+正式启动器可显式装载 [Chat](startup-retrieval-binding.md#local-chat-tokenizer-budget) 和
+[Recall](startup-retrieval-binding.md#local-recall-tokenizer-budget) 的分词器与预算。
 该选项用于受信服务端编排和实验，不能经 HTTP 请求、模型输出或文件选择回调。
 默认的 Chat 和 Recall 路径不启用预算。受信库调用方可分别安装预算。
 
@@ -60,8 +61,9 @@ root candidates, scores and abstention still describe the anchors. The stored re
 trace retains each discard decision. Recall keeps reinforcement disabled.
 
 Upgrade strict Recall clients before enabling an ordinary Recall budget because older
-clients reject `token_budget` in the trace. Keep the request body and startup JSON limited
-to their existing fields. Remove the library budget before rolling back to an older server.
+clients reject `token_budget` in the trace. Set the budget in trusted library assembly or the
+[startup profile](startup-retrieval-binding.md#local-recall-tokenizer-budget). Remove the
+budget before rolling back to an older server.
 
 ## 处理顺序
 
@@ -113,5 +115,5 @@ rankFusion.components 中仍能查看各路排名，数组次序不能再解释�
 意外异步回调的进程级回归验证固定错误后不会使 Node 因未处理拒绝崩溃。
 这些测试验证算法和接线，不冒充某个模型的分词或账单验证。
 
-回滚前移除库调用方的预算选项，或从启动配置移除 `chatMemoryBudget`。完整消融矩阵与 #12 指标仍待后续；
+回滚前移除库调用方的预算选项，或从启动配置移除对应的 `chatMemoryBudget` / `recallMemoryBudget`。完整消融矩阵与 #12 指标仍待后续；
 时间过滤见 [运行时文档](runtime-time-filter.md)，#9/#22 保持打开。

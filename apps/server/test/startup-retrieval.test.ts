@@ -215,3 +215,55 @@ it.each([
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it.each([false, true])("loads a Recall tokenizer independently of the Chat budget (%s)", (chat) => {
+  const dir = mkdtempSync(join(tmpdir(), "mnemic-recall-tokenizer-"));
+  try {
+    const paths = writeBudgetTokenizerFixture(dir);
+    const result = resolveStartupRetrievalBindings(
+      JSON.stringify({
+        ...profile,
+        recallReadTimeResolution: true,
+        recallMemoryBudget: { maxTokens: 12, ...paths },
+        ...(chat
+          ? {
+              chatMemoryBudget: {
+                maxTokens: 16,
+                providerId: "01920000-0000-7000-8000-00000000000a",
+                modelId: "chat only",
+                ...paths,
+              },
+            }
+          : {}),
+      }),
+      ready,
+    );
+    const recall = result.recallBinding;
+    expect(recall?.memoryBudget?.maxTokens).toBe(12);
+    expect(recall?.readTimeResolution).toBe(true);
+    expect(Object.isFrozen(recall?.memoryBudget)).toBe(true);
+    expect(recall).not.toHaveProperty("memoryBudgetModel");
+    rmSync(dir, { recursive: true });
+    expect(recall?.memoryBudget?.countTokens("hello 中文")).toBe(3);
+    if (chat) expect(result.chatRetrievalBinding?.memoryBudget?.maxTokens).toBe(16);
+    else expect(result.chatRetrievalBinding).not.toHaveProperty("memoryBudget");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("rejects model fields and remote URLs in the Recall budget", () => {
+  const budget = {
+    maxTokens: 12,
+    tokenizerFile: "/missing/tokenizer.json",
+    tokenizerConfigFile: "/missing/tokenizer_config.json",
+  };
+  for (const recallMemoryBudget of [
+    { ...budget, providerId: "01920000-0000-7000-8000-00000000000a", modelId: "model" },
+    { ...budget, tokenizerFile: "https://example.invalid/tokenizer.json" },
+  ]) {
+    expect(() =>
+      resolveStartupRetrievalBindings(JSON.stringify({ ...profile, recallMemoryBudget }), ready),
+    ).toThrow(/^MNEMIC_RETRIEVAL_BINDING_JSON invalid$/);
+  }
+});
