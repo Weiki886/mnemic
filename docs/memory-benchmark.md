@@ -46,3 +46,36 @@ Keep the dataset ID and source commit with a run. This dataset provides a
 repeatable synthetic reference for baseline development. Real project traces,
 baseline execution, cost measurements and the Memory Survival Test are
 separate evaluation work.
+
+## Context baselines
+
+`runContextBaselines` in `apps/server/scripts/context-baselines.ts` executes
+three baselines over the versioned dataset. It takes an input token budget,
+a sliding window size in sessions, and an optional list of question IDs.
+Omitting the list selects all 100 questions. Each question runs independently
+in dataset order and uses the same system instruction and original question.
+
+| Baseline       | History supplied to the adapter                      |
+| -------------- | ---------------------------------------------------- |
+| No memory      | No sessions                                          |
+| Sliding window | The last N visible sessions in chronological order   |
+| Full context   | Every original message in the visible session prefix |
+
+Supply one stateless model adapter for the run. Its `countInputTokens`
+method must count the entire request using the serving model's message
+format and tokenizer. Set `inputTokenBudget` after reserving the desired
+output space and any provider overhead. Its `answer` method receives the
+same messages. Gold labels and answers from earlier calls stay outside
+the request.
+
+The report records the dataset ID, budget, window size and one row per
+question and baseline. A row includes the question ID, session IDs, counted
+input tokens and the returned answer. If the request exceeds the budget,
+the row is marked `context-overflow` and generation is skipped. An adapter
+failure rejects the run. Preserve the model version and generation
+parameters alongside the eventual report.
+
+Offline tests execute all three paths with an injected adapter. The runner
+prepares answer artifacts for later grading. Provider wiring, measured
+billing, vector memory and Mem0-style write-time classification remain
+separate work.
