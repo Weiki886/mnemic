@@ -55,3 +55,6 @@ case-insensitive and cannot repeat within a list. Invalid input exits with statu
 The report measures version-anchor ranking. Read-time replay may select different
 Observation evidence for an answer. Keep the dataset and run configurations
 alongside the report so the comparison can be reproduced.
+
+For write quality, final answers and stale facts in delivered context, see the
+[targeted memory evaluation metrics](metrics.md).
